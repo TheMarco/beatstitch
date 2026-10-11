@@ -781,7 +781,7 @@ class Timeline(QAbstractScrollArea):
         frame = rect
         rect = QRectF(max(rect.left(), 0.0), rect.top(), min(rect.right(), float(width)) - max(rect.left(), 0.0), rect.height())
         painter.setClipRect(rect.adjusted(8, 0, -8, 0))
-        metrics_font = T.font(12, tabular=True)
+        metrics_font = T.font(T.SIZE_META, tabular=True)
         painter.setFont(metrics_font)
         runs = []
         processed = djmix.transpose(parsed_key(track.key), clip.shift)
@@ -861,7 +861,7 @@ class Timeline(QAbstractScrollArea):
         painter.fillRect(QRectF(right - 1, top - 4, 1, bottom - top + 8), edge)
         clip = self.session.clips[index]
         text = f"{clip.blend_bars} bars"
-        font = T.font(12, tabular=True)
+        font = T.font(T.SIZE_META, tabular=True)
         metrics = QFontMetricsF(font)
         label_width = metrics.horizontalAdvance(text) + 26
         center = (left + right) / 2
@@ -1075,7 +1075,7 @@ class Overview(QWidget):
                 painter.fillRect(QRectF(self._x(self.playhead, duration) - .75, 0, 1.5, self.height()), QColor("#FFFFFF"))
         else:
             painter.setPen(QColor(T.TEXT_3))
-            painter.setFont(T.font(12))
+            painter.setFont(T.font(T.SIZE_META))
             painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "The mix overview appears once songs are arranged")
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setPen(QPen(QColor(T.LINE), 1))
@@ -1196,7 +1196,7 @@ class CueEditor(QWidget):
             tab = QRectF(x - 1, 0, 28, 14) if name == "In" else QRectF(x - 27, 0, 28, 14)
             painter.drawRoundedRect(tab, 3, 3)
             painter.setPen(QColor(T.ON_ACCENT))
-            painter.setFont(T.font(10, QFont.Weight.DemiBold))
+            painter.setFont(T.font(11, QFont.Weight.DemiBold))
             painter.drawText(tab, Qt.AlignmentFlag.AlignCenter, name)
         painter.setPen(QPen(QColor(T.LINE), 1))
         painter.setBrush(Qt.BrushStyle.NoBrush)
@@ -1359,7 +1359,7 @@ class LibraryDelegate(QStyledItemDelegate):
         painter.setPen(QColor(T.TEXT))
         name = painter.fontMetrics().elidedText(track.name, Qt.TextElideMode.ElideRight, int(text_width))
         painter.drawText(QRectF(text_left, rect.top() + 7, text_width, 18), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, name)
-        small = T.font(12, tabular=True)
+        small = T.font(T.SIZE_META, tabular=True)
         painter.setFont(small)
         metrics = QFontMetricsF(small)
         x = text_left
@@ -1491,7 +1491,7 @@ class LibraryView(QListView):
             painter.setPen(QColor(T.TEXT))
             painter.drawText(QRectF(area.left() + 12, area.top() + 40, area.width() - 24, 22), Qt.AlignmentFlag.AlignCenter,
                              "No matching songs" if searching else "Your library is empty")
-            painter.setFont(T.font(12))
+            painter.setFont(T.font(T.SIZE_META))
             painter.setPen(QColor(T.TEXT_2))
             painter.drawText(QRectF(area.left() + 16, area.top() + 66, area.width() - 32, 60),
                              Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap,

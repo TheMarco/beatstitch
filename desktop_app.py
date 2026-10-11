@@ -12,7 +12,7 @@ import threading
 import time
 
 from PySide6.QtCore import QObject, QRunnable, QSize, QStandardPaths, QThreadPool, QTimer, QUrl, Qt, Signal
-from PySide6.QtGui import QAction, QDesktopServices, QFont, QKeySequence
+from PySide6.QtGui import QAction, QActionGroup, QDesktopServices, QFont, QKeySequence
 from PySide6.QtMultimedia import QAudioOutput, QMediaDevices, QMediaPlayer
 from PySide6.QtWidgets import (QApplication, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QInputDialog, QLabel,
                                QLineEdit, QMainWindow, QMenu, QProgressBar, QPushButton, QScrollArea,
@@ -259,7 +259,7 @@ class Studio(QMainWindow):
         self.time_label.setFont(T.font(T.SIZE_READOUT, QFont.Weight.Medium, tabular=True))
         self.time_label.setMinimumWidth(96)
         self.duration_label = label("", "hint")
-        self.duration_label.setFont(T.font(13, tabular=True))
+        self.duration_label.setFont(T.font(T.SIZE_BODY, tabular=True))
         times.addWidget(self.time_label, 0, Qt.AlignmentFlag.AlignBottom)
         times.addWidget(self.duration_label, 0, Qt.AlignmentFlag.AlignBottom)
         times.addStretch(1)
@@ -286,7 +286,7 @@ class Studio(QMainWindow):
         self.tempo.setValue(128)
         self.tempo.setKeyboardTracking(False)
         self.tempo.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.tempo.setFont(T.font(20, QFont.Weight.DemiBold, tabular=True))
+        self.tempo.setFont(T.font(22, QFont.Weight.DemiBold, tabular=True))
         self.tempo.setFixedWidth(96)
         self.tempo.setToolTip("Project tempo. Every song is stretched to this BPM; keys stay as they are.")
         self.tempo.setAccessibleName("Project tempo in BPM")
@@ -294,17 +294,13 @@ class Studio(QMainWindow):
         right_row.addWidget(self.tempo)
         right_row.addWidget(label("BPM", "hint"))
         right_row.addSpacing(18)
-        speaker = QLabel()
-        speaker.setPixmap(T.pixmap("speaker", T.TEXT_3, 16))
-        right_row.addWidget(speaker)
-        self.output_device = ComboBox()
-        self.output_device.setProperty("role", "quiet")
-        self.output_device.setAccessibleName("Audio output device")
-        self.output_device.setSizeAdjustPolicy(ComboBox.SizeAdjustPolicy.AdjustToContents)
-        self.output_device.setMinimumWidth(96)
-        self.output_device.setMaximumWidth(220)
-        self.output_device.currentIndexChanged.connect(self.change_audio_output)
-        right_row.addWidget(self.output_device)
+        self.output_button = tool_button("speaker", "Audio output", size=18)
+        self.output_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.output_menu = QMenu(self)
+        self.output_button.setMenu(self.output_menu)
+        self.output_group = QActionGroup(self)
+        self.output_group.setExclusive(True)
+        right_row.addWidget(self.output_button)
         self.volume = QSlider(Qt.Orientation.Horizontal)
         self.volume.setRange(0, 100)
         self.volume.setValue(int(self.prefs.get("volume", 70)))
@@ -525,6 +521,7 @@ class Studio(QMainWindow):
         column.addWidget(self.clip_state)
         column.addSpacing(16)
         self.cue_editor = CueEditor(self.bands)
+        self.cue_editor.setMinimumHeight(96)
         self.cue_editor.cuesChanged.connect(self.set_cues)
         column.addWidget(self.cue_editor)
         column.addSpacing(10)
@@ -540,7 +537,7 @@ class Studio(QMainWindow):
         column.addSpacing(6)
         column.addWidget(label(f"Handles and buttons move by bars. Hold Shift while dragging for beats, "
                                f"or {FREE_KEY} to place freely.", "hint", True))
-        column.addSpacing(22)
+        column.addSpacing(18)
 
         column.addWidget(label("Tempo and key", "section"))
         column.addSpacing(10)
@@ -563,7 +560,7 @@ class Studio(QMainWindow):
         form.addWidget(label("Key", "secondary"), 1, 0)
         form.addWidget(self.key, 1, 1)
         column.addLayout(form)
-        column.addSpacing(22)
+        column.addSpacing(18)
 
         column.addWidget(label("Pitch", "section"))
         column.addSpacing(6)
@@ -583,7 +580,7 @@ class Studio(QMainWindow):
         column.addSpacing(6)
         self.shift_hint = label("", "hint", True)
         column.addWidget(self.shift_hint)
-        column.addSpacing(22)
+        column.addSpacing(18)
 
         column.addWidget(label("Timing", "section"))
         column.addSpacing(6)
@@ -610,7 +607,7 @@ class Studio(QMainWindow):
         compare.addStretch(1)
         column.addLayout(compare)
         column.addStretch(1)
-        column.addSpacing(20)
+        column.addSpacing(14)
         divider = QFrame()
         divider.setObjectName("divider")
         column.addWidget(divider)
@@ -1025,39 +1022,43 @@ class Studio(QMainWindow):
     def refresh_audio_outputs(self):
         devices = QMediaDevices.audioOutputs()
         default = QMediaDevices.defaultAudioOutput()
-        self.output_device.blockSignals(True)
-        self.output_device.clear()
-        self.output_device.addItem(default.description() or "System output", "system")
-        self.output_device.setItemData(0, "Follows the system output setting", Qt.ItemDataRole.ToolTipRole)
-        for device in devices:
-            self.output_device.addItem(device.description(), bytes(device.id()).hex())
-        index = self.output_device.findData(self.output_preference)
-        if index < 0:
+        entries = [(f"System output ({default.description()})" if default.description() else "System output", "system")]
+        entries += [(device.description(), bytes(device.id()).hex()) for device in devices]
+        if self.output_preference not in [value for _, value in entries]:
             # A disconnected, explicitly selected headset must not silently send
             # playback to speakers. Remember it so reconnecting restores the route.
-            self.output_device.addItem("Selected output disconnected", self.output_preference)
-            index = self.output_device.count() - 1
-        self.output_device.setCurrentIndex(index)
-        self.output_device.blockSignals(False)
+            entries.append(("Selected output (disconnected)", self.output_preference))
+        self.output_menu.clear()
+        for action in self.output_group.actions():
+            self.output_group.removeAction(action)
+        for index, (text, value) in enumerate(entries):
+            action = self.output_menu.addAction(text)
+            action.setCheckable(True)
+            action.setChecked(value == self.output_preference)
+            action.triggered.connect(lambda checked=False, v=value: self.change_audio_output(v))
+            self.output_group.addAction(action)
+            if index == 0 and len(entries) > 1:
+                self.output_menu.addSeparator()
         chosen = default if self.output_preference == "system" else next(
             (d for d in devices if bytes(d.id()).hex() == self.output_preference), None)
         if chosen is None or chosen.isNull():
             self.player.pause()
             self.audio.setMuted(True)
+            self.output_button.setIcon(T.icon("speaker", T.BAD, 18))
+            self.output_button.setToolTip("Audio output unavailable")
             self.say("Audio output unavailable. Connect it or choose another output.")
             return
         self.audio.setMuted(False)
         if self.audio.device().id() != chosen.id():
             self.audio.setDevice(chosen)
-        self.output_device.setToolTip("Playback output: " + chosen.description())
+        self.output_button.setIcon(T.icon("speaker", T.TEXT_2, 18))
+        self.output_button.setToolTip("Playing through " + chosen.description())
 
-    def change_audio_output(self, index):
-        if index < 0:
-            return
-        self.output_preference = self.output_device.itemData(index)
-        self.write_prefs(audio_output=self.output_preference)
+    def change_audio_output(self, value):
+        self.output_preference = value
+        self.write_prefs(audio_output=value)
         self.refresh_audio_outputs()
-        self.say(self.output_device.toolTip())
+        self.say(self.output_button.toolTip())
 
     # Background work -----------------------------------------------------------------------
 

@@ -44,16 +44,32 @@ GOOD = "#4FD1A1"
 BAD = "#FF7A6B"
 SELECTION = "#33395E"
 
-SIZE_SMALL, SIZE_BODY, SIZE_HEADING, SIZE_TITLE, SIZE_READOUT = 11, 13, 15, 18, 26
+SIZE_SMALL, SIZE_META, SIZE_BODY, SIZE_HEADING, SIZE_TITLE, SIZE_READOUT = 12, 13, 14, 16, 20, 30
+
+# Barlow (SIL Open Font License, see assets/fonts/OFL.txt): a DIN-style grotesque,
+# the lettering of mixer panels and rack gear. The platform face is the fallback.
+FONT_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent)) / "assets" / "fonts"
 
 _family = None
 _reduced_motion = None
 _asset_dir = None
 
 
+def _load_fonts():
+    families = set()
+    for path in sorted(FONT_DIR.glob("*.ttf")):
+        # Qt only accepts absolute paths here.
+        identity = QFontDatabase.addApplicationFont(str(path.resolve()))
+        if identity >= 0:
+            families.update(QFontDatabase.applicationFontFamilies(identity))
+    return families
+
+
 def family() -> str:
-    """The platform UI face (SF Pro on macOS, Segoe UI on Windows)."""
+    """Barlow when bundled, otherwise the platform UI face (SF Pro on macOS, Segoe UI on Windows)."""
     global _family
+    if _family is None and "Barlow" in _load_fonts():
+        _family = "Barlow"
     if _family is None:
         system = QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont).family()
         available = set(QFontDatabase.families())
@@ -247,17 +263,18 @@ def palette() -> QPalette:
 def stylesheet() -> str:
     chevron = _asset("chevron-down", TEXT_2, 12)
     check = _asset("check", ON_ACCENT, 14)
+    tick = _asset("check", ACCENT, 14)
     return f"""
 QMainWindow, QDialog {{ background: {BASE}; }}
 QWidget {{ color: {TEXT}; }}
 QLabel {{ background: transparent; }}
 QLabel[role="readout"] {{ font-size: {SIZE_READOUT}px; font-weight: 500; }}
-QLabel[role="small"] {{ color: {TEXT_2}; font-size: 12px; }}
+QLabel[role="small"] {{ color: {TEXT_2}; font-size: {SIZE_META}px; }}
 QLabel[role="title"] {{ font-size: {SIZE_TITLE}px; font-weight: 600; }}
 QLabel[role="heading"] {{ font-size: {SIZE_HEADING}px; font-weight: 600; }}
 QLabel[role="section"] {{ font-size: {SIZE_BODY}px; font-weight: 600; color: {TEXT}; }}
 QLabel[role="secondary"] {{ color: {TEXT_2}; }}
-QLabel[role="hint"] {{ color: {TEXT_3}; font-size: 12px; }}
+QLabel[role="hint"] {{ color: {TEXT_3}; font-size: {SIZE_META}px; }}
 QLabel[role="good"] {{ color: {GOOD}; }}
 QLabel[role="bad"] {{ color: {BAD}; }}
 
@@ -312,7 +329,7 @@ QAbstractSpinBox:hover {{ border-color: {EDGE_HOVER}; }}
 QAbstractSpinBox:focus {{ border-color: {ACCENT}; }}
 QAbstractSpinBox:disabled {{ color: {TEXT_3}; background: {BASE}; border-color: {LINE}; }}
 QAbstractSpinBox::up-button, QAbstractSpinBox::down-button {{ width: 0; border: 0; }}
-QAbstractSpinBox[role="readout"] {{ background: transparent; border-color: transparent; font-size: 20px; font-weight: 600;
+QAbstractSpinBox[role="readout"] {{ background: transparent; border-color: transparent; font-size: 22px; font-weight: 600;
                                    padding: 2px 4px; }}
 QAbstractSpinBox[role="readout"]:hover {{ background: {RAISED}; border-color: {LINE_STRONG}; }}
 QAbstractSpinBox[role="readout"]:focus {{ background: {RAISED}; border-color: {ACCENT}; }}
@@ -363,6 +380,9 @@ QMenu {{ background: {RAISED}; border: 1px solid {LINE_STRONG}; border-radius: 8
 QMenu::item {{ padding: 6px 28px 6px 12px; border-radius: 4px; }}
 QMenu::item:selected {{ background: {HOVER}; }}
 QMenu::item:disabled {{ color: {TEXT_3}; }}
+QMenu::indicator {{ width: 14px; height: 14px; }}
+QMenu::indicator:checked {{ image: url("{tick}"); }}
+QToolButton::menu-indicator {{ image: none; width: 0; }}
 QMenu::separator {{ height: 1px; background: {LINE}; margin: 5px 4px; }}
 QToolTip {{ background: {HOVER}; color: {TEXT}; border: 1px solid {LINE_STRONG}; padding: 6px 8px; border-radius: 4px; }}
 QMessageBox QLabel {{ font-size: {SIZE_BODY}px; }}

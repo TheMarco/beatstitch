@@ -158,6 +158,9 @@ On Windows use `.venv\Scripts\python` for these commands. The result is a macOS
 Keep the full output folder together on Windows/Linux. Each platform needs its own
 build and playback/export test. The local macOS bundle is ad-hoc signed, not notarized.
 Engine and dependency licenses apply to any distribution of the bundled binaries.
+The interface font, Barlow, is bundled from `assets/fonts` under the SIL Open Font
+License (`assets/fonts/OFL.txt`); without those files the app falls back to the
+system font.
 See [PyInstaller packaging](https://pyinstaller.org/en/stable/usage.html).
 
 ### Current scope

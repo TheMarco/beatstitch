@@ -20,7 +20,7 @@ def main():
           '--specpath',str(root/'build'),'--collect-all','librosa','--collect-data','scipy',
           '--exclude-module','PySide6.QtWebEngineCore','--exclude-module','PySide6.QtWebEngineWidgets',
           '--exclude-module','matplotlib','--exclude-module','tkinter',
-          '--add-data',str(root/'README.md')+':.']
+          '--add-data',str(root/'README.md')+':.','--add-data',str(root/'assets'/'fonts')+':assets/fonts']
     if sys.platform=='darwin':
         args+=['--osx-bundle-identifier','local.djstudio.app']
     for name in ('ffmpeg','ffprobe','rubberband'):
