@@ -30,6 +30,7 @@ class Track:
     estimated: bool = True
     waveform: list[float] = field(default_factory=list)
     status: str = "Pending analysis"
+    timing: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -44,6 +45,7 @@ class Clip:
     bass_swap: bool = True
     intro_percussive: bool = False
     outro_percussive: bool = False
+    stabilize: bool = False
 
     @property
     def shift(self):
@@ -58,11 +60,11 @@ class Session:
     clips: list[Clip] = field(default_factory=list)
 
     def to_dict(self):
-        return {"version": 1, **asdict(self)}
+        return {"version": 2, **asdict(self)}
 
     @classmethod
     def from_dict(cls, value):
-        if value.get("version") != 1:
+        if value.get("version") not in (1, 2):
             raise djmix.MixError("Unsupported project version.")
         result = cls(name=str(value["name"]), target_bpm=float(value["target_bpm"]),
                      tracks={k: Track(**v) for k, v in value["tracks"].items()},
@@ -118,7 +120,7 @@ def cache_track(track: Track, cache: Path):
     (cache / f"{track.id}.json").write_text(json.dumps(data, allow_nan=False))
 
 
-def estimate_track(track: Track) -> Track:
+def estimate_track(track: Track, timing_cache=None, progress=lambda message: None) -> Track:
     from analyze_audio import analyze
     duration = min(60.0, track.duration)
     result = analyze(Path(track.path), 0, duration, bars=8 if duration >= 25 else 4)
@@ -129,12 +131,16 @@ def estimate_track(track: Track) -> Track:
     stable = [w for w in windows if w["grid_residual_p95_ms"] < 25] or windows
     chosen = min(stable[:8], key=lambda w: w["grid_residual_p95_ms"])
     track.bpm = chosen["bpm"]
+    from studio_timing import analyze as analyze_timing
+    track.timing = analyze_timing(Path(track.path), track.bpm, track.duration, timing_cache, progress)
+    if track.timing['bpm'] is not None:
+        track.bpm = track.timing['bpm']
     candidates = result["section_key_candidates"]
     track.key = candidates[0]["key"] if candidates else ""
     track.cue_in = chosen["cue_seconds"]
     bar = 240 / track.bpm
     track.cue_out = min(track.duration, track.cue_in + math.floor((track.duration - track.cue_in) / bar) * bar)
-    track.status = "Estimated · review cues"
+    track.status = "Estimated across song · review cues" if track.timing['bpm'] else "Timing uncertain · review BPM and cues"
     return track
 
 
@@ -158,7 +164,9 @@ def layout(session: Session) -> list[dict]:
             raise djmix.MixError("Blend length must be between 1 and 32 bars.")
         if not isinstance(clip.semitones, int) or not -12 <= clip.semitones <= 12:
             raise djmix.MixError("Pitch adjustment must be between -12 and +12 semitones.")
-        length = round((clip.cue_out - clip.cue_in) * track.bpm / session.target_bpm * djmix.SR)
+        from studio_timing import corrected_time
+        length = round((corrected_time(track, clip, clip.cue_out) - corrected_time(track, clip, clip.cue_in))
+                       * track.bpm / session.target_bpm * djmix.SR)
         overlap = round(clip.blend_bars * 240 / session.target_bpm * djmix.SR) if index else 0
         if index and (overlap >= length or overlap + result[-1]["incoming"] >= result[-1]["length"]):
             raise djmix.MixError("A blend is longer than the available audio. Shorten it or widen the clip's in/out points.")
@@ -256,6 +264,10 @@ def render_session(session: Session, destination: Path, *, region=None,
                 measurement = cache.measurement(Path(track.path)) if cache else djmix.meter(Path(track.path))
                 gain = min(12, -18 - measurement["lufs"])
                 local_start, local_end = left-position["start"], right-position["start"]
+                from studio_timing import mapping, prepare as prepare_timing, signature
+                warped = mapping(track, clip) is not None
+                if clip.stabilize and track.timing.get('source') != signature(track.path):
+                    raise djmix.MixError(f"{track.name} changed on disk. Analyze its timing again.")
                 family = cache.family(track, clip, session.target_bpm, gain) if cache else None
                 cached = cache.get(family, local_start, local_end) if cache else None
                 if cached:
@@ -264,14 +276,19 @@ def render_session(session: Session, destination: Path, *, region=None,
                     cache_offset = cached[2]; reused += 1
                 else:
                     progress(f"Processing {track.name} ({index + 1}/{len(session.clips)})")
-                    raw = djmix.prepare(Path(track.path), selection, track.duration, track.bpm,
-                                        session.target_bpm, clip.shift, True, work, str(index), gain)
+                    if warped:
+                        progress(f"Stabilizing {track.name} · preparing the clip for reuse")
+                        raw = prepare_timing(track, clip, session.target_bpm, work, str(index), gain)
+                    else:
+                        raw = djmix.prepare(Path(track.path), selection, track.duration, track.bpm,
+                                            session.target_bpm, clip.shift, True, work, str(index), gain)
                     low, high = djmix.split_bands(raw, work, str(index))
-                    cache_offset = 0; processed += 1
+                    cache_offset = local_start if warped else 0; processed += 1
                 arrays.extend([low, high])
                 if not cached:
                     if cache:
-                        cache.put(family, local_start, local_end, Path(low.filename), Path(high.filename))
+                        cache.put(family, 0 if warped else local_start,
+                                  position['length'] if warped else local_end, Path(low.filename), Path(high.filename))
                 prepared.append((index, left, right, low, high, cache_offset))
             progress("Blending transitions")
             raw_mix = work / "arrangement.raw"

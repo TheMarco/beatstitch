@@ -52,8 +52,13 @@ class AudioCache:
     def family(self, track, clip, target, gain):
         # Timeline position, overlap length, key labels, and bass envelopes do not
         # affect the transformed source audio. A disabled pitch setting is always zero.
-        return self.root / 'audio' / digest([self.engine, source_signature(track.path),
-            track.bpm, target, clip.shift, clip.cue_in, gain, True])
+        from studio_timing import mapping, RENDER_VERSION
+        points = mapping(track, clip)
+        settings = [self.engine, source_signature(track.path),
+                    track.bpm, target, clip.shift, clip.cue_in, gain, True]
+        if points is not None:
+            settings.append(['timing', RENDER_VERSION, points.tolist(), clip.cue_out])
+        return self.root / 'audio' / digest(settings)
 
     def get(self, family, start, end):
         candidates = []
@@ -87,6 +92,12 @@ class AudioCache:
         for path in (self.root / 'audio').glob('*/*/entry.json'):
             try:
                 size = sum((path.parent / name).stat().st_size for name in ('low.raw','high.raw'))
+                entries.append((path.stat().st_mtime_ns, size, path.parent))
+            except OSError:
+                continue
+        for path in (self.root / 'auditions').glob('*/report.json'):
+            try:
+                size = sum(p.stat().st_size for p in path.parent.glob('*.wav'))
                 entries.append((path.stat().st_mtime_ns, size, path.parent))
             except OSError:
                 continue

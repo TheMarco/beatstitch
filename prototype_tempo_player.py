@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Small native Qt A/B player for the isolated tempo experiment."""
+import argparse
 import json
 from pathlib import Path
 import sys
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
-from PySide6.QtMultimedia import QAudioOutput, QMediaDevices, QMediaPlayer
+from PySide6.QtMultimedia import QMediaDevices
 from PySide6.QtWidgets import (
     QApplication, QButtonGroup, QCheckBox, QComboBox, QHBoxLayout, QLabel,
     QPushButton, QSlider, QVBoxLayout, QWidget,
@@ -14,27 +15,25 @@ from PySide6.QtWidgets import (
 
 ROOT = Path(__file__).resolve().parent
 
+from prototype_ab_audio import ABTransport
+
 
 class TempoLab(QWidget):
-    def __init__(self, folders, gentle=False):
+    def __init__(self, folders, gentle=False, diagnostics=False):
         super().__init__()
         self.folders = folders
         self.reports = [json.loads((p / "report.json").read_text()) for p in folders]
-        self.setWindowTitle("Tempo Lab — " + ("Gentle correction" if gentle else "Stronger correction"))
+        self.setWindowTitle("Tempo Lab — " + ("Gentle correction" if gentle else "Stronger correction") + " · continuous A/B")
         self.resize(780, 520)
         self.setMinimumSize(700, 500)
-        self.pending = None
+        self.diagnostics = diagnostics
         self.output_preference = "system"
         self.variant = "fixed"
         self.devices = QMediaDevices(self)
-        self.player = QMediaPlayer(self)
-        self.audio = QAudioOutput(self)
-        self.audio.setVolume(.65)
-        self.player.setAudioOutput(self.audio)
-        self.player.mediaStatusChanged.connect(self.loaded)
+        self.player = ABTransport(self)
         self.player.positionChanged.connect(self.position_changed)
-        self.player.playbackStateChanged.connect(self.play_state)
-        self.player.errorOccurred.connect(lambda error, message: self.status.setText(message))
+        self.player.playingChanged.connect(self.play_state)
+        self.player.errorOccurred.connect(lambda message: self.status.setText(message))
         self.devices.audioOutputsChanged.connect(self.refresh_outputs)
 
         layout = QVBoxLayout(self)
@@ -63,7 +62,7 @@ class TempoLab(QWidget):
 
         choices = QHBoxLayout()
         group = QButtonGroup(self)
-        self.a = QPushButton("A · Current processing")
+        self.a = QPushButton("A · Fixed BPM")
         self.b = QPushButton("B · Gentle correction" if gentle else "B · Stronger correction")
         for button in (self.a, self.b):
             button.setCheckable(True)
@@ -75,7 +74,7 @@ class TempoLab(QWidget):
         self.b.clicked.connect(lambda: self.choose("straightened"))
         layout.addLayout(choices)
         self.click = QCheckBox("Add a steady reference click")
-        self.click.toggled.connect(lambda _: self.reload(self.player.position(), self.is_playing()))
+        self.click.toggled.connect(self.player.set_click)
         layout.addWidget(self.click)
 
         transport = QHBoxLayout()
@@ -84,17 +83,17 @@ class TempoLab(QWidget):
         self.play.clicked.connect(self.toggle_play)
         transport.addWidget(self.play)
         restart = QPushButton("Restart")
-        restart.clicked.connect(lambda: self.player.setPosition(0))
+        restart.clicked.connect(lambda: self.player.seek(0))
         transport.addWidget(restart)
         self.seek = QSlider(Qt.Orientation.Horizontal)
         self.seek.setAccessibleName("Playback position")
-        self.seek.sliderReleased.connect(lambda: self.player.setPosition(self.seek.value()))
+        self.seek.sliderReleased.connect(lambda: self.player.seek(self.seek.value()))
         transport.addWidget(self.seek, 1)
         self.time = QLabel("0:00 / 0:00")
         self.time.setMinimumWidth(90)
         transport.addWidget(self.time)
         layout.addLayout(transport)
-        self.status = QLabel("Press Play, then switch A/B at any point. Switching keeps your position.")
+        self.status = QLabel("Press Play, then switch A/B freely. Playback stays continuous.")
         self.status.setObjectName("muted")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
@@ -111,7 +110,7 @@ class TempoLab(QWidget):
         volume.setRange(0, 100)
         volume.setValue(65)
         volume.setMaximumWidth(100)
-        volume.valueChanged.connect(lambda value: self.audio.setVolume(value / 100))
+        volume.valueChanged.connect(lambda value: self.player.set_volume(value / 100))
         bottom.addWidget(volume)
         layout.addLayout(bottom)
         footnote = QLabel("Listen for tighter kicks, but also any smeared drums, flutter or changed texture.\n"
@@ -137,7 +136,7 @@ class TempoLab(QWidget):
         self.change_track()
 
     def is_playing(self):
-        return self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
+        return self.player.playing
 
     def refresh_outputs(self):
         devices = QMediaDevices.audioOutputs()
@@ -155,13 +154,7 @@ class TempoLab(QWidget):
         self.output.blockSignals(False)
         chosen = default if self.output_preference == "system" else next(
             (d for d in devices if bytes(d.id()).hex() == self.output_preference), None)
-        if chosen is None or chosen.isNull():
-            self.player.pause()
-            self.audio.setMuted(True)
-            self.status.setText("The selected audio output is unavailable.")
-        else:
-            self.audio.setDevice(chosen)
-            self.audio.setMuted(False)
+        self.player.set_device(chosen)
 
     def choose_output(self, index):
         self.output_preference = self.output.itemData(index)
@@ -173,36 +166,28 @@ class TempoLab(QWidget):
         self.detail.setText(f"{report['target_bpm']} BPM  ·  {report['duration']:.1f} seconds  ·  "
                             f"Source passage {int(start)//60}:{int(start)%60:02d}–{int(end)//60}:{int(end)%60:02d}")
         self.seek.setRange(0, round(report["duration"] * 1000))
-        self.reload(0, False)
+        try:
+            self.player.load(self.folders[self.track.currentIndex()])
+            self.status.setText("Press Play, then switch A/B freely. Playback stays continuous.")
+        except (OSError, ValueError, RuntimeError) as exc:
+            self.status.setText(f"Could not load audition: {exc}")
 
     def choose(self, variant):
         if variant != self.variant:
             self.variant = variant
-            self.reload(self.player.position(), self.is_playing())
-
-    def reload(self, position, play):
-        self.player.pause()
-        self.pending = (position, play)
-        suffix = "-click" if self.click.isChecked() else ""
-        path = self.folders[self.track.currentIndex()] / f"{self.variant}{suffix}.wav"
-        self.player.setSource(QUrl.fromLocalFile(str(path)))
-
-    def loaded(self, status):
-        if status in (QMediaPlayer.MediaStatus.LoadedMedia, QMediaPlayer.MediaStatus.BufferedMedia):
-            if self.pending is not None:
-                position, play = self.pending
-                self.pending = None
-                self.player.setPosition(position)
-                if play:
-                    self.player.play()
+            self.player.select(variant)
+            if self.diagnostics:
+                print(json.dumps({"switch": variant, "playing": self.player.playing,
+                                  "position_ms": self.player.position(),
+                                  "sink_starts": self.player.start_count,
+                                  "sink_resets": self.player.reset_count}), flush=True)
 
     def toggle_play(self):
         if self.is_playing():
             self.player.pause()
         else:
             self.refresh_outputs()
-            if not self.audio.isMuted():
-                self.player.play()
+            self.player.play()
 
     def play_state(self, *_):
         self.play.setText("Pause" if self.is_playing() else "Play")
@@ -214,14 +199,26 @@ class TempoLab(QWidget):
         seconds = value // 1000
         self.time.setText(f"{seconds//60}:{seconds%60:02d} / {duration//60}:{duration%60:02d}")
 
+    def closeEvent(self, event):
+        self.player.close()
+        super().closeEvent(event)
+
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--gentle", action="store_true")
+    parser.add_argument("--folder", type=Path, action="append", help="Audition a rendered comparison folder.")
+    parser.add_argument("--diagnostics", action="store_true", help="Log A/B transport continuity checks.")
+    args = parser.parse_args()
     app = QApplication(sys.argv)
     app.setApplicationName("Tempo Lab")
     app.setFont(QFont("Arial", 13))
-    gentle = "--gentle" in sys.argv
+    gentle = args.gentle
     suffix = "gentle" if gentle else "r2"
-    folders = [ROOT / "outputs/tempo-prototype" / f"{name}-{suffix}" for name in ("voyager", "another-realm")]
-    window = TempoLab(folders, gentle)
+    folders = ([p.resolve() for p in args.folder] if args.folder else
+               [ROOT / "outputs/tempo-prototype" / f"{name}-{suffix}" for name in ("voyager", "another-realm")])
+    window = TempoLab(folders, gentle, args.diagnostics)
+    if args.folder:
+        window.setWindowTitle("Tempo Lab — " + window.reports[0]["name"] + " · continuous A/B")
     window.show()
     sys.exit(app.exec())

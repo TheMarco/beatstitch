@@ -90,15 +90,20 @@ def render_comparison(scan: Path, out: Path, candidate: int = 0, warp_engine: st
     source = Path(result["path"])
     selected = result["candidates"][candidate]
     beats = np.asarray(selected["beats"])
-    if len(beats) != 65 or np.any(np.diff(beats) <= 0):
-        raise ValueError("Expected 65 strictly increasing beat landmarks.")
+    beat_numbers = np.asarray(selected.get("beat_numbers", np.arange(len(beats))), dtype=float)
+    if (len(beats) < 8 or len(beat_numbers) != len(beats) or
+            not np.isfinite(beats).all() or not np.isfinite(beat_numbers).all() or
+            np.any(np.diff(beats) <= 0) or np.any(np.diff(beat_numbers) <= 0)):
+        raise ValueError("Expected finite, strictly increasing beat landmarks and beat numbers.")
+    beat_numbers -= beat_numbers[0]
+    beat_count = beat_numbers[-1]
     out.mkdir(parents=True, exist_ok=True)
     work = out / "work"
     work.mkdir(exist_ok=True)
     # Keep the same average speed in A and B. The only difference is local timing.
     target_bpm = round(selected["bpm"])
     period = 60 / target_bpm
-    ratio = 64 * period / (beats[-1] - beats[0])
+    ratio = beat_count * period / (beats[-1] - beats[0])
     start = round((beats[0] - 2) * SR) / SR
     end = min(probe(source)["duration"], beats[-1] + 2)
     if start < 0 or end - beats[-1] < .6:
@@ -109,13 +114,14 @@ def render_comparison(scan: Path, out: Path, candidate: int = 0, warp_engine: st
            "-c:a", "pcm_f32le", str(decoded))
     n = len(read_stereo(decoded))
     source_frames = np.round((beats - start) * SR).astype(int)
-    target_frames = np.round(((beats[0] - start) * ratio + np.arange(65) * period) * SR).astype(int)
+    target_frames = np.round(((beats[0] - start) * ratio + beat_numbers * period) * SR).astype(int)
     anchors = list(zip(source_frames, target_frames))
     anchors.append((n - 1, round(n * ratio) - 1))
     time_map = work / "beat-map.txt"
     # Origin is implicit. No redundant 0->0 mapping in Rubber Band R3.
     time_map.write_text("".join(f"{a} {b}\n" for a, b in anchors))
-    expected = .5 + np.arange(65) * period
+    expected = .5 + beat_numbers * period
+    reference_clicks = .5 + np.arange(int(np.floor(beat_count)) + 1) * period
     crop_start = target_frames[0] - round(.5 * SR)
     frames = round((expected[-1] + .5) * SR)
     metrics, rendered = {}, {}
@@ -144,7 +150,7 @@ def render_comparison(scan: Path, out: Path, candidate: int = 0, warp_engine: st
     click = np.zeros((frames, 2), dtype=np.float32)
     t = np.arange(round(.022 * SR)) / SR
     tick = .095 * np.sin(2 * np.pi * 1600 * t) * np.exp(-t * 220)
-    for point in expected:
+    for point in reference_clicks:
         pos = round(point * SR)
         click[pos:pos + len(tick)] += tick[:, None]
     for variant, (raw, audio) in rendered.items():
@@ -155,7 +161,11 @@ def render_comparison(scan: Path, out: Path, candidate: int = 0, warp_engine: st
             intermediate = work / "export.wav"
             write_float(intermediate, samples)
             ffmpeg("-i", str(intermediate), "-c:a", "pcm_s24le", str(out / f"{variant}{suffix}.wav"))
-        measured = measure_landmarks(out / f"{variant}.wav", expected)
+        # Follow the same source events even when their accumulated drift is
+        # larger than the measurement search radius. Never substitute a nearby
+        # beat merely because it happens to be closer to the intended grid.
+        search_centers = (.5 + (beats - beats[0]) * ratio) if variant == "fixed" else expected
+        measured = measure_landmarks(out / f"{variant}.wav", search_centers)
         deviations = (measured - expected) * 1000
         metrics[variant].update({
             "loudness": meter(out / f"{variant}.wav"),
@@ -169,7 +179,8 @@ def render_comparison(scan: Path, out: Path, candidate: int = 0, warp_engine: st
         "source_start": float(beats[0]), "source_end": float(beats[-1]),
         "target_bpm": target_bpm, "duration": frames / SR, "source_beats": beats.tolist(),
         "warp_engine": warp_engine, "crisp": crisp,
-        "expected_beats": expected.tolist(), "metrics": metrics,
+        "expected_beats": expected.tolist(), "beat_numbers": beat_numbers.tolist(), "metrics": metrics,
+        "selection_notes": selected.get("notes", []),
         "notes": ["Experimental four-on-the-floor kick landmark detection, not verified downbeats.",
                   "Before/after timing is re-detected from rendered audio with the same kick feature; it is not independent beat ground truth.",
                   "Both versions have identical average stretch, original pitch, duration and matched loudness.",
