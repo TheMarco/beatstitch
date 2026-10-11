@@ -6,40 +6,86 @@ Windows, and Linux; this development build has been exercised on macOS.
 
 ## Desktop app
 
-On this Mac, double-click `Launch DJ Studio.command` to open the development app
-and restore the current session from `outputs/studio`. A packaged app is built at
+On this Mac, double-click `Launch DJ Studio.command` to open the app and restore
+the current session from `outputs/studio`. A packaged app is built at
 `dist/DJ Studio.app`; its default project storage is the operating system's local
-application-data directory. Use **Open project** to open an existing `.djmix` file.
+application-data directory. Use **File > Open** to open an existing `.djmix` file.
 
 The current example arrangement is stored at `outputs/studio/autosave.djmix`.
 Projects reference original audio paths rather than copying music into the project.
 Moving a project to another machine currently requires updating those source paths.
 
-1. Import a folder or individual songs. The library displays waveform, duration,
-   estimated BPM, and key; analysis runs locally in the background.
+1. Import a folder (subfolders included) or individual songs, or drop files and
+   folders onto the library. BPM and key analysis runs locally in the background.
+   Sort the library by name, BPM, or key; a green dot marks songs whose key fits
+   the selected clip.
 2. Drag songs onto the timeline, or double-click a library row. Drag arranged clips
-   to reorder them, or use **Earlier / Later**. Their overlaps are laid out automatically.
-3. Select a clip to edit its source BPM/key, in/out points, and incoming overlap
-   length. Click **Apply track settings** after editing. Cue times refer to the
-   original song. Its out point is the end of the outgoing overlap.
-4. Select **1 → 2**, **2 → 3**, etc. in **Transition review**, then click its clearly
-   numbered preview button. A preview includes four bars on each side of the blend.
+   to reorder them, or use **Earlier / Later**. Overlaps are laid out automatically.
+3. Select a clip to edit its source BPM and key, pitch, timing, and cue points in
+   the panel on the right. Changes apply immediately and can be undone and redone.
+   Drag the **In** and **Out** handles on the song waveform; they snap to bars from
+   the analyzed grid (hold Shift for beats, Option for free placement). Cue times
+   refer to the original song. The out point is the end of the outgoing overlap.
+4. The transition panel under the timeline shows the selected blend: its length,
+   bass handoff, beats-only flags for the outro and intro, and a key verdict. Step
+   through transitions with its arrows or `[` and `]`, then click **Preview
+   transition** (P). A preview includes four bars on each side of the blend.
 5. Original pitch is preserved while matching the project BPM. **Transpose this
-   track** enables a small suggested shift when available; the semitone value remains
+   song** enables a small suggested shift when available; the semitone value remains
    editable. Switch it off to restore the original key.
-6. Mark an intro/outro overlap as **beats only** when that whole section contains
-   no pitched bass, vocals, melody, or tonal tails. This relaxes harmonic guidance;
-   it does not change the audio. **Suggest order** presents a proposal for your
-   approval, retaining the opening track and all pitch/cue choices.
-7. Render the full arrangement for playback and seeking, or **Export mix** to a
-   stereo 48 kHz, 24-bit WAV. **Save project** preserves editable choices. Edits also
-   autosave; New retains a recovery copy. Undo restores arrangement and metadata edits.
+6. Mark an outro or intro as **beats only** when that whole overlap contains no
+   pitched bass, vocals, melody, or tonal tails. This relaxes harmonic guidance; it
+   does not change the audio. **Suggest order** shows a proposal to apply or keep
+   your own order; it retains the opening song and all pitch and cue choices.
+7. **Render full mix** for playback and seeking, or **Export mix** to a stereo
+   48 kHz, 24-bit WAV. A running render can be cancelled from the status bar.
+   **File > Save** writes to the current project file, and edits also autosave.
+   New and Open keep a recovery copy of unsaved work.
 
-The inspector scrolls at smaller window sizes so its input fields stay readable.
-The transport's **Output** selector follows the system default or routes playback
+The timeline draws each song as a three-band waveform (lows blue, mids cyan, highs
+white) with the crossfade and bass-handoff curves over each overlap. The overview
+strip above it shows the whole mix; click it to jump there. An amber line marks the
+range that has rendered audio. Waveform bands are computed once per song, cached in
+`library-cache`, and used for display only.
+
+Keyboard: Space plays or pauses, P previews the selected transition, `[` and `]`
+step through transitions, Delete removes the selected clip, and Cmd+Z and
+Cmd+Shift+Z undo and redo (Ctrl on Windows and Linux). Cmd+scroll or a trackpad
+pinch zooms the timeline.
+
+The speaker menu in the top bar follows the system default output or routes playback
 to a particular device such as AirPods or a USB audio interface. Device choices
 are remembered. If an explicitly selected device disconnects, playback pauses and
 mutes until that device returns or another output is selected.
+
+### Optional tempo stabilization
+
+New imports estimate BPM using reliable rhythm passages throughout the song.
+For an existing arranged track, select it and click **Analyze timing**.
+This preserves the saved BPM and source cues; **Use … BPM** applies
+the new estimate explicitly. Integer BPM is suggested only when long beat fits
+support it. A small error in the old BPM estimate does not itself trigger warping.
+
+When confident drift is found, **Stabilize tempo** enables gentle correction for
+that clip. It is off by default. The clip panel reports how much of the source has
+usable correction; sparse or conflicting beat observations are excluded, with
+short smooth joins to fixed timing. This detector targets regular EDM kick
+patterns and does not establish downbeats or guarantee a correct grid everywhere.
+Listen before using a correction in a final mix.
+
+**Compare A and B** prepares up to 90 seconds from a detected drift
+passage inside the applied cues. It uses the same processing as previews/exports,
+including the applied pitch shift and project tempo, and matches loudness.
+Both versions share one playback clock; switching uses a five-millisecond fade
+without reloading, pausing or seeking. The optional click stays on that clock.
+The comparison uses the main app's selected output device and volume.
+
+Stabilization uses the auditioned Rubber Band R2 crispness-4 time-map processing.
+When transposition is also enabled, an R3 pitch-only pass runs first: our Rubber
+Band 4.0 test found that combining R2 pitch and a time map in one pass displaced
+the beat grid. Cues remain source timestamps; corrected clip lengths and timeline
+positions come from the actual map. Existing version-1 projects open with
+stabilization disabled; saves use version 2.
 
 ### Processing cache
 
@@ -56,6 +102,14 @@ The app still assembles the requested mix and checks its final headroom on each
 render. The status bar reports reused and newly processed tracks. The audio cache
 is limited to 8 GiB and evicts the least recently used completed entries. Sources
 and saved projects are never part of cache eviction.
+
+Corrected clips are processed in full on their first preview, then reused by
+other previews and exports. Their timing map and both cues participate in the
+cache key; changing one track's correction does not invalidate other tracks.
+Turning correction off restores the original processing cache. Whole-song timing
+analysis is cached by source file, algorithm version and initial BPM. A/B audio
+also shares the 8 GiB cache budget. Changed source files require fresh timing
+analysis before a saved correction can be rendered.
 
 ### Install from source
 
@@ -109,9 +163,10 @@ See [PyInstaller packaging](https://pyinstaller.org/en/stable/usage.html).
 ### Current scope
 
 This is an offline arrangement editor: changes are rendered before auditioning.
-It assumes constant BPM and 4/4. Beat/key estimates are editable suggestions;
-phrase starts, vocals, local key changes, and tempo drift are not automatically
-resolved. Ordering is a simple key/BPM heuristic, not a model of musical energy.
+It assumes 4/4 and a fixed project BPM. Beat/key estimates are editable suggestions;
+optional tempo stabilization corrects confidently detected passages. Phrase starts,
+vocals, local key changes and ambiguous rhythms still need review. Ordering is a
+simple key/BPM heuristic, not a model of musical energy.
 The supplied first transition was auditioned; new transitions still need listening.
 
 ## Original audio proof and CLI
@@ -294,6 +349,11 @@ Desktop checks additionally cover three-track timing/export, project round trips
 optional transposition, a nonmutating order proposal, and persistent cache reuse
 after appending a track, previewing 2 → 3, changing pitch, replacing a source, and
 changing project tempo.
+
+Timing checks cover stable-versus-drifting evidence, uncertain gaps, version-1
+project loading, corrected pitch and transient timing after nonzero cues, exact
+preview reuse, source-change rejection, loudness-matched A/B caching, and one-clock
+playback with repeated switches and partial device writes.
 
 ## Engine references
 

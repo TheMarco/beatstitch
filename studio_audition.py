@@ -100,22 +100,21 @@ def prepare_comparison(session, selected, cache_dir, progress=lambda message: No
 class TimingComparison(QDialog):
     def __init__(self, report, output_preference, volume, parent=None):
         super().__init__(parent)
-        self.setWindowTitle('DJ Studio · Compare tempo correction')
+        self.setWindowTitle('Compare tempo correction')
         self.setMinimumWidth(620)
         self.setWindowModality(Qt.WindowModality.WindowModal)
-        self.setStyleSheet('QPushButton:checked { background: #cef18a; color: #152010; border-color: #cef18a; }')
         self.output_preference = output_preference
         self.player = ABTransport(self)
         self.devices = QMediaDevices(self)
         box = QVBoxLayout(self); box.setContentsMargins(26, 24, 26, 24); box.setSpacing(16)
-        title = QLabel(report['name']); title.setObjectName('title'); box.addWidget(title)
+        title = QLabel(report['name']); title.setProperty('role', 'title'); box.addWidget(title)
         start = report['source_start']
-        info = QLabel(f"{report['target_bpm']:g} BPM project · {report['shift']:+d} semitones · "
-                      f"from {int(start)//60}:{int(start)%60:02d} in the source\n"
-                      'Switch A/B while playback continues. Loudness is matched.')
-        info.setWordWrap(True); info.setObjectName('muted'); box.addWidget(info)
+        info = QLabel(f"{report['target_bpm']:g} BPM project, {report['shift']:+d} semitones, "
+                      f"from {int(start)//60}:{int(start)%60:02d} in the source.\n"
+                      'Switch between A and B while it plays. Loudness is matched.')
+        info.setWordWrap(True); info.setProperty('role', 'secondary'); box.addWidget(info)
         row = QHBoxLayout(); self.group = QButtonGroup(self)
-        for text, variant in [('A · Fixed BPM', 'fixed'), ('B · Stabilize tempo', 'straightened')]:
+        for text, variant in [('A: fixed BPM', 'fixed'), ('B: stabilized tempo', 'straightened')]:
             button = QPushButton(text); button.setCheckable(True); button.setMinimumHeight(56)
             self.group.addButton(button); row.addWidget(button)
             button.clicked.connect(lambda checked=False, v=variant: self.player.select(v))
@@ -127,10 +126,10 @@ class TimingComparison(QDialog):
         self.seek = QSlider(Qt.Orientation.Horizontal); self.seek.setRange(0, round(report['duration']*1000))
         self.seek.sliderReleased.connect(lambda: self.player.seek(self.seek.value())); row.addWidget(self.seek, 1)
         self.time = QLabel('0:00'); row.addWidget(self.time); box.addLayout(row)
-        self.status = QLabel(); self.status.setWordWrap(True); self.status.setObjectName('muted'); box.addWidget(self.status)
-        footer = QLabel('This comparison uses your applied cue, pitch and project-tempo settings.\n'
-                        'Close it, then use “Stabilize tempo” in Track & Blend to change the mix.')
-        footer.setObjectName('muted'); footer.setWordWrap(True); box.addWidget(footer)
+        self.status = QLabel(); self.status.setWordWrap(True); self.status.setProperty('role', 'secondary'); box.addWidget(self.status)
+        footer = QLabel('This comparison uses your current cue, pitch and project tempo settings. '
+                        'Close it, then turn on Stabilize tempo in the clip panel to use the correction.')
+        footer.setProperty('role', 'hint'); footer.setWordWrap(True); box.addWidget(footer)
         close = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         close.rejected.connect(self.reject); box.addWidget(close)
         self.player.positionChanged.connect(self.position_changed)
