@@ -15,65 +15,73 @@ The current example arrangement is stored at `outputs/studio/autosave.djmix`.
 Projects reference original audio paths rather than copying music into the project.
 Moving a project to another machine currently requires updating those source paths.
 
-1. Import a folder (subfolders included) or individual songs, or drop files and
+The layout follows arrangement-based DAWs such as Ableton Live: a control bar on
+top, the library on the left, the arrangement in the middle, and a detail view for
+the selected clip and transition at the bottom.
+
+1. Click **Add folder…** (subfolders included) or **Add files…**, or drop files and
    folders onto the library. BPM and key analysis runs locally in the background.
-   Sort the library by name, BPM, or key; a green dot marks songs whose key fits
-   the selected clip.
-2. Drag songs onto the timeline, or double-click a library row. Drag arranged clips
-   to reorder them, or use **Earlier / Later**. Overlaps are laid out automatically.
-3. Select a clip to edit its source BPM and key, pitch, timing, and cue points in
-   the panel on the right. Changes apply immediately and can be undone and redone.
-   Drag the **In** and **Out** handles on the song waveform; they snap to bars from
-   the analyzed grid (hold Shift for beats, Option for free placement). Cue times
-   refer to the original song. The out point is the end of the outgoing overlap.
-4. The transition panel under the timeline shows the selected blend: its length,
-   bass handoff, beats-only flags for the outro and intro, and a key verdict. Step
-   through transitions with its arrows or `[` and `]`, then click **Preview
-   transition** (P). A preview includes four bars on each side of the blend.
-5. Original pitch is preserved while matching the project BPM. **Transpose this
-   song** enables a small suggested shift when available; the semitone value remains
-   editable. Switch it off to restore the original key.
-6. Mark an outro or intro as **beats only** when that whole overlap contains no
+   Click a column header to sort by name, BPM, key (Camelot order), or length. A
+   colored square marks songs already in the mix; a green dot marks songs whose key
+   fits the selected clip.
+2. Drag songs onto the arrangement, or double-click a library row. Songs alternate
+   between the Deck A and Deck B lanes and overlap automatically. Drag clips to
+   reorder them, or use the arrow buttons in the Clip box.
+3. Select a clip to edit it in the detail view. Number boxes change when you drag
+   them up or down (Shift for fine steps); double-click one to type a value.
+   Changes apply immediately and can be undone and redone. Drag the **Start** and
+   **End** markers on the sample display; they snap to bars from the analyzed grid
+   (hold Shift for beats, Option for free placement). Cue times refer to the
+   original song. The end point is the end of the outgoing overlap.
+4. Transitions appear as numbered locators above the bar ruler, with a green dot
+   for a key match and a red one for a clash. The Transition box on the right of
+   the detail view holds the blend length, **Bass swap**, the drum-only flags, and
+   the key verdict. Step through transitions with its arrows or `[` and `]`, then
+   click **Preview** (P). A preview includes four bars on each side of the blend.
+5. Original pitch is preserved while matching the project BPM. Turn the
+   **Transpose** knob to shift a song in semitones, or click **Match key** to apply
+   the suggested shift. Double-click the knob to return to the original key.
+6. Turn on **Drum outro** or **Drum intro** when that whole overlap contains no
    pitched bass, vocals, melody, or tonal tails. This relaxes harmonic guidance; it
    does not change the audio. **Suggest order** shows a proposal to apply or keep
    your own order; it retains the opening song and all pitch and cue choices.
-7. **Render full mix** for playback and seeking, or **Export mix** to a stereo
-   48 kHz, 24-bit WAV. A running render can be cancelled from the status bar.
-   **File > Save** writes to the current project file, and edits also autosave.
-   New and Open keep a recovery copy of unsaved work.
+7. **Render mix** for playback and seeking, or **Export…** to a stereo 48 kHz,
+   24-bit WAV. Rendered audio appears on the Mix lane. A running render can be
+   cancelled from the status bar. **File > Save** writes to the current project
+   file, and edits also autosave. New and Open keep a recovery copy of unsaved work.
 
-The timeline draws each song as a three-band waveform (lows blue, mids cyan, highs
-white) with the crossfade and bass-handoff curves over each overlap. The overview
-strip above it shows the whole mix; click it to jump there. An amber line marks the
-range that has rendered audio. Waveform bands are computed once per song, cached in
+Each song keeps one color. Its clip shows a three-band waveform in shades of that
+color (dark lows, mid-tone mids, pale highs), with the crossfade and bass-swap
+curves over each overlap. The overview strip above the ruler shows the whole mix;
+click it to jump there. Waveform bands are computed once per song, cached in
 `library-cache`, and used for display only.
 
 Keyboard: Space plays or pauses, P previews the selected transition, `[` and `]`
 step through transitions, Delete removes the selected clip, and Cmd+Z and
-Cmd+Shift+Z undo and redo (Ctrl on Windows and Linux). Cmd+scroll or a trackpad
-pinch zooms the timeline.
+Cmd+Shift+Z undo and redo (Ctrl on Windows and Linux). Drag the bar ruler up or
+down to zoom and sideways to scroll, or use Cmd+scroll or a trackpad pinch.
 
-The speaker menu in the top bar follows the system default output or routes playback
-to a particular device such as AirPods or a USB audio interface. Device choices
-are remembered. If an explicitly selected device disconnects, playback pauses and
-mutes until that device returns or another output is selected.
+The speaker menu in the control bar follows the system default output or routes
+playback to a particular device such as AirPods or a USB audio interface. Device
+choices are remembered. If an explicitly selected device disconnects, playback
+pauses and mutes until that device returns or another output is selected.
 
 ### Optional tempo stabilization
 
 New imports estimate BPM using reliable rhythm passages throughout the song.
-For an existing arranged track, select it and click **Analyze timing**.
-This preserves the saved BPM and source cues; **Use … BPM** applies
+For an existing arranged track, select it and click **Analyze** in the Sample box.
+This preserves the saved BPM and source cues; **Use …** next to the BPM applies
 the new estimate explicitly. Integer BPM is suggested only when long beat fits
 support it. A small error in the old BPM estimate does not itself trigger warping.
 
-When confident drift is found, **Stabilize tempo** enables gentle correction for
-that clip. It is off by default. The clip panel reports how much of the source has
+When confident drift is found, **Stabilize** enables gentle correction for
+that clip. It is off by default. The Sample box reports how much of the source has
 usable correction; sparse or conflicting beat observations are excluded, with
 short smooth joins to fixed timing. This detector targets regular EDM kick
 patterns and does not establish downbeats or guarantee a correct grid everywhere.
 Listen before using a correction in a final mix.
 
-**Compare A and B** prepares up to 90 seconds from a detected drift
+**A/B** prepares up to 90 seconds from a detected drift
 passage inside the applied cues. It uses the same processing as previews/exports,
 including the applied pitch shift and project tempo, and matches loudness.
 Both versions share one playback clock; switching uses a five-millisecond fade

@@ -1,15 +1,15 @@
-"""Custom-painted widgets for DJ Studio: timeline, overview, cue editor, library and controls."""
+"""Custom-painted widgets for DJ Studio, in the idiom of arrangement-based DAWs."""
 from __future__ import annotations
 
 import math
 
 import numpy as np
-from PySide6.QtCore import (QAbstractListModel, QEasingCurve, QEvent, QMimeData, QModelIndex, QPoint, QPointF,
-                            QRect, QRectF, QSize, Qt, QTimer, QVariantAnimation, Signal)
-from PySide6.QtGui import QColor, QDrag, QFont, QFontMetricsF, QPainter, QPainterPath, QPen, QPixmap, QPolygonF, QValidator
-from PySide6.QtWidgets import (QAbstractButton, QAbstractItemView, QAbstractScrollArea, QAbstractSpinBox,
-                               QComboBox, QDoubleSpinBox, QFrame, QHBoxLayout, QLabel, QLayout, QListView, QPushButton,
-                               QSizePolicy, QSpinBox, QStyle, QStyledItemDelegate, QToolButton, QWidget)
+from PySide6.QtCore import (QAbstractTableModel, QEvent, QMimeData, QModelIndex, QPointF, QRectF, QSize, Qt,
+                            QTimer, Signal)
+from PySide6.QtGui import QColor, QDrag, QFont, QFontMetricsF, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
+from PySide6.QtWidgets import (QAbstractItemView, QAbstractScrollArea, QComboBox, QFrame, QHBoxLayout, QHeaderView,
+                               QLabel, QLineEdit, QPushButton, QSizePolicy, QStyle, QStyledItemDelegate,
+                               QTableView, QToolButton, QWidget)
 
 import djmix
 import studio_theme as T
@@ -23,6 +23,7 @@ _MAJOR_CAMELOT = {0: "8B", 7: "9B", 2: "10B", 9: "11B", 4: "12B", 11: "1B", 6: "
 _MINOR_CAMELOT = {9: "8A", 4: "9A", 11: "10A", 6: "11A", 1: "12A", 8: "1A", 3: "2A", 10: "3A", 5: "4A", 0: "5A", 7: "6A", 2: "7A"}
 _MAJOR_NAMES = ("C", "D♭", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B")
 _MINOR_NAMES = ("C", "C♯", "D", "E♭", "E", "F", "F♯", "G", "G♯", "A", "B♭", "B")
+DARK_TEXT = "#141414"
 
 
 def parsed_key(key):
@@ -60,8 +61,14 @@ def clock(seconds, tenths=False) -> str:
     return f"{total // 60}:{total % 60:02d}"
 
 
+def bar_position(seconds, bpm) -> str:
+    """Bars, beats and sixteenths in 4/4, counted from 1 like a DAW position display."""
+    sixteenths = int(max(0.0, seconds) / (15 / bpm) + 1e-6)
+    return f"{sixteenths // 16 + 1}.{sixteenths // 4 % 4 + 1}.{sixteenths % 4 + 1}"
+
+
 def band_columns(bands, first_bin: float, last_bin: float, columns: int):
-    """Max-pool band envelopes into pixel columns, returning (columns, 3) or None."""
+    """Pool band envelopes into pixel columns, returning (columns, 3) or None."""
     if bands is None or len(bands) < 2 or columns < 1:
         return None
     first, last = max(0.0, first_bin), min(float(len(bands)), last_bin)
@@ -82,10 +89,11 @@ def band_columns(bands, first_bin: float, last_bin: float, columns: int):
 BAND_WEIGHTS = (0.94, 0.62, 0.34)
 
 
-def paint_bands(painter: QPainter, rect: QRectF, columns, alpha: float = 1.0):
+def paint_bands(painter: QPainter, rect: QRectF, columns, colors=None, alpha: float = 1.0):
     """Mirrored three-band waveform, low band behind, high band in front."""
     if columns is None or not len(columns):
         return
+    colors = colors or [QColor(c) for c in T.BANDS]
     count = len(columns)
     xs = rect.left() + (np.arange(count) + 0.5) * rect.width() / count
     xs = np.concatenate(([rect.left()], xs, [rect.right()]))
@@ -95,28 +103,31 @@ def paint_bands(painter: QPainter, rect: QRectF, columns, alpha: float = 1.0):
         amplitude = np.concatenate(([0.0], np.maximum(columns[:, band] * BAND_WEIGHTS[band], 0.012), [0.0])) * half
         top = [QPointF(x, middle - a) for x, a in zip(xs, amplitude)]
         bottom = [QPointF(x, middle + a) for x, a in zip(xs[::-1], amplitude[::-1])]
-        painter.setBrush(T.color(T.BANDS[band], alpha))
+        painter.setBrush(T.color(colors[band], alpha))
         painter.drawPolygon(QPolygonF(top + bottom))
 
 
-def paint_peaks(painter: QPainter, rect: QRectF, waveform, start: float, end: float, alpha=.5):
-    """Placeholder from the coarse library peaks while band data loads."""
-    if not waveform or rect.width() < 2:
+def paint_envelope(painter: QPainter, rect: QRectF, values, ink, alpha=1.0):
+    """Mirrored single-color envelope from values in 0..1."""
+    if values is None or not len(values) or rect.width() < 1:
         return
-    count = max(1, int(rect.width() / 2))
+    count = len(values)
+    xs = rect.left() + (np.arange(count) + .5) * rect.width() / count
+    middle, half = rect.center().y(), rect.height() / 2
+    top = [QPointF(x, middle - max(.5, v * half)) for x, v in zip(xs, values)]
+    bottom = [QPointF(x, middle + max(.5, v * half)) for x, v in zip(xs[::-1], values[::-1])]
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(T.color(ink, alpha))
+    painter.drawPolygon(QPolygonF(top + bottom))
+
+
+def peak_columns(waveform, start: float, end: float, count: int):
+    """Coarse library peaks (fractions of the song) as a placeholder while bands load."""
+    if not waveform or count < 1:
+        return None
     values = np.asarray(waveform, dtype=float)
     positions = np.clip((start + (np.arange(count) + .5) / count * (end - start)) * len(values), 0, len(values) - 1)
-    columns = np.zeros((count, 3))
-    columns[:, 0] = values[positions.astype(int)] * .8
-    painter.save()
-    painter.setPen(Qt.PenStyle.NoPen)
-    painter.setBrush(T.color(T.TEXT_3, alpha))
-    middle, half = rect.center().y(), rect.height() / 2
-    xs = rect.left() + (np.arange(count) + .5) * rect.width() / count
-    top = [QPointF(x, middle - max(.6, a * half)) for x, a in zip(xs, columns[:, 0])]
-    bottom = [QPointF(x, middle + max(.6, a * half)) for x, a in zip(xs[::-1], columns[::-1, 0])]
-    painter.drawPolygon(QPolygonF(top + bottom))
-    painter.restore()
+    return values[positions.astype(int)] * .8
 
 
 def gain_curves(progress, incoming: bool, bass_swap: bool, length_bars: float):
@@ -132,7 +143,7 @@ def gain_curves(progress, incoming: bool, bass_swap: bool, length_bars: float):
 
 # Controls ---------------------------------------------------------------------------------
 
-class SpinBox(QSpinBox):
+class ComboBox(QComboBox):
     """Ignores the scroll wheel unless focused, so scrolling a panel never edits values."""
 
     def wheelEvent(self, event):
@@ -142,82 +153,7 @@ class SpinBox(QSpinBox):
             event.ignore()
 
 
-class DoubleSpinBox(QDoubleSpinBox):
-    def wheelEvent(self, event):
-        if self.hasFocus():
-            super().wheelEvent(event)
-        else:
-            event.ignore()
-
-
-class ComboBox(QComboBox):
-    def wheelEvent(self, event):
-        if self.hasFocus():
-            super().wheelEvent(event)
-        else:
-            event.ignore()
-
-
-class SignedSpinBox(SpinBox):
-    """Semitone field: shows +2 and -3, and plain 0."""
-
-    def textFromValue(self, value):
-        return f"{value:+d}" if value else "0"
-
-    def valueFromText(self, text):
-        try:
-            return int(text.replace("+", "").strip() or 0)
-        except ValueError:
-            return self.value()
-
-    def validate(self, text, position):
-        stripped = text.replace("+", "").strip()
-        if stripped in ("", "-"):
-            return QValidator.State.Intermediate, text, position
-        try:
-            value = int(stripped)
-        except ValueError:
-            return QValidator.State.Invalid, text, position
-        state = QValidator.State.Acceptable if self.minimum() <= value <= self.maximum() else QValidator.State.Intermediate
-        return state, text, position
-
-
-class TimeSpinBox(DoubleSpinBox):
-    """Seconds shown as m:ss.mmm; plain seconds are accepted when typing."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setDecimals(3)
-        self.setRange(0, 3600)
-
-    def textFromValue(self, value):
-        total = int(round(value * 1000))
-        return f"{total // 60000}:{total % 60000 / 1000:06.3f}"
-
-    @staticmethod
-    def parse(text):
-        text = text.strip()
-        if ":" in text:
-            minutes, seconds = text.split(":", 1)
-            return int(minutes or 0) * 60 + float(seconds or 0)
-        return float(text)
-
-    def valueFromText(self, text):
-        try:
-            return self.parse(text)
-        except ValueError:
-            return self.value()
-
-    def validate(self, text, position):
-        try:
-            value = self.parse(text)
-            state = QValidator.State.Acceptable if self.minimum() <= value <= self.maximum() else QValidator.State.Intermediate
-        except ValueError:
-            state = QValidator.State.Intermediate
-        return state, text, position
-
-
-def tool_button(icon_name, tooltip, callback=None, size=16):
+def tool_button(icon_name, tooltip, callback=None, size=14):
     widget = QToolButton()
     widget.setIcon(T.icon(icon_name, size=size))
     widget.setIconSize(QSize(size, size))
@@ -230,200 +166,258 @@ def tool_button(icon_name, tooltip, callback=None, size=16):
     return widget
 
 
-class Stepper(QWidget):
-    """A field flanked by minus and plus buttons. The step may depend on context (one bar)."""
+class _InlineEditor(QLineEdit):
+    cancelled = Signal()
 
-    def __init__(self, spin: QAbstractSpinBox, step=None, label="value", parent=None):
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape:
+            self.cancelled.emit()
+            return
+        super().keyPressEvent(event)
+
+
+class ValueBox(QWidget):
+    """A DAW number box: drag up or down to change it, hold Shift for fine steps,
+    double-click or start typing to enter a value, arrow keys to nudge."""
+
+    committed = Signal(float)
+
+    def __init__(self, minimum, maximum, step=1.0, fine=None, decimals=0, suffix="", text=None, parse=None,
+                 width=64, height=20, pixels_per_step=4, font_size=12, parent=None):
         super().__init__(parent)
-        self.spin, self.step = spin, step
-        spin.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
-        spin.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        spin.setKeyboardTracking(False)
-        spin.setFont(T.font(T.SIZE_BODY, tabular=True))
-        spin.setMinimumWidth(56)
-        row = QHBoxLayout(self)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(2)
-        self.minus = tool_button("minus", f"Decrease {label}", lambda: self.nudge(-1), 14)
-        self.plus = tool_button("plus", f"Increase {label}", lambda: self.nudge(1), 14)
-        for widget in (self.minus, self.plus):
-            widget.setAutoRepeat(True)
-            widget.setAutoRepeatDelay(350)
-            widget.setAutoRepeatInterval(110)
-        row.addWidget(self.minus)
-        row.addWidget(spin, 1)
-        row.addWidget(self.plus)
+        self.minimum, self.maximum = minimum, maximum
+        self.step, self.fine = step, fine if fine is not None else step
+        self.decimals, self.suffix = decimals, suffix
+        self._text, self._parse = text, parse
+        self._value = minimum
+        self._origin = None
+        self._moved = False
+        self.pixels = pixels_per_step
+        self.font_size = font_size
+        self.editor = None
+        self.setFixedSize(width, height)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setCursor(Qt.CursorShape.SizeVerCursor)
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover)
 
-    def nudge(self, direction):
-        amount = self.step() if callable(self.step) else self.spin.singleStep()
-        self.spin.setValue(self.spin.value() + direction * amount)
+    def step_size(self, fine=False):
+        size = self.fine if fine else self.step
+        return size() if callable(size) else size
+
+    def value(self):
+        return self._value
+
+    def setValue(self, value):
+        self._value = min(self.maximum, max(self.minimum, value))
+        self.update()
+
+    def setMaximum(self, maximum):
+        self.maximum = maximum
+        self._value = min(self._value, maximum)
+        self.update()
+
+    def display(self):
+        return self._text(self._value) if self._text else f"{self._value:.{self.decimals}f}{self.suffix}"
+
+    def parse(self, text):
+        if self._parse:
+            return self._parse(text)
+        return float(text.replace(self.suffix.strip(), "").replace("+", "").strip())
+
+    def commit(self, value):
+        old = self._value
+        self.setValue(round(value, max(self.decimals, 6)))
+        if self._value != old:
+            self.committed.emit(self._value)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = QRectF(self.rect()).adjusted(.5, .5, -.5, -.5)
+        active = self.hasFocus() or self._moved
+        hovered = self.underMouse() and self.isEnabled()
+        painter.setPen(QPen(QColor(T.ACCENT if active else T.EDGE_HOVER if hovered else T.LINE_STRONG), 1))
+        painter.setBrush(QColor(T.FIELD))
+        painter.drawRoundedRect(rect, 2, 2)
+        painter.setFont(T.font(self.font_size, QFont.Weight.Medium, tabular=True))
+        painter.setPen(QColor(T.TEXT_3 if not self.isEnabled() else T.ACCENT if self._moved else T.TEXT))
+        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self.display())
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self.isEnabled():
+            self._origin = (event.position().y(), self._value)
+            self._moved = False
+            self.setFocus(Qt.FocusReason.MouseFocusReason)
+
+    def mouseMoveEvent(self, event):
+        if not self._origin:
+            return
+        start_y, start_value = self._origin
+        steps = int((start_y - event.position().y()) / self.pixels)
+        if steps or self._moved:
+            self._moved = True
+            fine = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+            self.setValue(round(start_value + steps * self.step_size(fine), max(self.decimals, 6)))
+
+    def mouseReleaseEvent(self, event):
+        if self._origin:
+            start_value = self._origin[1]
+            moved = self._moved
+            self._origin, self._moved = None, False
+            if moved and self._value != start_value:
+                self.committed.emit(self._value)
+            self.update()
+
+    def mouseDoubleClickEvent(self, event):
+        self.edit()
+
+    def edit(self, initial=None):
+        if self.editor or not self.isEnabled():
+            return
+        editor = _InlineEditor(self)
+        editor.setFont(T.font(self.font_size, tabular=True))
+        editor.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        editor.setGeometry(self.rect())
+        editor.setText(initial if initial is not None else self.display())
+        if initial is None:
+            editor.selectAll()
+        self.editor = editor
+        done = {"value": False}
+
+        def finish(accept=True):
+            if done["value"]:
+                return
+            done["value"] = True
+            text = editor.text()
+            editor.deleteLater()
+            self.editor = None
+            self.setFocus()
+            if accept:
+                try:
+                    self.commit(self.parse(text))
+                except (ValueError, TypeError):
+                    pass
+
+        editor.editingFinished.connect(finish)
+        editor.cancelled.connect(lambda: finish(False))
+        editor.show()
+        editor.setFocus()
+
+    def keyPressEvent(self, event):
+        key, fine = event.key(), bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+        if key in (Qt.Key.Key_Up, Qt.Key.Key_Down):
+            self.commit(self._value + (1 if key == Qt.Key.Key_Up else -1) * self.step_size(fine))
+        elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.edit()
+        elif event.text() and event.text() in "0123456789.-+:":
+            self.edit(event.text())
+        else:
+            super().keyPressEvent(event)
+
+    def wheelEvent(self, event):
+        if not self.hasFocus():
+            event.ignore()
+            return
+        delta = event.angleDelta().y()
+        if delta:
+            self.commit(self._value + (1 if delta > 0 else -1) * self.step_size())
 
 
-class FlowLayout(QLayout):
-    """Lays items out in rows and wraps them when the width runs out. Rows are vertically centered."""
+class Knob(QWidget):
+    """Bipolar rotary control. Drag vertically, double-click to reset to zero."""
 
-    def __init__(self, parent=None, spacing=12, row_spacing=8):
+    committed = Signal(int)
+
+    def __init__(self, minimum=-12, maximum=12, unit="st", parent=None):
         super().__init__(parent)
-        self._items = []
-        self._spacing, self._row_spacing = spacing, row_spacing
-        self.setContentsMargins(0, 0, 0, 0)
+        self.minimum, self.maximum, self.unit = minimum, maximum, unit
+        self._value = 0
+        self._origin = None
+        self.setFixedSize(52, 50)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setCursor(Qt.CursorShape.SizeVerCursor)
 
-    def addItem(self, item):
-        self._items.append(item)
+    def value(self):
+        return self._value
 
-    def count(self):
-        return len(self._items)
-
-    def itemAt(self, index):
-        return self._items[index] if 0 <= index < len(self._items) else None
-
-    def takeAt(self, index):
-        return self._items.pop(index) if 0 <= index < len(self._items) else None
-
-    def expandingDirections(self):
-        return Qt.Orientation(0)
-
-    def hasHeightForWidth(self):
-        return True
-
-    def heightForWidth(self, width):
-        return self._arrange(QRect(0, 0, width, 0), apply=False)
-
-    def setGeometry(self, rect):
-        super().setGeometry(rect)
-        self._arrange(rect, apply=True)
-
-    def sizeHint(self):
-        width = sum(item.sizeHint().width() for item in self._items if not item.isEmpty())
-        width += self._spacing * max(0, len(self._items) - 1)
-        height = max((item.sizeHint().height() for item in self._items if not item.isEmpty()), default=0)
-        return QSize(width, height)
-
-    def minimumSize(self):
-        size = QSize()
-        for item in self._items:
-            if not item.isEmpty():
-                size = size.expandedTo(item.minimumSize())
-        return size
-
-    def _arrange(self, rect, apply):
-        rows, row, used = [], [], 0
-        for item in self._items:
-            if item.isEmpty():
-                continue
-            width = min(item.sizeHint().width(), rect.width())
-            if row and used + self._spacing + width > rect.width():
-                rows.append(row)
-                row, used = [], 0
-            used += (self._spacing if row else 0) + width
-            row.append((item, width))
-        if row:
-            rows.append(row)
-        y = rect.y()
-        for index, row in enumerate(rows):
-            height = max(item.sizeHint().height() for item, _ in row)
-            x = rect.x()
-            for item, width in row:
-                if apply:
-                    item_height = item.sizeHint().height()
-                    item.setGeometry(QRect(QPoint(x, y + (height - item_height) // 2), QSize(width, item_height)))
-                x += width + self._spacing
-            y += height + (self._row_spacing if index < len(rows) - 1 else 0)
-        return y - rect.y()
-
-
-def group(*widgets, spacing=8):
-    """Keep related widgets together inside a wrapping row."""
-    holder = QWidget()
-    row = QHBoxLayout(holder)
-    row.setContentsMargins(0, 0, 0, 0)
-    row.setSpacing(spacing)
-    for widget in widgets:
-        row.addWidget(widget)
-    return holder
-
-
-class Switch(QAbstractButton):
-    """Label on the left, switch on the right. The knob slides in 160 ms unless motion is reduced."""
-
-    def __init__(self, text="", parent=None):
-        super().__init__(parent)
-        self.setText(text)
-        self.setCheckable(True)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
-        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        self._position = 0.0
-        self._animation = QVariantAnimation(self)
-        self._animation.setDuration(0 if T.reduced_motion() else 160)
-        self._animation.setEasingCurve(QEasingCurve.Type.OutCubic)
-        self._animation.valueChanged.connect(self._moved)
-        self.toggled.connect(self._animate)
-
-    def _moved(self, value):
-        self._position = float(value)
+    def setValue(self, value):
+        self._value = int(min(self.maximum, max(self.minimum, value)))
         self.update()
 
-    def _animate(self, checked):
-        self._animation.stop()
-        self._animation.setStartValue(self._position)
-        self._animation.setEndValue(1.0 if checked else 0.0)
-        self._animation.start()
-
-    def set_state(self, checked):
-        """Programmatic update: no signal, no animation."""
-        self.blockSignals(True)
-        self.setChecked(checked)
-        self.blockSignals(False)
-        self._animation.stop()
-        self._position = 1.0 if checked else 0.0
-        self.update()
-
-    def sizeHint(self):
-        metrics = QFontMetricsF(self.font())
-        return QSize(int(metrics.horizontalAdvance(self.text())) + 46, 28)
-
-    def minimumSizeHint(self):
-        return self.sizeHint()
-
-    def hitButton(self, position):
-        return self.rect().contains(position)
-
-    def enterEvent(self, event):
-        self.update()
-        super().enterEvent(event)
-
-    def leaveEvent(self, event):
-        self.update()
-        super().leaveEvent(event)
+    def commit(self, value):
+        old = self._value
+        self.setValue(value)
+        if self._value != old:
+            self.committed.emit(self._value)
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         enabled = self.isEnabled()
-        track = QRectF(self.width() - 32, (self.height() - 18) / 2, 30, 18)
-        painter.setFont(self.font())
-        painter.setPen(QColor(T.TEXT if enabled else T.TEXT_3))
-        text = painter.fontMetrics().elidedText(self.text(), Qt.TextElideMode.ElideRight, max(0, int(track.left() - 10)))
-        painter.drawText(QRectF(0, 0, track.left() - 10, self.height()),
-                         Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, text)
-        off = QColor(T.EDGE_HOVER if self.underMouse() and enabled else T.LINE_STRONG)
-        on = QColor(T.ACCENT_HOVER if self.underMouse() and enabled else T.ACCENT)
-        t = self._position
-        fill = QColor(round(off.red() + (on.red() - off.red()) * t), round(off.green() + (on.green() - off.green()) * t),
-                      round(off.blue() + (on.blue() - off.blue()) * t))
-        if not enabled:
-            fill.setAlphaF(.4)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(fill)
-        painter.drawRoundedRect(track, 9, 9)
-        knob = QRectF(track.left() + 2 + t * (track.width() - 18), track.top() + 2, 14, 14)
-        painter.setBrush(T.color(T.ON_ACCENT if t > .5 else T.TEXT, 1 if enabled else .5))
-        painter.drawEllipse(knob)
+        dial = QRectF((self.width() - 30) / 2, 2, 30, 30)
+        painter.setPen(QPen(QColor(T.LINE_STRONG), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap))
+        painter.drawArc(dial, 225 * 16, -270 * 16)
+        fraction = (self._value - self.minimum) / (self.maximum - self.minimum)
+        angle = 225 - 270 * fraction
+        if self._value:
+            painter.setPen(QPen(QColor(T.ACCENT if enabled else T.TEXT_3), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap))
+            painter.drawArc(dial, 90 * 16, int((angle - 90) * 16))
+        center = dial.center()
+        radians = math.radians(angle)
+        tip = QPointF(center.x() + math.cos(radians) * 10, center.y() - math.sin(radians) * 10)
+        painter.setPen(QPen(QColor(T.TEXT if enabled else T.TEXT_3), 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawLine(center, tip)
         if self.hasFocus():
-            painter.setPen(QPen(QColor(T.ACCENT), 1.5))
+            painter.setPen(QPen(T.color(T.ACCENT, .7), 1))
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawRoundedRect(track.adjusted(-3, -3, 3, 3), 12, 12)
+            painter.drawEllipse(dial.adjusted(-3, -3, 3, 3))
+        painter.setFont(T.font(11, QFont.Weight.Medium, tabular=True))
+        painter.setPen(QColor(T.TEXT if enabled else T.TEXT_3))
+        text = f"{self._value:+d} {self.unit}" if self._value else f"0 {self.unit}"
+        painter.drawText(QRectF(0, 34, self.width(), 16), Qt.AlignmentFlag.AlignCenter, text)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self.isEnabled():
+            self._origin = (event.position().y(), self._value)
+            self.setFocus(Qt.FocusReason.MouseFocusReason)
+
+    def mouseMoveEvent(self, event):
+        if self._origin:
+            start_y, start_value = self._origin
+            self.setValue(start_value + int((start_y - event.position().y()) / 7))
+
+    def mouseReleaseEvent(self, event):
+        if self._origin:
+            start_value = self._origin[1]
+            self._origin = None
+            if self._value != start_value:
+                self.committed.emit(self._value)
+
+    def mouseDoubleClickEvent(self, event):
+        self.commit(0)
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key.Key_Up, Qt.Key.Key_Right):
+            self.commit(self._value + 1)
+        elif event.key() in (Qt.Key.Key_Down, Qt.Key.Key_Left):
+            self.commit(self._value - 1)
+        else:
+            super().keyPressEvent(event)
+
+    def wheelEvent(self, event):
+        if self.hasFocus() and event.angleDelta().y():
+            self.commit(self._value + (1 if event.angleDelta().y() > 0 else -1))
+        else:
+            event.ignore()
+
+
+def toggle(text, tooltip=""):
+    """A text button that stays lit while switched on."""
+    widget = QPushButton(text)
+    widget.setCheckable(True)
+    widget.setCursor(Qt.CursorShape.PointingHandCursor)
+    widget.setToolTip(tooltip)
+    return widget
 
 
 class ElidedLabel(QLabel):
@@ -465,13 +459,15 @@ class ElidedLabel(QLabel):
 
 
 class LevelMeter(QWidget):
-    """Stereo peak meter, 2 dB segments from -44 dBFS, with a 1.2 s peak hold."""
+    """Stereo peak meter from -48 dBFS, green to amber to red, with a 1.2 s peak hold."""
 
-    SEGMENTS, FLOOR = 22, -44.0
+    FLOOR = -48.0
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, vertical=False):
         super().__init__(parent)
-        self.setFixedSize(104, 20)
+        self.vertical = vertical
+        if not vertical:
+            self.setFixedSize(120, 14)
         self.setToolTip("Mix level before output volume")
         self.clear()
 
@@ -495,27 +491,39 @@ class LevelMeter(QWidget):
         self.update()
         return any(level > self.FLOOR for level in self.levels + self.peaks)
 
-    @staticmethod
-    def tint(threshold):
-        if threshold >= -1:
-            return T.BAD
-        if threshold >= -6:
-            return T.ACCENT
-        if threshold >= -18:
-            return T.MID
-        return T.LOW
+    @classmethod
+    def paint_bars(cls, painter, rect, levels, peaks, vertical):
+        gap = 2
+        for channel in range(2):
+            if vertical:
+                width = (rect.width() - gap) / 2
+                bar = QRectF(rect.left() + channel * (width + gap), rect.top(), width, rect.height())
+            else:
+                height = (rect.height() - gap) / 2
+                bar = QRectF(rect.left(), rect.top() + channel * (height + gap), rect.width(), height)
+            painter.fillRect(bar, QColor(T.FIELD))
+            fraction = min(1.0, max(0.0, (levels[channel] - cls.FLOOR) / -cls.FLOOR))
+            for start, end, ink in ((0, 36 / 48, T.PLAYING), (36 / 48, 45 / 48, "#E9D45D"), (45 / 48, 1, T.BAD)):
+                lit = min(fraction, end) - start
+                if lit <= 0:
+                    continue
+                if vertical:
+                    painter.fillRect(QRectF(bar.left(), bar.bottom() - (start + lit) * bar.height(), bar.width(),
+                                            lit * bar.height()), QColor(ink))
+                else:
+                    painter.fillRect(QRectF(bar.left() + start * bar.width(), bar.top(), lit * bar.width(), bar.height()),
+                                     QColor(ink))
+            peak = (peaks[channel] - cls.FLOOR) / -cls.FLOOR
+            if peaks[channel] > cls.FLOOR + 1:
+                ink = QColor(T.BAD if peak > 45 / 48 else T.TEXT)
+                if vertical:
+                    painter.fillRect(QRectF(bar.left(), bar.bottom() - min(1, peak) * bar.height(), bar.width(), 1.5), ink)
+                else:
+                    painter.fillRect(QRectF(bar.left() + min(1, peak) * bar.width() - 1.5, bar.top(), 1.5, bar.height()), ink)
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        gap = 2
-        width = (self.width() - gap * (self.SEGMENTS - 1)) / self.SEGMENTS
-        for channel, top in enumerate((4, 12)):
-            for segment in range(self.SEGMENTS):
-                threshold = self.FLOOR + (segment + 1) * (-self.FLOOR / self.SEGMENTS)
-                lit = self.levels[channel] >= threshold - 1e-9
-                peak = abs(self.peaks[channel] - threshold) < -self.FLOOR / self.SEGMENTS / 2 and self.peaks[channel] > self.FLOOR + 2
-                rect = QRectF(segment * (width + gap), top, width, 4)
-                painter.fillRect(rect, QColor(self.tint(threshold)) if lit or peak else T.color(T.LINE_STRONG, .7))
+        self.paint_bars(painter, QRectF(self.rect()), self.levels, self.peaks, self.vertical)
 
 
 class Notice(QFrame):
@@ -525,16 +533,16 @@ class Notice(QFrame):
         super().__init__(parent)
         self.setObjectName("notice")
         row = QHBoxLayout(self)
-        row.setContentsMargins(14, 8, 8, 8)
-        row.setSpacing(10)
+        row.setContentsMargins(10, 4, 4, 4)
+        row.setSpacing(8)
         self.message = QLabel()
         self.message.setWordWrap(True)
         self.message.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         row.addWidget(self.message, 1)
         self.actions_row = QHBoxLayout()
-        self.actions_row.setSpacing(6)
+        self.actions_row.setSpacing(4)
         row.addLayout(self.actions_row)
-        self.close_button = tool_button("close", "Dismiss", self.hide, 14)
+        self.close_button = tool_button("close", "Dismiss", self.hide, 12)
         row.addWidget(self.close_button)
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
@@ -565,7 +573,8 @@ class Notice(QFrame):
 # Arrangement ------------------------------------------------------------------------------
 
 class Timeline(QAbstractScrollArea):
-    """The arrangement: clips on two alternating lanes, overlaps drawn with their gain curves."""
+    """Arrangement view: locators and a bar ruler on top, songs alternating on lanes A and B,
+    the rendered mix on its own lane, a time ruler below and lane headers on the right."""
 
     trackDropped = Signal(str, int)
     clipMoved = Signal(str, int)
@@ -574,33 +583,37 @@ class Timeline(QAbstractScrollArea):
     transitionSelected = Signal(int)
     viewChanged = Signal()
 
-    PAD, RULER, GAP, BOTTOM, HEADER = 18, 30, 30, 16, 26
+    PAD, LOCATORS, RULER, TIME_RULER, HEADERS, MIX, CLIP_HEADER = 10, 16, 34, 18, 132, 48, 17
 
-    def __init__(self, session, bands, parent=None):
+    def __init__(self, session, bands, meter, parent=None):
         super().__init__(parent)
-        self.session, self.bands = session, bands
+        self.session, self.bands, self.meter = session, bands, meter
         self.selection, self.transition = "", 0
         self.harmony = {}
         self.scale = 2.0
         self.playhead = None
-        self.rendered = None
+        self.mix_audio = None
         self.drop_index = None
         self.drag_origin = self.drag_clip = None
+        self.ruler_drag = None
         self.positions = []
         self._labels = []
         self._static = None
         self.setAcceptDrops(True)
-        self.setMinimumHeight(250)
+        self.setMinimumHeight(230)
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.horizontalScrollBar().valueChanged.connect(self._scrolled)
         self.viewport().setMouseTracking(True)
-        self.setAccessibleName("Arrangement timeline")
-        self.setAccessibleDescription("Drag songs here from the library. Drag clips to reorder them.")
+        self.setAccessibleName("Arrangement")
+        self.setAccessibleDescription("Drag songs here from the browser. Drag clips to reorder them.")
 
     # Geometry
     def duration(self):
         return self.positions[-1]["end"] / djmix.SR if self.positions else 0.0
+
+    def area_width(self):
+        return max(60, self.viewport().width() - self.HEADERS)
 
     def x(self, seconds):
         return self.PAD + seconds * self.scale - self.horizontalScrollBar().value()
@@ -609,17 +622,23 @@ class Timeline(QAbstractScrollArea):
         return max(0.0, (x - self.PAD + self.horizontalScrollBar().value()) / self.scale)
 
     def lanes(self):
-        top = self.RULER + 14
-        height = max(56.0, (self.viewport().height() - top - self.BOTTOM - self.GAP) / 2)
-        return top, height
+        """(lane top, lane height, mix top, mix bottom)."""
+        bottom = self.viewport().height() - self.TIME_RULER
+        mix_top = bottom - self.MIX
+        height = max(44.0, (mix_top - self.RULER - 2) / 2)
+        return self.RULER, height, mix_top, bottom
+
+    def lane_top(self, lane):
+        top, height, _, _ = self.lanes()
+        return top + lane * (height + 1)
 
     def clip_rect(self, position, index):
-        top, height = self.lanes()
-        return QRectF(self.x(position["start"] / djmix.SR), top + (index % 2) * (height + self.GAP),
-                      position["length"] / djmix.SR * self.scale, height)
+        _, height, _, _ = self.lanes()
+        return QRectF(self.x(position["start"] / djmix.SR), self.lane_top(index % 2) + 1,
+                      position["length"] / djmix.SR * self.scale, height - 2)
 
     def visible_range(self):
-        return self.time_at(0), self.time_at(self.viewport().width())
+        return self.time_at(0), self.time_at(self.area_width())
 
     # State
     def refresh(self):
@@ -629,8 +648,8 @@ class Timeline(QAbstractScrollArea):
             self.positions = []
         span = max(self.duration(), 60)
         bar = self.horizontalScrollBar()
-        bar.setRange(0, max(0, round(span * self.scale + 2 * self.PAD - self.viewport().width())))
-        bar.setPageStep(self.viewport().width())
+        bar.setRange(0, max(0, round(span * self.scale + 2 * self.PAD - self.area_width())))
+        bar.setPageStep(self.area_width())
         bar.setSingleStep(24)
         self.invalidate()
         self.viewChanged.emit()
@@ -644,19 +663,19 @@ class Timeline(QAbstractScrollArea):
         self.viewport().update()
 
     def fit(self):
-        self.scale = max(.05, (self.viewport().width() - 2 * self.PAD) / max(30.0, self.duration()))
+        self.scale = max(.05, (self.area_width() - 2 * self.PAD) / max(30.0, self.duration()))
         self.refresh()
         self.horizontalScrollBar().setValue(0)
 
     def zoom(self, factor, anchor=None):
-        anchor = self.viewport().width() / 2 if anchor is None else anchor
+        anchor = self.area_width() / 2 if anchor is None else anchor
         moment = self.time_at(anchor)
         self.scale = min(400.0, max(.05, self.scale * factor))
         self.refresh()
         self.horizontalScrollBar().setValue(round(self.PAD + moment * self.scale - anchor))
 
     def center_on(self, seconds):
-        self.horizontalScrollBar().setValue(round(self.PAD + seconds * self.scale - self.viewport().width() / 2))
+        self.horizontalScrollBar().setValue(round(self.PAD + seconds * self.scale - self.area_width() / 2))
 
     def _scrolled(self, _):
         self.invalidate()
@@ -673,7 +692,9 @@ class Timeline(QAbstractScrollArea):
             self._static = self._render_static()
         painter.drawPixmap(0, 0, self._static)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        height = self.viewport().height()
+        _, _, mix_top, bottom = self.lanes()
+        painter.save()
+        painter.setClipRect(QRectF(0, 0, self.area_width(), self.viewport().height()))
         if self.drop_index is not None:
             if self.positions:
                 index = self.drop_index
@@ -681,71 +702,179 @@ class Timeline(QAbstractScrollArea):
                 x = self.x(seconds)
             else:
                 x = self.PAD
-            painter.setPen(QPen(QColor(T.ACCENT), 2))
-            painter.drawLine(QPointF(x, self.RULER), QPointF(x, height - 4))
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(T.ACCENT))
-            painter.drawPolygon(QPolygonF([QPointF(x - 5, self.RULER - 7), QPointF(x + 5, self.RULER - 7), QPointF(x, self.RULER - 1)]))
+            painter.fillRect(QRectF(x - 1, self.LOCATORS, 2, bottom - self.LOCATORS), QColor(T.ACCENT))
         if self.playhead is not None and self.positions:
             x = self.x(self.playhead)
-            if -4 <= x <= self.viewport().width() + 4:
-                painter.setPen(QPen(QColor("#FFFFFF"), 1.5))
-                painter.drawLine(QPointF(x, self.RULER - 2), QPointF(x, height - 4))
-                painter.setPen(Qt.PenStyle.NoPen)
-                painter.setBrush(QColor("#FFFFFF"))
-                painter.drawPolygon(QPolygonF([QPointF(x - 5, self.RULER - 10), QPointF(x + 5, self.RULER - 10), QPointF(x, self.RULER - 3)]))
+            painter.fillRect(QRectF(x - .5, self.LOCATORS, 1, bottom - self.LOCATORS), QColor("#F2F2F2"))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor("#F2F2F2"))
+            painter.drawPolygon(QPolygonF([QPointF(x - 5, self.LOCATORS), QPointF(x + 5, self.LOCATORS),
+                                           QPointF(x, self.LOCATORS + 6)]))
+        painter.restore()
+        self._paint_headers(painter)
         painter.end()
+
+    def _paint_headers(self, painter):
+        left = self.area_width()
+        width, height = self.HEADERS, self.viewport().height()
+        top, lane, mix_top, bottom = self.lanes()
+        painter.fillRect(QRectF(left, 0, width, height), QColor(T.GUTTER))
+        painter.fillRect(QRectF(left + 1, 0, width - 1, self.RULER - 1), QColor(T.TITLE))
+        counts = [0, 0]
+        for index in range(len(self.positions)):
+            counts[index % 2] += 1
+        rows = [("A", "Deck A", self.lane_top(0), lane, counts[0]), ("B", "Deck B", self.lane_top(1), lane, counts[1]),
+                ("M", "Mix", mix_top, self.MIX, None)]
+        for letter, name, y, h, count in rows:
+            box = QRectF(left + 1, y + 1, width - 1, h - 1)
+            painter.fillRect(box, QColor(T.TITLE))
+            painter.fillRect(QRectF(box.left() + 8, box.top() + 7, 16, 16), QColor(T.RAISED))
+            painter.setFont(T.font(11, QFont.Weight.DemiBold))
+            painter.setPen(QColor(T.TEXT_2))
+            painter.drawText(QRectF(box.left() + 8, box.top() + 7, 16, 16), Qt.AlignmentFlag.AlignCenter, letter)
+            painter.setFont(T.font(12, QFont.Weight.Medium))
+            painter.setPen(QColor(T.TEXT))
+            painter.drawText(QRectF(box.left() + 30, box.top() + 7, width - 40, 16),
+                             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, name)
+            if count is not None and h > 44:
+                painter.setFont(T.font(11))
+                painter.setPen(QColor(T.TEXT_3))
+                painter.drawText(QRectF(box.left() + 30, box.top() + 24, width - 40, 14),
+                                 Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                                 f"{count} {'song' if count == 1 else 'songs'}")
+            if count is None:
+                LevelMeter.paint_bars(painter, QRectF(box.right() - 18, box.top() + 6, 10, box.height() - 12),
+                                      self.meter.levels, self.meter.peaks, True)
+        painter.fillRect(QRectF(left + 1, bottom, width - 1, self.TIME_RULER), QColor(T.TITLE))
 
     def _render_static(self):
         ratio = self.viewport().devicePixelRatioF()
         size = self.viewport().size()
         pixmap = QPixmap(max(1, int(size.width() * ratio)), max(1, int(size.height() * ratio)))
         pixmap.setDevicePixelRatio(ratio)
-        pixmap.fill(QColor(T.INK))
+        pixmap.fill(QColor(T.LANE))
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        self._paint_ruler(painter, size.width(), size.height())
+        width = self.area_width()
+        painter.setClipRect(QRectF(0, 0, width, size.height()))
+        self._paint_lanes(painter, width)
         self._labels = []
         if self.positions:
-            for index, (clip, position) in enumerate(zip(self.session.clips, self.positions)):
-                self._paint_clip(painter, index, clip, position, size.width())
             for index in range(1, len(self.positions)):
-                self._paint_overlap(painter, index, size.width())
+                self._paint_overlap(painter, index)
+            for index, (clip, position) in enumerate(zip(self.session.clips, self.positions)):
+                self._paint_clip(painter, index, clip, position, width)
         else:
-            self._paint_empty(painter, size.width(), size.height())
+            top, lane, _, _ = self.lanes()
+            painter.setFont(T.font(13, QFont.Weight.Medium))
+            painter.setPen(QColor(T.TEXT_2))
+            painter.drawText(QRectF(0, top, width, 2 * lane), Qt.AlignmentFlag.AlignCenter,
+                             "Drag songs here from the browser, or double-click one to add it")
+        self._paint_mix(painter, width)
+        self._paint_rulers(painter, width)
         painter.end()
         return pixmap
 
-    def _paint_ruler(self, painter, width, height):
-        painter.fillRect(QRectF(0, 0, width, self.RULER), QColor("#0D0F1D"))
-        painter.fillRect(QRectF(0, self.RULER - 1, width, 1), QColor(T.LINE))
+    def _bar_steps(self):
         bar = 240 / self.session.target_bpm
-        major_bars = 1
-        while major_bars * bar * self.scale < 72:
-            major_bars *= 2
-        minor_bars = major_bars / 4 if major_bars >= 4 else 1
-        while minor_bars * bar * self.scale < 7:
-            minor_bars *= 2
+        major = 1
+        while major * bar * self.scale < 56:
+            major *= 2
+        return bar, major
+
+    def _paint_lanes(self, painter, width):
+        top, lane, mix_top, bottom = self.lanes()
+        painter.fillRect(QRectF(0, self.lane_top(0), width, lane), QColor(T.LANE))
+        painter.fillRect(QRectF(0, self.lane_top(1), width, lane), QColor(T.LANE_ALT))
+        painter.fillRect(QRectF(0, mix_top, width, self.MIX), QColor("#171717"))
+        for y in (self.lane_top(1) - 1, mix_top - 1, bottom - 1):
+            painter.fillRect(QRectF(0, y, width, 1), QColor(T.GUTTER))
+        bar, major = self._bar_steps()
+        beat = bar / 4
         first, last = self.time_at(0), self.time_at(width)
-        top, lane = self.lanes()
-        bottom = top + 2 * lane + self.GAP
-        painter.setFont(T.font(T.SIZE_SMALL, tabular=True))
-        step = minor_bars * bar
+        if beat * self.scale >= 12:
+            step, kind = beat, "beat"
+        elif bar * self.scale >= 6:
+            step, kind = bar, "bar"
+        else:
+            step, kind = bar * major, "major"
         tick = math.floor(first / step) * step
         while tick <= last + step:
             x = self.x(tick)
-            bars_from_start = round(tick / bar)
-            if bars_from_start % major_bars == 0:
-                painter.fillRect(QRectF(x, self.RULER - 9, 1, 8), QColor(T.LINE_STRONG))
-                painter.fillRect(QRectF(x, top - 6, 1, bottom - top + 6), T.color("#FFFFFF", .028))
-                painter.setPen(QColor(T.TEXT_3))
-                painter.drawText(QRectF(x + 5, 4, 80, 16), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, clock(tick))
+            bars = tick / bar
+            if abs(bars - round(bars)) < 1e-6 and round(bars) % major == 0:
+                ink = "#303030"
+            elif kind == "beat" and abs(bars - round(bars)) > 1e-6:
+                ink = "#1F1F1F"
             else:
-                painter.fillRect(QRectF(x, self.RULER - 5, 1, 4), QColor(T.LINE_STRONG))
+                ink = "#262626"
+            painter.fillRect(QRectF(x, top, 1, bottom - top), QColor(ink))
             tick += step
-        if self.rendered:
-            left, right = self.x(self.rendered[0]), self.x(self.rendered[1])
-            painter.fillRect(QRectF(left, self.RULER - 3, max(1, right - left), 2), T.color(T.ACCENT, .85))
+
+    def _paint_rulers(self, painter, width):
+        _, _, mix_top, bottom = self.lanes()
+        painter.fillRect(QRectF(0, 0, width, self.LOCATORS), QColor(T.BASE))
+        painter.fillRect(QRectF(0, self.LOCATORS, width, self.RULER - self.LOCATORS), QColor(T.TITLE))
+        painter.fillRect(QRectF(0, self.RULER - 1, width, 1), QColor(T.GUTTER))
+        bar, major = self._bar_steps()
+        first, last = self.time_at(0), self.time_at(width)
+        painter.setFont(T.font(11, tabular=True))
+        index = math.floor(first / bar / major) * major
+        while index * bar <= last + bar * major:
+            x = self.x(index * bar)
+            painter.fillRect(QRectF(x, self.LOCATORS + 2, 1, self.RULER - self.LOCATORS - 3), QColor(T.LINE_STRONG))
+            painter.setPen(QColor(T.TEXT_2))
+            painter.drawText(QRectF(x + 3, self.LOCATORS, 60, self.RULER - self.LOCATORS - 4),
+                             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, str(index + 1))
+            minor = 1 if major <= 4 else major // 4
+            for sub in range(minor, major, minor):
+                painter.fillRect(QRectF(self.x((index + sub) * bar), self.RULER - 5, 1, 4), QColor(T.LINE_STRONG))
+            index += major
+        # Transition locators, with the blend shown as a brace under the bar numbers.
+        for index in range(1, len(self.positions)):
+            position = self.positions[index]
+            left = self.x(position["start"] / djmix.SR)
+            right = self.x((position["start"] + position["incoming"]) / djmix.SR)
+            current = index == self.transition
+            ink = QColor(T.ACCENT if current else T.TEXT_2)
+            painter.fillRect(QRectF(left, self.RULER - 4, max(2, right - left), 3), T.color(ink, .9 if current else .45))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(ink)
+            painter.drawPolygon(QPolygonF([QPointF(left, 2), QPointF(left + 9, 2), QPointF(left + 9, 10),
+                                           QPointF(left + 4.5, 14), QPointF(left, 10)]))
+            state = self.harmony.get(index, "unknown")
+            text = f"{index} → {index + 1}"
+            font = T.font(11, QFont.Weight.Medium)
+            painter.setFont(font)
+            advance = QFontMetricsF(font).horizontalAdvance(text)
+            painter.setPen(ink)
+            painter.drawText(QRectF(left + 13, 0, advance + 4, self.LOCATORS), Qt.AlignmentFlag.AlignVCenter, text)
+            dot = {"good": T.GOOD, "bad": T.BAD}.get(state, T.TEXT_3)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(dot))
+            painter.drawEllipse(QPointF(left + 20 + advance, self.LOCATORS / 2), 3, 3)
+            self._labels.append((QRectF(left - 2, 0, advance + 30, self.LOCATORS), index))
+        painter.fillRect(QRectF(0, bottom, width, self.TIME_RULER), QColor(T.TITLE))
+        painter.fillRect(QRectF(0, bottom, width, 1), QColor(T.GUTTER))
+        step = next((s for s in (1, 2, 5, 10, 15, 30, 60, 120, 300, 600) if s * self.scale >= 64), 1200)
+        tick = math.floor(first / step) * step
+        painter.setFont(T.font(11, tabular=True))
+        while tick <= last + step:
+            x = self.x(tick)
+            painter.fillRect(QRectF(x, bottom + 1, 1, 5), QColor(T.LINE_STRONG))
+            painter.setPen(QColor(T.TEXT_3))
+            painter.drawText(QRectF(x + 3, bottom + 1, 60, self.TIME_RULER - 2),
+                             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, clock(tick))
+            tick += step
+
+    def _paint_overlap(self, painter, index):
+        position = self.positions[index]
+        left = self.x(position["start"] / djmix.SR)
+        right = self.x((position["start"] + position["incoming"]) / djmix.SR)
+        top, lane, _, _ = self.lanes()
+        current = index == self.transition
+        painter.fillRect(QRectF(left, top, right - left, 2 * lane + 1),
+                         T.color(T.ACCENT, .07) if current else T.color("#FFFFFF", .03))
 
     def _paint_clip(self, painter, index, clip, position, width):
         rect = self.clip_rect(position, index)
@@ -753,73 +882,65 @@ class Timeline(QAbstractScrollArea):
             return
         track = self.session.tracks[clip.track_id]
         selected = clip.id == self.selection
+        base = T.clip_color(track.id)
         painter.save()
         path = QPainterPath()
-        path.addRoundedRect(rect, 6, 6)
-        painter.fillPath(path, QColor("#161A31" if selected else "#11142A"))
-        painter.setClipPath(path)
-        wave = QRectF(rect.left(), rect.top() + self.HEADER, rect.width(), rect.height() - self.HEADER - 4)
+        path.addRoundedRect(rect, 2, 2)
+        painter.setClipPath(path, Qt.ClipOperation.IntersectClip)
+        painter.fillPath(path, T.mix(base, T.LANE, .8))
+        header = QRectF(rect.left(), rect.top(), rect.width(), self.CLIP_HEADER)
+        painter.fillRect(header, T.mix(base, "#FFFFFF", .22) if selected else QColor(base))
+        wave = QRectF(rect.left(), header.bottom() + 2, rect.width(), rect.height() - self.CLIP_HEADER - 4)
         visible_left, visible_right = max(wave.left(), -4), min(wave.right(), width + 4)
         if visible_right > visible_left:
             span = clip.cue_out - clip.cue_in
             start = clip.cue_in + (visible_left - wave.left()) / wave.width() * span
             end = clip.cue_in + (visible_right - wave.left()) / wave.width() * span
             target = QRectF(visible_left, wave.top(), visible_right - visible_left, wave.height())
-            bands = self.bands.get(track.id)
-            columns = band_columns(bands, start * BINS_PER_SECOND, end * BINS_PER_SECOND,
+            columns = band_columns(self.bands.get(track.id), start * BINS_PER_SECOND, end * BINS_PER_SECOND,
                                    max(1, min(4000, int(target.width()))))
             if columns is not None:
-                paint_bands(painter, target, columns, .95 if selected or not self.selection else .82)
+                paint_bands(painter, target, columns, T.clip_bands(base))
             else:
-                paint_peaks(painter, target, track.waveform, start / track.duration, end / track.duration)
+                paint_envelope(painter, target, peak_columns(track.waveform, start / track.duration,
+                                                             end / track.duration, max(1, int(target.width() / 2))),
+                               T.mix(base, T.LANE, .4))
         self._paint_curves(painter, index, clip, position, wave)
-        # Header: name on the left, key and tempo on the right.
-        painter.fillRect(QRectF(rect.left(), rect.top(), rect.width(), self.HEADER), T.color("#0B0D1C", .55))
         painter.restore()
+        # Title bar text: name on the left, key and tempo on the right; the name stays in view.
+        visible = QRectF(max(rect.left(), 0.0), rect.top(), min(rect.right(), float(width)) - max(rect.left(), 0.0),
+                         self.CLIP_HEADER)
         painter.save()
-        # Names stay readable when a clip is scrolled partly out of view.
-        frame = rect
-        rect = QRectF(max(rect.left(), 0.0), rect.top(), min(rect.right(), float(width)) - max(rect.left(), 0.0), rect.height())
-        painter.setClipRect(rect.adjusted(8, 0, -8, 0))
-        metrics_font = T.font(T.SIZE_META, tabular=True)
-        painter.setFont(metrics_font)
-        runs = []
+        painter.setClipRect(visible.adjusted(4, 0, -4, 0))
+        meta_font, name_font = T.font(11, tabular=True), T.font(11, QFont.Weight.DemiBold)
+        metrics, name_metrics = QFontMetricsF(meta_font), QFontMetricsF(name_font)
         processed = djmix.transpose(parsed_key(track.key), clip.shift)
+        parts = []
         if processed:
-            runs.append((display_key(processed), T.TEXT_2))
-        if clip.shift:
-            runs.append((f"{clip.shift:+d} st", T.ACCENT))
+            parts.append(display_key(processed, True) + (f" ({clip.shift:+d})" if clip.shift else ""))
         stretch = (self.session.target_bpm / track.bpm - 1) * 100
-        runs.append((f"{track.bpm:.1f} BPM", T.TEXT_2))
-        if abs(stretch) >= .05:
-            runs.append((f"{stretch:+.1f}%", T.BAD if abs(stretch) > 8 else T.TEXT_3))
+        parts.append(f"{track.bpm:.1f}" + (f" {stretch:+.1f}%" if abs(stretch) >= .05 else ""))
         if clip.stabilize:
-            runs.append(("Stabilized", T.TEXT_2))
-        metrics = QFontMetricsF(metrics_font)
-        run_width = sum(metrics.horizontalAdvance(text) for text, _ in runs) + 12 * (len(runs) - 1)
-        name_font = T.font(T.SIZE_BODY, QFont.Weight.DemiBold)
-        name_metrics = QFontMetricsF(name_font)
-        room = rect.width() - 20
-        show_runs = room - run_width > min(140, name_metrics.horizontalAdvance(track.name) + 16)
-        name_room = room - (run_width + 16 if show_runs else 0)
+            parts.append("Stabilized")
+        meta = "   ".join(parts)
+        meta_width = metrics.horizontalAdvance(meta)
+        room = visible.width() - 14
+        show_meta = room - meta_width > min(120, name_metrics.horizontalAdvance(track.name) + 12)
+        name_room = room - (meta_width + 12 if show_meta else 0)
+        painter.setPen(QColor(DARK_TEXT))
         painter.setFont(name_font)
-        painter.setPen(QColor(T.TEXT))
-        name = name_metrics.elidedText(track.name, Qt.TextElideMode.ElideRight, max(0, name_room))
-        painter.drawText(QRectF(rect.left() + 10, rect.top(), max(0, name_room), self.HEADER),
-                         Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, name)
-        if show_runs:
-            painter.setFont(metrics_font)
-            x = rect.right() - 10 - run_width
-            for text, ink in runs:
-                advance = metrics.horizontalAdvance(text)
-                painter.setPen(QColor(ink))
-                painter.drawText(QRectF(x, rect.top(), advance + 2, self.HEADER),
-                                 Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, text)
-                x += advance + 12
+        painter.drawText(QRectF(visible.left() + 6, visible.top(), max(0, name_room), self.CLIP_HEADER),
+                         Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                         name_metrics.elidedText(track.name, Qt.TextElideMode.ElideRight, max(0, name_room)))
+        if show_meta:
+            painter.setFont(meta_font)
+            painter.setPen(T.color(DARK_TEXT, .78))
+            painter.drawText(QRectF(visible.right() - 6 - meta_width - 2, visible.top(), meta_width + 2, self.CLIP_HEADER),
+                             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, meta)
         painter.restore()
-        painter.setPen(QPen(QColor(T.ACCENT), 1.5) if selected else QPen(QColor("#272C4A"), 1))
+        painter.setPen(QPen(QColor("#F2F2F2"), 1) if selected else QPen(T.mix(base, "#000000", .55), 1))
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawRoundedRect(frame.adjusted(.5, .5, -.5, -.5), 6, 6)
+        painter.drawRoundedRect(rect.adjusted(.5, .5, -.5, -.5), 2, 2)
 
     def _paint_curves(self, painter, index, clip, position, wave):
         """Gain envelopes over the blend: solid for the full band, dashed for the bass."""
@@ -837,74 +958,65 @@ class Timeline(QAbstractScrollArea):
             progress = np.linspace(0, 1, 64)
             low, high = gain_curves(progress, incoming, owner.bass_swap, length / bar_frames)
             xs = left + progress * (right - left)
-            curves = [(high, QPen(T.color(T.TEXT, .78), 1.4))]
+            curves = [(high, QPen(T.color("#FFFFFF", .85), 1.3))]
             if owner.bass_swap:
-                curves.append((low, QPen(T.color(T.TEXT, .5), 1.2, Qt.PenStyle.DashLine)))
+                curves.append((low, QPen(T.color("#FFFFFF", .5), 1.1, Qt.PenStyle.DashLine)))
             for gains, pen in curves:
                 painter.setPen(pen)
                 painter.setBrush(Qt.BrushStyle.NoBrush)
-                points = [QPointF(x, wave.bottom() - 3 - g * (wave.height() - 6)) for x, g in zip(xs, gains)]
-                painter.drawPolyline(QPolygonF(points))
+                painter.drawPolyline(QPolygonF([QPointF(x, wave.bottom() - 2 - g * (wave.height() - 4))
+                                                for x, g in zip(xs, gains)]))
 
-    def _paint_overlap(self, painter, index, width):
-        position = self.positions[index]
-        left = self.x(position["start"] / djmix.SR)
-        right = self.x((position["start"] + position["incoming"]) / djmix.SR)
-        if right < -40 or left > width + 40:
+    def _paint_mix(self, painter, width):
+        _, _, mix_top, _ = self.lanes()
+        rect = QRectF(0, mix_top + 3, width, self.MIX - 7)
+        audio = self.mix_audio
+        if not audio:
+            painter.setFont(T.font(11))
+            painter.setPen(QColor(T.TEXT_3))
+            painter.drawText(rect.adjusted(10, 0, 0, 0), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                             "Rendered audio appears here after a preview or a full render")
             return
-        top, lane = self.lanes()
-        bottom = top + 2 * lane + self.GAP
-        current = index == self.transition
-        painter.fillRect(QRectF(left, top, right - left, bottom - top), T.color("#FFFFFF", .05 if current else .025))
-        edge = T.color(T.ACCENT, .55) if current else T.color("#FFFFFF", .12)
-        painter.fillRect(QRectF(left, top - 4, 1, bottom - top + 8), edge)
-        painter.fillRect(QRectF(right - 1, top - 4, 1, bottom - top + 8), edge)
-        clip = self.session.clips[index]
-        text = f"{clip.blend_bars} bars"
-        font = T.font(T.SIZE_META, tabular=True)
-        metrics = QFontMetricsF(font)
-        label_width = metrics.horizontalAdvance(text) + 26
-        center = (left + right) / 2
-        label = QRectF(center - label_width / 2, top + lane + (self.GAP - 22) / 2, label_width, 22)
-        painter.setPen(QPen(T.color(T.ACCENT, .7) if current else QColor(T.LINE_STRONG), 1))
-        painter.setBrush(QColor(T.INK))
-        painter.drawRoundedRect(label, 5, 5)
-        state = self.harmony.get(index, "unknown")
-        dot = {"good": T.GOOD, "bad": T.BAD}.get(state, T.TEXT_3)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(dot))
-        painter.drawEllipse(QPointF(label.left() + 11, label.center().y()), 3, 3)
-        painter.setFont(font)
-        painter.setPen(QColor(T.TEXT if current else T.TEXT_2))
-        painter.drawText(label.adjusted(18, 0, -6, 0), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, text)
-        self._labels.append((label.adjusted(-4, -4, 4, 4), index))
-
-    def _paint_empty(self, painter, width, height):
-        top, lane = self.lanes()
-        area = QRectF(self.PAD, top, width - 2 * self.PAD, 2 * lane + self.GAP)
-        pen = QPen(QColor(T.LINE_STRONG), 1.2, Qt.PenStyle.CustomDashLine)
-        pen.setDashPattern([4, 4])
-        painter.setPen(pen)
+        start, end, levels, current = audio
+        left, right = self.x(start), self.x(end)
+        block = QRectF(max(left, -2), rect.top(), min(right, width + 2) - max(left, -2), rect.height())
+        if block.width() <= 0:
+            return
+        painter.fillRect(QRectF(left, rect.top(), right - left, rect.height()), QColor("#232323" if current else "#1C1C1C"))
+        if levels is not None and len(levels):
+            seconds = len(levels) / BINS_PER_SECOND
+            first = (block.left() - left) / max(1e-6, right - left) * seconds * BINS_PER_SECOND
+            last = (block.right() - left) / max(1e-6, right - left) * seconds * BINS_PER_SECOND
+            peaks = levels.max(axis=1)
+            count = max(1, int(block.width()))
+            edges = np.linspace(max(0, first), min(len(peaks), last), count + 1).astype(int)
+            values = np.array([peaks[a:max(a + 1, b)].max() if a < len(peaks) else 0 for a, b in zip(edges[:-1], edges[1:])])
+            reference = max(float(np.percentile(peaks, 99)), 1e-4)
+            paint_envelope(painter, block.adjusted(0, 3, 0, -3), np.clip(values / reference, 0, 1),
+                           T.TEXT_2 if current else T.TEXT_3, .9 if current else .5)
+        painter.setPen(QPen(QColor(T.LINE_STRONG), 1))
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawRoundedRect(area, 10, 10)
-        painter.setPen(QColor(T.TEXT))
-        painter.setFont(T.font(T.SIZE_HEADING, QFont.Weight.DemiBold))
-        painter.drawText(QRectF(area.left(), area.center().y() - 30, area.width(), 26), Qt.AlignmentFlag.AlignCenter,
-                         "Drag a song here to start your mix")
-        painter.setFont(T.font(T.SIZE_BODY))
-        painter.setPen(QColor(T.TEXT_2))
-        painter.drawText(QRectF(area.left(), area.center().y(), area.width(), 40), Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop,
-                         "Or double-click a song in your library. Each new song overlaps the one before it.")
+        painter.drawRect(QRectF(left, rect.top(), right - left, rect.height()).adjusted(.5, .5, -.5, -.5))
+        if not current:
+            painter.setFont(T.font(11))
+            painter.setPen(QColor(T.TEXT_2))
+            painter.drawText(block.adjusted(8, 0, -8, 0), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                             "Changed since this render")
 
     # Interaction
     def mousePressEvent(self, event):
         if event.button() != Qt.MouseButton.LeftButton:
             return
         point = event.position()
+        if point.x() >= self.area_width():
+            return
         for rect, index in self._labels:
             if rect.contains(point):
                 self.transitionSelected.emit(index)
                 return
+        if point.y() < self.RULER:
+            self.ruler_drag = (point, self.time_at(point.x()), self.scale, False)
+            return
         self.drag_origin, self.drag_clip = point, None
         for index, position in enumerate(self.positions):
             if self.clip_rect(position, index).contains(point):
@@ -915,25 +1027,40 @@ class Timeline(QAbstractScrollArea):
 
     def mouseMoveEvent(self, event):
         point = event.position()
+        if self.ruler_drag:
+            origin, moment, scale, _ = self.ruler_drag
+            delta = point - origin
+            if delta.manhattanLength() > 3:
+                self.ruler_drag = (origin, moment, scale, True)
+                # Drag down to zoom in, up to zoom out, sideways to scroll: as in a DAW ruler.
+                self.scale = min(400.0, max(.05, scale * 1.012 ** delta.y()))
+                self.refresh()
+                self.horizontalScrollBar().setValue(round(self.PAD + moment * self.scale - point.x()))
+            return
         if not event.buttons():
-            over_label = any(rect.contains(point) for rect, _ in self._labels)
-            over_clip = any(self.clip_rect(p, i).contains(point) for i, p in enumerate(self.positions))
-            self.viewport().setCursor(Qt.CursorShape.PointingHandCursor if over_label else
-                                      Qt.CursorShape.OpenHandCursor if over_clip else Qt.CursorShape.ArrowCursor)
+            if point.x() >= self.area_width():
+                self.viewport().setCursor(Qt.CursorShape.ArrowCursor)
+            elif any(rect.contains(point) for rect, _ in self._labels):
+                self.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
+            elif point.y() < self.RULER:
+                self.viewport().setCursor(Qt.CursorShape.SizeVerCursor)
+            elif any(self.clip_rect(p, i).contains(point) for i, p in enumerate(self.positions)):
+                self.viewport().setCursor(Qt.CursorShape.OpenHandCursor)
+            else:
+                self.viewport().setCursor(Qt.CursorShape.ArrowCursor)
             return
         if self.drag_clip and self.drag_origin and (point - self.drag_origin).manhattanLength() > 8:
             index = next(i for i, p in enumerate(self.positions) if p["clip_id"] == self.drag_clip)
-            rect = self.clip_rect(self.positions[index], index).intersected(QRectF(self.viewport().rect()))
+            rect = self.clip_rect(self.positions[index], index).intersected(QRectF(0, 0, self.area_width(), self.viewport().height()))
             data = QMimeData()
             data.setData(CLIP_MIME, self.drag_clip.encode())
             drag = QDrag(self)
             drag.setMimeData(data)
             if self._static is not None and rect.width() > 4:
                 ratio = self._static.devicePixelRatio()
-                image = self._static.copy(rect.left() * ratio, rect.top() * ratio, rect.width() * ratio, rect.height() * ratio)
+                image = self._static.copy(int(rect.left() * ratio), int(rect.top() * ratio),
+                                          int(min(rect.width(), 360) * ratio), int(rect.height() * ratio))
                 image.setDevicePixelRatio(ratio)
-                if image.width() > 360 * ratio:
-                    image = image.copy(0, 0, int(360 * ratio), image.height())
                 faded = QPixmap(image.size())
                 faded.setDevicePixelRatio(ratio)
                 faded.fill(Qt.GlobalColor.transparent)
@@ -945,6 +1072,13 @@ class Timeline(QAbstractScrollArea):
                 drag.setHotSpot((self.drag_origin - rect.topLeft()).toPoint())
             self.drag_clip = None
             drag.exec(Qt.DropAction.MoveAction)
+
+    def mouseReleaseEvent(self, event):
+        if self.ruler_drag:
+            origin, moment, _, moved = self.ruler_drag
+            self.ruler_drag = None
+            if not moved:
+                self.seekRequested.emit(moment)
 
     def wheelEvent(self, event):
         modifiers = event.modifiers()
@@ -976,7 +1110,7 @@ class Timeline(QAbstractScrollArea):
             event.acceptProposedAction()
 
     def dragMoveEvent(self, event):
-        self.drop_index = self.insertion(event.position().x())
+        self.drop_index = self.insertion(min(event.position().x(), self.area_width()))
         self.viewport().update()
         event.acceptProposedAction()
 
@@ -985,7 +1119,7 @@ class Timeline(QAbstractScrollArea):
         self.viewport().update()
 
     def dropEvent(self, event):
-        index = self.insertion(event.position().x())
+        index = self.insertion(min(event.position().x(), self.area_width()))
         mime = event.mimeData()
         self.drop_index = None
         self.viewport().update()
@@ -997,7 +1131,7 @@ class Timeline(QAbstractScrollArea):
 
 
 class Overview(QWidget):
-    """The whole mix in one strip. Click or drag to move the timeline view there."""
+    """The whole mix in one strip: lane A above, lane B below, with the visible range outlined."""
 
     navigate = Signal(float)
 
@@ -1006,9 +1140,9 @@ class Overview(QWidget):
         self.timeline = timeline
         self.playhead = None
         self._static = None
-        self.setFixedHeight(42)
+        self.setFixedHeight(30)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setToolTip("Overview of the whole mix. Click to jump there.")
+        self.setToolTip("Overview of the whole mix. Click or drag to move there.")
         self.setAccessibleName("Mix overview")
         timeline.viewChanged.connect(self.update)
 
@@ -1020,36 +1154,35 @@ class Overview(QWidget):
         super().resizeEvent(event)
         self._static = None
 
+    def span(self):
+        return self.width() - self.timeline.HEADERS
+
     def _x(self, seconds, duration):
-        return 1 + seconds / duration * (self.width() - 2)
+        return seconds / duration * self.span()
 
     def _render(self):
         ratio = self.devicePixelRatioF()
         pixmap = QPixmap(max(1, int(self.width() * ratio)), max(1, int(self.height() * ratio)))
         pixmap.setDevicePixelRatio(ratio)
-        pixmap.fill(Qt.GlobalColor.transparent)
+        pixmap.fill(QColor(T.LANE))
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        frame = QPainterPath()
-        frame.addRoundedRect(QRectF(0, 0, self.width(), self.height()), 6, 6)
-        painter.fillPath(frame, QColor(T.INK))
-        painter.setClipPath(frame)
         timeline = self.timeline
         duration = timeline.duration()
+        half = (self.height() - 3) / 2
         if duration > 0:
             for index, (clip, position) in enumerate(zip(timeline.session.clips, timeline.positions)):
                 track = timeline.session.tracks[clip.track_id]
+                base = T.clip_color(track.id)
                 left = self._x(position["start"] / djmix.SR, duration)
                 right = self._x(position["end"] / djmix.SR, duration)
-                rect = QRectF(left, 5, max(1, right - left), self.height() - 10)
+                rect = QRectF(left, 1 + (index % 2) * (half + 1), max(1, right - left), half)
+                painter.fillRect(rect, T.mix(base, T.LANE, .72))
                 columns = band_columns(timeline.bands.get(track.id), clip.cue_in * BINS_PER_SECOND,
                                        clip.cue_out * BINS_PER_SECOND, max(1, int(rect.width())))
                 if columns is not None:
-                    paint_bands(painter, rect, columns, .85)
-                else:
-                    paint_peaks(painter, rect, track.waveform, clip.cue_in / track.duration, clip.cue_out / track.duration)
-                if index:
-                    painter.fillRect(QRectF(left, 0, 1, self.height()), T.color(T.INK, .9))
+                    paint_envelope(painter, rect.adjusted(0, 1, 0, -1), np.clip(columns[:, 0] * .9, 0, 1), base)
+        painter.fillRect(QRectF(self.span(), 0, self.width() - self.span(), self.height()), QColor(T.GUTTER))
         painter.end()
         return pixmap
 
@@ -1062,30 +1195,16 @@ class Overview(QWidget):
         if duration > 0:
             first, last = self.timeline.visible_range()
             left, right = self._x(first, duration), self._x(min(last, duration), duration)
-            if right - left < self.width() - 4:
-                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-                painter.setPen(QPen(T.color(T.TEXT, .55), 1))
-                painter.setBrush(T.color("#FFFFFF", .06))
-                painter.drawRoundedRect(QRectF(left, .5, max(4, right - left), self.height() - 1), 4, 4)
-            if self.timeline.rendered:
-                start, end = self.timeline.rendered
-                painter.fillRect(QRectF(self._x(start, duration), self.height() - 2, max(1, self._x(end, duration) - self._x(start, duration)), 2),
-                                 T.color(T.ACCENT, .85))
+            painter.setPen(QPen(QColor(T.TEXT), 1))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(QRectF(left, .5, max(3, right - left), self.height() - 1))
             if self.playhead is not None:
-                painter.fillRect(QRectF(self._x(self.playhead, duration) - .75, 0, 1.5, self.height()), QColor("#FFFFFF"))
-        else:
-            painter.setPen(QColor(T.TEXT_3))
-            painter.setFont(T.font(T.SIZE_META))
-            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "The mix overview appears once songs are arranged")
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(QPen(QColor(T.LINE), 1))
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawRoundedRect(QRectF(.5, .5, self.width() - 1, self.height() - 1), 6, 6)
+                painter.fillRect(QRectF(self._x(self.playhead, duration) - .5, 0, 1, self.height()), QColor("#F2F2F2"))
 
     def _go(self, x):
         duration = self.timeline.duration()
-        if duration > 0:
-            self.navigate.emit(min(duration, max(0.0, (x - 1) / max(1, self.width() - 2) * duration)))
+        if duration > 0 and x < self.span():
+            self.navigate.emit(min(duration, max(0.0, x / max(1, self.span()) * duration)))
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -1097,11 +1216,11 @@ class Overview(QWidget):
 
 
 class CueEditor(QWidget):
-    """The whole song with draggable in and out points. Handles snap to bars from the analyzed grid."""
+    """Sample display: the whole song with Start and End markers that snap to bars of the analyzed grid."""
 
     cuesChanged = Signal(float, float)
 
-    TOP, BOTTOM = 16, 14
+    RULER = 16
 
     def __init__(self, bands, parent=None):
         super().__init__(parent)
@@ -1110,10 +1229,9 @@ class CueEditor(QWidget):
         self.blend_in = self.blend_out = 0
         self.dragging = None
         self.preview = None
-        self.setMinimumHeight(104)
+        self.setMinimumHeight(90)
         self.setMouseTracking(True)
-        self.setAccessibleName("Cue points")
-        self.setToolTip("")
+        self.setAccessibleName("Start and end markers")
 
     def set_clip(self, track, clip, blend_in_bars, blend_out_bars):
         self.track, self.clip = track, clip
@@ -1125,93 +1243,85 @@ class CueEditor(QWidget):
         return self.preview if self.preview else (self.clip.cue_in, self.clip.cue_out)
 
     def wave_rect(self):
-        return QRectF(0, self.TOP, self.width(), self.height() - self.TOP - self.BOTTOM)
+        return QRectF(0, self.RULER, self.width(), self.height() - self.RULER)
 
     def x_of(self, seconds):
-        wave = self.wave_rect()
-        return wave.left() + seconds / self.track.duration * wave.width()
+        return seconds / self.track.duration * self.width()
 
     def time_at(self, x):
-        wave = self.wave_rect()
-        return min(self.track.duration, max(0.0, (x - wave.left()) / wave.width() * self.track.duration))
+        return min(self.track.duration, max(0.0, x / self.width() * self.track.duration))
 
     def snap(self, seconds, modifiers):
         if modifiers & Qt.KeyboardModifier.AltModifier or not self.track.bpm:
             return seconds
         step = 60 / self.track.bpm if modifiers & Qt.KeyboardModifier.ShiftModifier else 240 / self.track.bpm
         origin = self.track.cue_in
-        snapped = origin + round((seconds - origin) / step) * step
-        return min(self.track.duration, max(0.0, snapped))
+        return min(self.track.duration, max(0.0, origin + round((seconds - origin) / step) * step))
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         wave = self.wave_rect()
-        frame = QPainterPath()
-        frame.addRoundedRect(wave, 6, 6)
-        painter.fillPath(frame, QColor(T.INK))
+        painter.fillRect(QRectF(0, 0, self.width(), self.RULER), QColor(T.RAISED))
+        painter.fillRect(wave, QColor(T.FIELD))
         if not self.track:
             return
-        painter.save()
-        painter.setClipPath(frame)
+        base = T.clip_color(self.track.id)
         columns = band_columns(self.bands.get(self.track.id), 0, self.track.duration * BINS_PER_SECOND,
                                max(1, int(wave.width())))
         if columns is not None:
-            paint_bands(painter, wave.adjusted(0, 6, 0, -6), columns)
+            paint_bands(painter, wave.adjusted(0, 4, 0, -4), columns, T.clip_bands(base))
         else:
-            paint_peaks(painter, wave.adjusted(0, 6, 0, -6), self.track.waveform, 0, 1)
+            paint_envelope(painter, wave.adjusted(0, 4, 0, -4),
+                           peak_columns(self.track.waveform, 0, 1, max(1, int(wave.width() / 2))), T.mix(base, T.LANE, .4))
         cue_in, cue_out = self.cues()
         left, right = self.x_of(cue_in), self.x_of(cue_out)
-        shade = T.color(T.BASE, .78)
-        painter.fillRect(QRectF(wave.left(), wave.top(), left - wave.left(), wave.height()), shade)
-        painter.fillRect(QRectF(right, wave.top(), wave.right() - right, wave.height()), shade)
+        shade = T.color("#000000", .62)
+        painter.fillRect(QRectF(0, wave.top(), left, wave.height()), shade)
+        painter.fillRect(QRectF(right, wave.top(), self.width() - right, wave.height()), shade)
         bar = 240 / self.track.bpm if self.track.bpm else 0
         for bars, at_start in ((self.blend_in, True), (self.blend_out, False)):
             if bars and bar:
-                extent = bars * bar / self.track.duration * wave.width()
+                extent = bars * bar / self.track.duration * self.width()
                 zone = QRectF(left, wave.top(), extent, wave.height()) if at_start else QRectF(right - extent, wave.top(), extent, wave.height())
-                painter.fillRect(zone, T.color("#FFFFFF", .07))
-        painter.restore()
+                painter.fillRect(zone, T.color("#FFFFFF", .08))
         if bar:
-            pixels = bar / self.track.duration * wave.width()
+            pixels = bar / self.track.duration * self.width()
             every = 1
-            while every * pixels < 5:
+            while every * pixels < 34:
                 every *= 2
-            painter.setPen(Qt.PenStyle.NoPen)
             index = math.ceil(-self.track.cue_in / bar / every) * every
+            painter.setFont(T.font(10, tabular=True))
             while True:
                 seconds = self.track.cue_in + index * bar
                 if seconds > self.track.duration:
                     break
                 x = self.x_of(seconds)
-                major = index % (every * 4) == 0
-                painter.setBrush(T.color(T.TEXT_3, .7 if major else .35))
-                painter.drawRect(QRectF(x, wave.bottom() + 3, 1, 6 if major else 3))
+                painter.fillRect(QRectF(x, 3, 1, self.RULER - 4), QColor(T.LINE_STRONG))
+                painter.setPen(QColor(T.TEXT_3))
+                painter.drawText(QRectF(x + 3, 0, 40, self.RULER), Qt.AlignmentFlag.AlignVCenter, str(index + 1))
                 index += every
-        for name, x in (("In", left), ("Out", right)):
-            active = self.dragging == name
+        for name, x in (("Start", left), ("End", right)):
+            ink = QColor(T.ACCENT_HOVER if self.dragging == name else T.ACCENT)
+            painter.fillRect(QRectF(x - .5, 0, 1, self.height()), ink)
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(T.ACCENT_HOVER if active else T.ACCENT))
-            painter.drawRect(QRectF(x - 1, wave.top(), 2, wave.height()))
-            tab = QRectF(x - 1, 0, 28, 14) if name == "In" else QRectF(x - 27, 0, 28, 14)
-            painter.drawRoundedRect(tab, 3, 3)
-            painter.setPen(QColor(T.ON_ACCENT))
-            painter.setFont(T.font(11, QFont.Weight.DemiBold))
-            painter.drawText(tab, Qt.AlignmentFlag.AlignCenter, name)
-        painter.setPen(QPen(QColor(T.LINE), 1))
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawRoundedRect(wave.adjusted(.5, .5, -.5, -.5), 6, 6)
+            painter.setBrush(ink)
+            if name == "Start":
+                flag = QPolygonF([QPointF(x, 0), QPointF(x + 9, 0), QPointF(x + 9, 7), QPointF(x, 12)])
+            else:
+                flag = QPolygonF([QPointF(x, 0), QPointF(x - 9, 0), QPointF(x - 9, 7), QPointF(x, 12)])
+            painter.drawPolygon(flag)
 
     def _handle_at(self, x):
         if not self.track:
             return None
         cue_in, cue_out = self.cues()
-        distances = {"In": abs(x - self.x_of(cue_in)), "Out": abs(x - self.x_of(cue_out))}
+        distances = {"Start": abs(x - self.x_of(cue_in)), "End": abs(x - self.x_of(cue_out))}
         name = min(distances, key=distances.get)
         return name if distances[name] <= 9 else None
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton and self.isEnabled():
+        if event.button() == Qt.MouseButton.LeftButton and self.isEnabled() and self.track:
             self.dragging = self._handle_at(event.position().x())
             if self.dragging:
                 self.preview = (self.clip.cue_in, self.clip.cue_out)
@@ -1227,12 +1337,11 @@ class CueEditor(QWidget):
         seconds = self.snap(self.time_at(x), event.modifiers())
         minimum = 240 / self.track.bpm if self.track.bpm else 1
         cue_in, cue_out = self.preview
-        if self.dragging == "In":
+        if self.dragging == "Start":
             cue_in = min(seconds, cue_out - minimum)
         else:
             cue_out = max(seconds, cue_in + minimum)
         self.preview = (max(0.0, cue_in), min(self.track.duration, cue_out))
-        self.setToolTip(f"{self.dragging} {clock(seconds, True)}")
         self.update()
 
     def mouseReleaseEvent(self, event):
@@ -1247,17 +1356,18 @@ class CueEditor(QWidget):
             self.update()
 
 
-# Library ----------------------------------------------------------------------------------
+# Browser ----------------------------------------------------------------------------------
 
-class LibraryModel(QAbstractListModel):
+class LibraryModel(QAbstractTableModel):
     TrackRole = Qt.ItemDataRole.UserRole + 1
+    COLUMNS = ("Name", "BPM", "Key", "Time")
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.session = None
         self.ids = []
         self.query = ""
-        self.order = "added"
+        self.order = (-1, Qt.SortOrder.AscendingOrder)
         self.context = None
         self.context_track = None
         self.arranged = {}
@@ -1268,15 +1378,16 @@ class LibraryModel(QAbstractListModel):
         needle = self.query.casefold().strip()
         if needle:
             tracks = [t for t in tracks if needle in t.name.casefold()]
-        if self.order == "name":
-            tracks.sort(key=lambda t: t.name.casefold())
-        elif self.order == "bpm":
-            tracks.sort(key=lambda t: (t.bpm is None, t.bpm or 0))
-        elif self.order == "key":
-            def key_order(track):
-                code = camelot(track.key)
-                return (not code, int(code[:-1]) if code else 0, code[-1:] if code else "")
-            tracks.sort(key=key_order)
+        column, direction = self.order
+
+        def key_order(track):
+            code = camelot(track.key)
+            return (not code, int(code[:-1]) if code else 0, code[-1:] if code else "")
+
+        sorters = {0: lambda t: t.name.casefold(), 1: lambda t: (t.bpm is None, t.bpm or 0),
+                   2: key_order, 3: lambda t: t.duration}
+        if column in sorters:
+            tracks.sort(key=sorters[column], reverse=direction == Qt.SortOrder.DescendingOrder)
         self.ids = [t.id for t in tracks]
         self.arranged = {}
         if self.session:
@@ -1284,11 +1395,27 @@ class LibraryModel(QAbstractListModel):
                 self.arranged.setdefault(clip.track_id, []).append(index + 1)
         self.endResetModel()
 
+    def sort(self, column, order=Qt.SortOrder.AscendingOrder):
+        self.order = (column, order)
+        self.rebuild()
+
     def track(self, row):
-        return self.session.tracks.get(self.ids[row]) if 0 <= row < len(self.ids) else None
+        return self.session.tracks.get(self.ids[row]) if self.session and 0 <= row < len(self.ids) else None
 
     def rowCount(self, parent=QModelIndex()):
         return 0 if parent.isValid() else len(self.ids)
+
+    def columnCount(self, parent=QModelIndex()):
+        return 0 if parent.isValid() else len(self.COLUMNS)
+
+    def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
+        if orientation == Qt.Orientation.Horizontal:
+            if role == Qt.ItemDataRole.DisplayRole:
+                return self.COLUMNS[section]
+            if role == Qt.ItemDataRole.TextAlignmentRole:
+                return int((Qt.AlignmentFlag.AlignLeft if section == 0 else Qt.AlignmentFlag.AlignRight)
+                           | Qt.AlignmentFlag.AlignVCenter)
+        return None
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
         track = self.track(index.row())
@@ -1297,14 +1424,18 @@ class LibraryModel(QAbstractListModel):
         if role == self.TrackRole:
             return track.id
         if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.AccessibleTextRole):
-            details = [track.name]
-            if track.bpm:
-                details.append(f"{track.bpm:.1f} BPM")
-            if track.key:
-                details.append(display_key(track.key))
-            return ", ".join(details)
+            column = index.column()
+            if column == 0:
+                return track.name
+            if column == 1:
+                return f"{track.bpm:.1f}" if track.bpm else ""
+            if column == 2:
+                return f"{camelot(track.key)} {display_key(track.key, True)}" if track.key else ""
+            return clock(track.duration)
         if role == Qt.ItemDataRole.ToolTipRole:
             lines = [track.name, track.status]
+            if self.arranged.get(track.id):
+                lines.append("In the mix as song " + ", ".join(map(str, self.arranged[track.id])))
             relation = self.relation(track)
             if relation:
                 lines.append(f"Fits the selected clip: {relation}")
@@ -1333,78 +1464,55 @@ class LibraryModel(QAbstractListModel):
 
 
 class LibraryDelegate(QStyledItemDelegate):
-    HEIGHT = 50
-
-    def sizeHint(self, option, index):
-        return QSize(option.rect.width(), self.HEIGHT)
-
     def paint(self, painter, option, index):
         model = index.model()
         track = model.track(index.row())
         if track is None:
             return
         painter.save()
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        rect = QRectF(option.rect).adjusted(4, 1, -4, -1)
+        rect = QRectF(option.rect)
         selected = bool(option.state & QStyle.StateFlag.State_Selected)
         hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
         if selected or hovered:
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(T.SELECTION if selected else "#161A2E"))
-            painter.drawRoundedRect(rect, 6, 6)
-        right_width = 78
-        text_left = rect.left() + 10
-        text_width = rect.width() - right_width - 22
-        painter.setFont(T.font(T.SIZE_BODY, QFont.Weight.Medium))
-        painter.setPen(QColor(T.TEXT))
-        name = painter.fontMetrics().elidedText(track.name, Qt.TextElideMode.ElideRight, int(text_width))
-        painter.drawText(QRectF(text_left, rect.top() + 7, text_width, 18), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, name)
-        small = T.font(T.SIZE_META, tabular=True)
-        painter.setFont(small)
-        metrics = QFontMetricsF(small)
-        x = text_left
-        line = QRectF(0, rect.top() + 26, 0, 16)
-        runs = [(clock(track.duration), T.TEXT_3)]
+            painter.fillRect(rect, QColor(T.SELECTION if selected else "#292929"))
+        column = index.column()
+        text_rect = rect.adjusted(6, 0, -6, 0)
         pending = track.bpm is None and track.status == "Pending analysis"
-        if track.bpm is None and not pending:
-            runs.append(("Needs BPM", T.BAD))
-        positions = model.arranged.get(track.id)
-        if positions:
-            runs.append(("In mix as " + ", ".join(map(str, positions)), T.ACCENT))
-        for text, ink in runs:
-            advance = metrics.horizontalAdvance(text)
-            if x + advance > text_left + text_width:
-                break
-            painter.setPen(QColor(ink))
-            painter.drawText(QRectF(x, line.top(), advance + 2, line.height()), Qt.AlignmentFlag.AlignVCenter, text)
-            x += advance + 12
-        right = QRectF(rect.right() - right_width - 8, rect.top(), right_width, rect.height())
-        if pending:
+        font = T.font(12, tabular=column != 0)
+        painter.setFont(font)
+        metrics = QFontMetricsF(font)
+        align = Qt.AlignmentFlag.AlignVCenter | (Qt.AlignmentFlag.AlignLeft if column == 0 else Qt.AlignmentFlag.AlignRight)
+        if column == 0:
+            if model.arranged.get(track.id):
+                painter.fillRect(QRectF(text_rect.left(), rect.center().y() - 4, 8, 8), QColor(T.clip_color(track.id)))
+            text_rect.setLeft(text_rect.left() + 14)
+            painter.setPen(QColor(T.TEXT))
+            painter.drawText(text_rect, align, metrics.elidedText(track.name, Qt.TextElideMode.ElideRight, int(text_rect.width())))
+        elif pending and column in (1, 2):
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(T.LINE_STRONG))
-            painter.drawRoundedRect(QRectF(right.right() - 40, rect.top() + 11, 40, 10), 3, 3)
-            painter.drawRoundedRect(QRectF(right.right() - 56, rect.top() + 29, 56, 9), 3, 3)
-        else:
-            bpm_font = T.font(T.SIZE_BODY, tabular=True)
-            painter.setFont(bpm_font)
-            painter.setPen(QColor(T.TEXT if track.bpm else T.TEXT_3))
-            painter.drawText(QRectF(right.left(), rect.top() + 7, right.width(), 18),
-                             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-                             f"{track.bpm:.1f}" if track.bpm else "BPM?")
-            painter.setFont(small)
-            key = f"{display_key(track.key, True)}  {camelot(track.key)}" if track.key else "Key?"
+            width = 30 if column == 1 else 40
+            painter.drawRoundedRect(QRectF(text_rect.right() - width, rect.center().y() - 4, width, 8), 2, 2)
+        elif column == 1:
+            painter.setPen(QColor(T.TEXT if track.bpm else T.BAD))
+            painter.drawText(text_rect, align, f"{track.bpm:.1f}" if track.bpm else "Needs BPM")
+        elif column == 2:
+            text = f"{camelot(track.key)} {display_key(track.key, True)}" if track.key else "?"
             painter.setPen(QColor(T.TEXT_2 if track.key else T.TEXT_3))
-            key_width = metrics.horizontalAdvance(key)
-            painter.drawText(QRectF(right.left(), line.top(), right.width(), line.height()),
-                             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, key)
+            painter.drawText(text_rect, align, text)
             if model.relation(track):
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.setBrush(QColor(T.GOOD))
-                painter.drawEllipse(QPointF(right.right() - key_width - 9, line.center().y()), 3, 3)
+                painter.drawEllipse(QPointF(text_rect.right() - metrics.horizontalAdvance(text) - 8, rect.center().y()), 3, 3)
+        else:
+            painter.setPen(QColor(T.TEXT_3))
+            painter.drawText(text_rect, align, clock(track.duration))
         painter.restore()
 
 
-class LibraryView(QListView):
+class LibraryTable(QTableView):
     addRequested = Signal(str)
     filesDropped = Signal(list)
 
@@ -1412,20 +1520,46 @@ class LibraryView(QListView):
         super().__init__(parent)
         self.setModel(model)
         self.setItemDelegate(LibraryDelegate(self))
+        self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.setShowGrid(False)
+        self.setWordWrap(False)
         self.setDragEnabled(True)
         self.setAcceptDrops(True)
         self.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
         self.setDefaultDropAction(Qt.DropAction.CopyAction)
-        self.setUniformItemSizes(True)
         self.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setMouseTracking(True)
-        self.setSpacing(0)
         self.viewport().setAttribute(Qt.WidgetAttribute.WA_Hover)
+        self.verticalHeader().hide()
+        self.verticalHeader().setDefaultSectionSize(22)
+        header = self.horizontalHeader()
+        header.setHighlightSections(False)
+        header.setSectionsClickable(True)
+        header.setSortIndicatorShown(True)
+        header.setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        for column, width in ((1, 52), (2, 64), (3, 44)):
+            header.setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
+            self.setColumnWidth(column, width)
+        header.setFixedHeight(22)
+        header.sectionClicked.connect(self._sort)
         self.file_hover = False
         self.doubleClicked.connect(lambda index: self.addRequested.emit(model.data(index, LibraryModel.TrackRole)))
-        self.setAccessibleName("Library")
+        self.setAccessibleName("Browser")
+
+    def _sort(self, column):
+        model = self.model()
+        current, order = model.order
+        order = (Qt.SortOrder.DescendingOrder if current == column and order == Qt.SortOrder.AscendingOrder
+                 else Qt.SortOrder.AscendingOrder)
+        identity = self.current_id()
+        model.sort(column, order)
+        self.horizontalHeader().setSortIndicator(column, order)
+        if identity:
+            self.select_id(identity)
 
     def current_id(self):
         index = self.currentIndex()
@@ -1434,7 +1568,7 @@ class LibraryView(QListView):
     def select_id(self, identity):
         model = self.model()
         if identity in model.ids:
-            self.setCurrentIndex(model.index(model.ids.index(identity)))
+            self.selectRow(model.ids.index(identity))
 
     def keyPressEvent(self, event):
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and self.current_id():
@@ -1448,10 +1582,8 @@ class LibraryView(QListView):
             return
         drag = QDrag(self)
         drag.setMimeData(self.model().mimeData([index]))
-        rect = self.visualRect(index)
-        image = self.viewport().grab(rect)
-        drag.setPixmap(image)
-        drag.setHotSpot(self.viewport().mapFromGlobal(self.cursor().pos()) - rect.topLeft())
+        row = self.visualRect(index.siblingAtColumn(0)).united(self.visualRect(index.siblingAtColumn(3)))
+        drag.setPixmap(self.viewport().grab(row))
         drag.exec(Qt.DropAction.CopyAction)
 
     def dragEnterEvent(self, event):
@@ -1483,24 +1615,80 @@ class LibraryView(QListView):
     def paintEvent(self, event):
         super().paintEvent(event)
         painter = QPainter(self.viewport())
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        area = QRectF(self.viewport().rect()).adjusted(4, 4, -4, -4)
+        area = QRectF(self.viewport().rect()).adjusted(3, 3, -3, -3)
         if self.model().rowCount() == 0:
             searching = bool(self.model().query.strip())
-            painter.setFont(T.font(T.SIZE_BODY, QFont.Weight.DemiBold))
+            painter.setFont(T.font(12, QFont.Weight.DemiBold))
             painter.setPen(QColor(T.TEXT))
-            painter.drawText(QRectF(area.left() + 12, area.top() + 40, area.width() - 24, 22), Qt.AlignmentFlag.AlignCenter,
+            painter.drawText(QRectF(area.left() + 10, area.top() + 30, area.width() - 20, 20), Qt.AlignmentFlag.AlignCenter,
                              "No matching songs" if searching else "Your library is empty")
-            painter.setFont(T.font(T.SIZE_META))
+            painter.setFont(T.font(11))
             painter.setPen(QColor(T.TEXT_2))
-            painter.drawText(QRectF(area.left() + 16, area.top() + 66, area.width() - 32, 60),
+            painter.drawText(QRectF(area.left() + 14, area.top() + 54, area.width() - 28, 60),
                              Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap,
                              "Try another part of the title." if searching else
-                             "Drop audio files or a folder here, or use Import folder below.")
+                             "Drop audio files or a folder here, or use Add folder below.")
         if self.file_hover:
             pen = QPen(QColor(T.ACCENT), 1.5, Qt.PenStyle.CustomDashLine)
             pen.setDashPattern([4, 3])
             painter.setPen(pen)
             painter.setBrush(T.color(T.ACCENT, .05))
-            painter.drawRoundedRect(area, 8, 8)
+            painter.drawRect(area)
         painter.end()
+
+
+class BrowserPreview(QWidget):
+    """Waveform of the song selected in the browser. Drag it onto the arrangement to add the song."""
+
+    def __init__(self, bands, parent=None):
+        super().__init__(parent)
+        self.bands = bands
+        self.track = None
+        self.origin = None
+        self.setFixedHeight(52)
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
+        self.setToolTip("Drag onto the arrangement to add this song")
+
+    def set_track(self, track):
+        self.track = track
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.fillRect(self.rect(), QColor(T.FIELD))
+        if not self.track:
+            painter.setFont(T.font(11))
+            painter.setPen(QColor(T.TEXT_3))
+            painter.drawText(QRectF(self.rect()), Qt.AlignmentFlag.AlignCenter, "Select a song to see its waveform")
+            return
+        painter.setFont(T.font(11, QFont.Weight.Medium))
+        painter.setPen(QColor(T.TEXT_2))
+        metrics = painter.fontMetrics()
+        painter.drawText(QRectF(6, 2, self.width() - 60, 14), Qt.AlignmentFlag.AlignVCenter,
+                         metrics.elidedText(self.track.name, Qt.TextElideMode.ElideRight, self.width() - 60))
+        painter.setFont(T.font(11, tabular=True))
+        painter.drawText(QRectF(self.width() - 50, 2, 44, 14), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
+                         clock(self.track.duration))
+        wave = QRectF(0, 17, self.width(), self.height() - 19)
+        base = T.clip_color(self.track.id)
+        columns = band_columns(self.bands.get(self.track.id), 0, self.track.duration * BINS_PER_SECOND,
+                               max(1, int(wave.width())))
+        if columns is not None:
+            paint_bands(painter, wave, columns, T.clip_bands(base))
+        else:
+            paint_envelope(painter, wave, peak_columns(self.track.waveform, 0, 1, max(1, int(wave.width() / 2))), T.TEXT_3, .6)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.origin = event.position()
+
+    def mouseMoveEvent(self, event):
+        if self.track and self.origin and (event.position() - self.origin).manhattanLength() > 6:
+            data = QMimeData()
+            data.setData(TRACK_MIME, self.track.id.encode())
+            drag = QDrag(self)
+            drag.setMimeData(data)
+            drag.setPixmap(self.grab())
+            self.origin = None
+            drag.exec(Qt.DropAction.CopyAction)

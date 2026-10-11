@@ -15,17 +15,17 @@ from PySide6.QtCore import QObject, QRunnable, QSize, QStandardPaths, QThreadPoo
 from PySide6.QtGui import QAction, QActionGroup, QDesktopServices, QFont, QKeySequence
 from PySide6.QtMultimedia import QAudioOutput, QMediaDevices, QMediaPlayer
 from PySide6.QtWidgets import (QApplication, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QInputDialog, QLabel,
-                               QLineEdit, QMainWindow, QMenu, QProgressBar, QPushButton, QScrollArea,
-                               QSlider, QSplitter, QStackedWidget, QToolButton, QVBoxLayout, QWidget)
+                               QLineEdit, QMainWindow, QMenu, QProgressBar, QPushButton, QSlider, QSplitter,
+                               QStackedWidget, QToolButton, QVBoxLayout, QWidget)
 
 import djmix
 import studio_theme as T
 from studio_engine import (Clip, Session, blend_advice, cache_track, estimate_track, layout, load_track,
                            preview_range, render_session, suggest_order)
 from studio_waveform import BINS_PER_SECOND, band_envelope, level_envelope
-from studio_widgets import (ComboBox, CueEditor, DoubleSpinBox, ElidedLabel, FlowLayout, LevelMeter, LibraryModel,
-                            LibraryView, Notice, Overview, SignedSpinBox, SpinBox, Stepper, Switch, TimeSpinBox, Timeline,
-                            camelot, clock, display_key, group, parsed_key, tool_button)
+from studio_widgets import (DARK_TEXT, BrowserPreview, ComboBox, CueEditor, ElidedLabel, Knob, LevelMeter,
+                            LibraryModel, LibraryTable, Notice, Overview, Timeline, ValueBox, bar_position, camelot,
+                            clock, display_key, parsed_key, toggle, tool_button)
 
 
 ROOT = Path(__file__).resolve().parent
@@ -37,6 +37,20 @@ RELATIONS = {"same key": "Same key", "relative major/minor": "Relative major and
 SUGGESTION_REASONS = {"same key": "the same key as the previous song",
                       "relative major/minor": "the relative key of the previous song",
                       "neighboring keys on the circle of fifths": "a neighboring key to the previous song"}
+
+
+def clock_ms(seconds):
+    total = int(round(seconds * 1000))
+    return f"{total // 60000}:{total % 60000 / 1000:06.3f}"
+
+
+def parse_time(text):
+    """Seconds from m:ss.mmm or plain seconds."""
+    text = text.strip()
+    if ":" in text:
+        minutes, rest = text.split(":", 1)
+        return int(minutes or 0) * 60 + float(rest or 0)
+    return float(text)
 
 
 def plain(text):
@@ -110,6 +124,7 @@ class Studio(QMainWindow):
         self.bands, self.band_pending, self.band_failed, self.band_workers = {}, set(), set(), set()
         self.band_cancel = threading.Event()
         self.comparison = None
+        self.key_suggestion = None
         self.prefs = self.read_prefs()
         self.output_preference = self.prefs.get("audio_output", "system")
         self.setWindowTitle("DJ Studio")
@@ -197,465 +212,436 @@ class Studio(QMainWindow):
         root = QWidget()
         self.setCentralWidget(root)
         column = QVBoxLayout(root)
-        column.setContentsMargins(0, 0, 0, 0)
-        column.setSpacing(0)
-        column.addWidget(self.build_top_bar())
+        column.setContentsMargins(4, 4, 4, 0)
+        column.setSpacing(4)
+        column.addWidget(self.build_control_bar())
+        work = QSplitter(Qt.Orientation.Vertical)
+        work.setChildrenCollapsible(False)
+        work.setHandleWidth(4)
+        work.addWidget(self.build_arrangement())
+        work.addWidget(self.build_detail())
+        work.setStretchFactor(0, 1)
+        work.setStretchFactor(1, 0)
+        work.setSizes([640, 220])
         body = QSplitter(Qt.Orientation.Horizontal)
         body.setChildrenCollapsible(False)
-        body.setHandleWidth(1)
-        body.addWidget(self.build_library())
-        body.addWidget(self.build_center())
-        body.addWidget(self.build_inspector())
+        body.setHandleWidth(4)
+        body.addWidget(self.build_browser())
+        body.addWidget(work)
         body.setStretchFactor(0, 0)
         body.setStretchFactor(1, 1)
-        body.setStretchFactor(2, 0)
-        body.setSizes([330, 850, 340])
+        body.setSizes([300, 1212])
         column.addWidget(body, 1)
         column.addWidget(self.build_status_bar())
 
-    def build_top_bar(self):
+    def build_control_bar(self):
         bar = QFrame()
-        bar.setObjectName("topBar")
-        bar.setFixedHeight(76)
+        bar.setObjectName("controlBar")
+        bar.setFixedHeight(40)
         row = QHBoxLayout(bar)
-        row.setContentsMargins(20, 0, 20, 0)
-        row.setSpacing(0)
-
-        left = QWidget()
-        left_row = QHBoxLayout(left)
-        left_row.setContentsMargins(0, 0, 0, 0)
-        left_row.setSpacing(10)
-        self.project_title = ElidedLabel("Untitled mix")
-        self.project_title.setProperty("role", "heading")
-        self.edited_label = label("", "hint")
-        left_row.addWidget(self.project_title)
-        left_row.addWidget(self.edited_label)
-        left_row.addStretch(1)
-        left.setMinimumWidth(140)
-
-        center = QWidget()
-        transport = QHBoxLayout(center)
-        transport.setContentsMargins(0, 0, 0, 0)
-        transport.setSpacing(6)
-        self.rewind_btn = tool_button("rewind", "Back to the start", self.rewind, 18)
-        self.play_btn = QToolButton()
-        self.play_btn.setObjectName("play")
-        self.play_btn.setFixedSize(40, 40)
-        self.play_btn.setIconSize(QSize(20, 20))
-        self.play_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.play_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
-        self.play_btn.clicked.connect(self.toggle_play)
-        self.stop_btn = tool_button("stop", "Stop", self.stop, 18)
-        transport.addWidget(self.rewind_btn)
-        transport.addWidget(self.play_btn)
-        transport.addWidget(self.stop_btn)
-        transport.addSpacing(16)
-        readout = QVBoxLayout()
-        readout.setSpacing(0)
-        readout.setContentsMargins(0, 0, 0, 0)
-        times = QHBoxLayout()
-        times.setSpacing(6)
-        self.time_label = label("0:00.0", "readout")
-        self.time_label.setFont(T.font(T.SIZE_READOUT, QFont.Weight.Medium, tabular=True))
-        self.time_label.setMinimumWidth(96)
-        self.duration_label = label("", "hint")
-        self.duration_label.setFont(T.font(T.SIZE_BODY, tabular=True))
-        times.addWidget(self.time_label, 0, Qt.AlignmentFlag.AlignBottom)
-        times.addWidget(self.duration_label, 0, Qt.AlignmentFlag.AlignBottom)
-        times.addStretch(1)
-        readout.addLayout(times)
+        row.setContentsMargins(8, 0, 8, 0)
+        row.setSpacing(6)
+        self.tempo = ValueBox(20, 300, step=1, fine=.01, decimals=2, width=74, height=26, font_size=15)
+        self.tempo.setToolTip("Project tempo. Drag up or down (Shift for hundredths) or double-click to type. "
+                              "Every song is stretched to it; keys stay as they are.")
+        self.tempo.setAccessibleName("Project tempo in BPM")
+        self.tempo.committed.connect(self.change_tempo)
+        row.addWidget(self.tempo)
+        row.addWidget(label("BPM", "small"))
+        row.addSpacing(6)
+        signature = label("4 / 4", "lcd")
+        signature.setFont(T.font(15, QFont.Weight.Medium, tabular=True))
+        signature.setToolTip("DJ Studio assumes 4/4 time")
+        row.addWidget(signature)
+        row.addStretch(1)
+        self.rewind_btn = self.transport_button("rewind", "Back to the start (Home)", self.rewind)
+        self.play_btn = self.transport_button("play", "Play (Space)", self.toggle_play)
+        self.stop_btn = self.transport_button("stop", "Stop", self.stop)
+        for widget in (self.rewind_btn, self.play_btn, self.stop_btn):
+            row.addWidget(widget)
+        row.addSpacing(8)
+        self.position_label = label("1.1.1", "lcd")
+        self.position_label.setFont(T.font(15, QFont.Weight.Medium, tabular=True))
+        self.position_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.position_label.setMinimumWidth(86)
+        self.position_label.setToolTip("Playhead position in bars, beats and sixteenths")
+        self.time_label = label("0:00.0", "lcd")
+        self.time_label.setFont(T.font(15, QFont.Weight.Medium, tabular=True))
+        self.time_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.time_label.setMinimumWidth(78)
+        self.time_label.setToolTip("Playhead position in minutes and seconds")
+        row.addWidget(self.position_label)
+        row.addWidget(self.time_label)
+        row.addSpacing(8)
         self.source_label = ElidedLabel("Nothing rendered yet")
         self.source_label.setProperty("role", "small")
-        self.source_label.setFixedWidth(200)
-        readout.addWidget(self.source_label)
-        transport.addLayout(readout)
-        transport.addSpacing(10)
+        self.source_label.setFixedWidth(210)
+        row.addWidget(self.source_label)
+        row.addStretch(1)
         self.meter = LevelMeter()
-        transport.addWidget(self.meter)
-
-        right = QWidget()
-        right_row = QHBoxLayout(right)
-        right_row.setContentsMargins(0, 0, 0, 0)
-        right_row.setSpacing(8)
-        right_row.addStretch(1)
-        self.tempo = DoubleSpinBox()
-        self.tempo.setProperty("role", "readout")
-        self.tempo.setButtonSymbols(DoubleSpinBox.ButtonSymbols.NoButtons)
-        self.tempo.setRange(20, 300)
-        self.tempo.setDecimals(2)
-        self.tempo.setValue(128)
-        self.tempo.setKeyboardTracking(False)
-        self.tempo.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.tempo.setFont(T.font(22, QFont.Weight.DemiBold, tabular=True))
-        self.tempo.setFixedWidth(96)
-        self.tempo.setToolTip("Project tempo. Every song is stretched to this BPM; keys stay as they are.")
-        self.tempo.setAccessibleName("Project tempo in BPM")
-        self.tempo.editingFinished.connect(self.change_tempo)
-        right_row.addWidget(self.tempo)
-        right_row.addWidget(label("BPM", "hint"))
-        right_row.addSpacing(18)
-        self.output_button = tool_button("speaker", "Audio output", size=18)
+        row.addWidget(self.meter)
+        row.addSpacing(6)
+        self.output_button = tool_button("speaker", "Audio output", size=16)
         self.output_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.output_menu = QMenu(self)
         self.output_button.setMenu(self.output_menu)
         self.output_group = QActionGroup(self)
         self.output_group.setExclusive(True)
-        right_row.addWidget(self.output_button)
+        row.addWidget(self.output_button)
         self.volume = QSlider(Qt.Orientation.Horizontal)
         self.volume.setRange(0, 100)
         self.volume.setValue(int(self.prefs.get("volume", 70)))
-        self.volume.setFixedWidth(76)
+        self.volume.setFixedWidth(72)
         self.volume.setAccessibleName("Output volume")
         self.volume.setToolTip("Output volume")
         self.volume.valueChanged.connect(lambda value: self.audio.setVolume(value / 100))
-        right_row.addWidget(self.volume)
-        right_row.addSpacing(18)
-        self.export_btn = button("Export mix", self.export_mix, None, "export")
-        right_row.addWidget(self.export_btn)
-
-        row.addWidget(left, 1)
-        row.addWidget(center, 0)
-        row.addWidget(right, 1)
+        row.addWidget(self.volume)
+        row.addSpacing(8)
+        self.export_btn = button("Export…", self.export_mix, None, "export")
+        self.export_btn.setToolTip("Render the whole mix to a WAV file (Cmd+E)")
+        row.addWidget(self.export_btn)
         return bar
 
-    def build_library(self):
+    def transport_button(self, icon, tooltip, callback):
+        widget = tool_button(icon, tooltip, callback, 14)
+        widget.setProperty("role", "transport")
+        widget.setFixedSize(32, 26)
+        return widget
+
+    def build_browser(self):
         pane = QFrame()
-        pane.setObjectName("pane")
-        pane.setMinimumWidth(300)
+        pane.setObjectName("panel")
+        pane.setMinimumWidth(250)
         column = QVBoxLayout(pane)
-        column.setContentsMargins(14, 14, 10, 12)
-        column.setSpacing(10)
+        column.setContentsMargins(6, 6, 6, 6)
+        column.setSpacing(6)
         header = QHBoxLayout()
-        header.setContentsMargins(4, 0, 0, 0)
-        header.addWidget(label("Library", "heading"))
-        header.addSpacing(6)
-        self.library_count = label("", "secondary")
+        header.setContentsMargins(2, 0, 0, 0)
+        header.addWidget(label("Library", "boxTitle"))
+        header.addSpacing(4)
+        self.library_count = label("", "small")
         header.addWidget(self.library_count)
         header.addStretch(1)
-        self.sort = ComboBox()
-        self.sort.setProperty("role", "quiet")
-        self.sort.setAccessibleName("Sort songs by")
-        self.sort.setSizeAdjustPolicy(ComboBox.SizeAdjustPolicy.AdjustToContents)
-        for text, value in (("Recently added", "added"), ("Name", "name"), ("BPM", "bpm"), ("Key", "key")):
-            self.sort.addItem(text, value)
-        self.sort.setMinimumWidth(self.sort.sizeHint().width())
-        self.sort.currentIndexChanged.connect(lambda _: self.refresh_library())
-        header.addWidget(self.sort)
         column.addLayout(header)
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Search songs")
-        self.search.addAction(T.icon("search", T.TEXT_3, 14), QLineEdit.ActionPosition.LeadingPosition)
+        self.search.setPlaceholderText("Search")
+        self.search.addAction(T.icon("search", T.TEXT_3, 12), QLineEdit.ActionPosition.LeadingPosition)
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(lambda _: self.refresh_library())
         column.addWidget(self.search)
         self.library_model = LibraryModel(self)
-        self.library = LibraryView(self.library_model)
+        self.library = LibraryTable(self.library_model)
         self.library.addRequested.connect(lambda identity: self.add_track(identity, len(self.session.clips)))
         self.library.filesDropped.connect(lambda paths: self.import_paths(self.audio_files([Path(p) for p in paths])))
         self.library.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.library.customContextMenuRequested.connect(self.library_menu)
-        self.library.selectionModel().currentChanged.connect(lambda *_: self.refresh_actions())
+        self.library.selectionModel().currentChanged.connect(lambda *_: self.library_selected())
         column.addWidget(self.library, 1)
+        self.preview_strip = BrowserPreview(self.bands)
+        column.addWidget(self.preview_strip)
         tools = QHBoxLayout()
-        tools.setSpacing(6)
-        self.import_btn = button("Import folder", self.import_folder, None, "folder")
-        self.files_btn = button("Add files", self.import_files, None, "plus")
+        tools.setSpacing(4)
+        self.import_btn = button("Add folder…", self.import_folder, None, "folder")
+        self.files_btn = button("Add files…", self.import_files, None, "plus")
         tools.addWidget(self.import_btn)
         tools.addWidget(self.files_btn)
         tools.addStretch(1)
         column.addLayout(tools)
-        hint = label("Double-click a song or drag it onto the timeline to add it. Right-click for more.", "hint", True)
-        hint.setContentsMargins(4, 0, 0, 0)
-        column.addWidget(hint)
         return pane
 
-    def build_center(self):
+    def build_arrangement(self):
         pane = QFrame()
-        pane.setObjectName("pane")
+        pane.setObjectName("panel")
         column = QVBoxLayout(pane)
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(0)
         header = QHBoxLayout()
-        header.setContentsMargins(18, 14, 14, 10)
-        header.setSpacing(4)
-        header.addWidget(label("Arrangement", "heading"))
+        header.setContentsMargins(8, 4, 6, 4)
+        header.setSpacing(2)
+        header.addWidget(label("Arrangement", "boxTitle"))
         header.addSpacing(8)
-        self.arrangement_summary = label("", "secondary")
+        self.arrangement_summary = label("", "small")
         header.addWidget(self.arrangement_summary)
         header.addStretch(1)
         self.order_btn = button("Suggest order", self.propose_order, "ghost", "order")
         header.addWidget(self.order_btn)
-        header.addSpacing(8)
-        self.timeline = Timeline(self.session, self.bands)
-        header.addWidget(tool_button("minus", "Zoom out", lambda: self.timeline.zoom(1 / 1.5)))
-        header.addWidget(tool_button("plus", "Zoom in", lambda: self.timeline.zoom(1.5)))
-        header.addWidget(tool_button("fit", "Fit the whole mix", self.timeline.fit))
+        header.addSpacing(6)
+        self.timeline = Timeline(self.session, self.bands, self.meter)
+        header.addWidget(tool_button("minus", "Zoom out (Cmd+-)", lambda: self.timeline.zoom(1 / 1.5)))
+        header.addWidget(tool_button("plus", "Zoom in (Cmd+=)", lambda: self.timeline.zoom(1.5)))
+        header.addWidget(tool_button("fit", "Fit the whole mix (Cmd+0)", self.timeline.fit))
         column.addLayout(header)
         self.notice = Notice()
         holder = QHBoxLayout()
-        holder.setContentsMargins(18, 0, 18, 10)
+        holder.setContentsMargins(6, 0, 6, 4)
         holder.addWidget(self.notice)
         column.addLayout(holder)
         self.overview = Overview(self.timeline)
         self.overview.navigate.connect(self.navigate)
-        holder = QHBoxLayout()
-        holder.setContentsMargins(18, 0, 18, 12)
-        holder.addWidget(self.overview)
-        column.addLayout(holder)
-        stage = QFrame()
-        stage.setObjectName("stage")
-        stage_layout = QVBoxLayout(stage)
-        stage_layout.setContentsMargins(0, 0, 0, 0)
-        stage_layout.addWidget(self.timeline)
+        column.addWidget(self.overview)
+        column.addSpacing(1)
+        column.addWidget(self.timeline, 1)
         self.timeline.trackDropped.connect(self.add_track)
         self.timeline.clipMoved.connect(self.move_clip)
         self.timeline.selected.connect(self.select_clip)
         self.timeline.seekRequested.connect(self.seek_timeline)
         self.timeline.transitionSelected.connect(self.select_transition)
-        column.addWidget(stage, 1)
-        column.addWidget(self.build_transition_bar())
         return pane
 
-    def build_transition_bar(self):
-        bar = QFrame()
-        bar.setObjectName("transitionBar")
-        column = QVBoxLayout(bar)
-        column.setContentsMargins(18, 14, 18, 16)
-        column.setSpacing(12)
-        top = QHBoxLayout()
-        top.setSpacing(4)
-        self.transition_title = label("Transition", "heading")
-        top.addWidget(self.transition_title)
-        top.addSpacing(8)
-        self.prev_transition = tool_button("chevron-left", "Previous transition", lambda: self.step_transition(-1))
-        self.next_transition = tool_button("chevron-right", "Next transition", lambda: self.step_transition(1))
-        top.addWidget(self.prev_transition)
-        top.addWidget(self.next_transition)
-        top.addStretch(1)
-        self.render_btn = button("Render full mix", self.render_full)
-        self.render_btn.setToolTip("Render the whole arrangement so you can play and seek anywhere")
-        self.preview_btn = button("Preview transition", self.preview, "primary", "play")
-        self.preview_btn.setToolTip("Render this blend with four bars either side, then play it (P)")
-        top.addWidget(self.render_btn)
-        top.addSpacing(6)
-        top.addWidget(self.preview_btn)
-        column.addLayout(top)
+    def box(self, title=None, width=None, name="box"):
+        """A detail-view box: a title strip over a compact body, as in a DAW clip view."""
+        frame = QFrame()
+        frame.setObjectName("box")
+        if width:
+            frame.setFixedWidth(width)
+        column = QVBoxLayout(frame)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(0)
+        strip = QFrame()
+        strip.setObjectName("boxTitle")
+        strip.setFixedHeight(22)
+        strip_row = QHBoxLayout(strip)
+        strip_row.setContentsMargins(8, 0, 4, 0)
+        strip_row.setSpacing(2)
+        if title is not None:
+            strip_row.addWidget(label(title, "boxTitle"))
+            strip_row.addStretch(1)
+        column.addWidget(strip)
+        body = QVBoxLayout()
+        body.setContentsMargins(8, 7, 8, 8)
+        body.setSpacing(6)
+        column.addLayout(body, 1)
+        return frame, strip, strip_row, body
 
-        self.transition_details = QWidget()
-        details = QVBoxLayout(self.transition_details)
-        details.setContentsMargins(0, 0, 0, 0)
-        details.setSpacing(12)
-        self.from_name = ElidedLabel()
-        self.from_name.setFont(T.font(T.SIZE_BODY, QFont.Weight.Medium))
-        self.from_key = label("", "secondary")
-        arrow = QLabel()
-        arrow.setPixmap(T.pixmap("arrow-right", T.TEXT_3, 14))
-        self.to_name = ElidedLabel()
-        self.to_name.setFont(T.font(T.SIZE_BODY, QFont.Weight.Medium))
-        self.to_key = label("", "secondary")
-        self.verdict = label("", "secondary")
-        self.verdict.setTextFormat(Qt.TextFormat.RichText)
-        names = QWidget()
-        flow = FlowLayout(names, spacing=12, row_spacing=6)
-        flow.addWidget(group(self.from_name, self.from_key, arrow, self.to_name, self.to_key, spacing=8))
-        flow.addWidget(self.verdict)
-        details.addWidget(names)
-        self.blend_bars = SpinBox()
-        self.blend_bars.setRange(1, 32)
-        self.blend_bars.setSuffix(" bars")
-        blend = Stepper(self.blend_bars, None, "blend length")
-        blend.setFixedWidth(150)
-        self.bass = Switch("Bass handoff")
-        self.bass.setToolTip("Swap the low end in one bar at the middle of the blend instead of crossfading it")
-        self.outro_drums = Switch("Outro is beats only")
-        self.intro_drums = Switch("Intro is beats only")
-        for switch in (self.outro_drums, self.intro_drums):
-            switch.setToolTip("Turn on only if the whole overlap has no pitched bass, vocals, melody or tonal tails. "
-                              "This changes the key advice, not the audio.")
-        controls = QWidget()
-        flow = FlowLayout(controls, spacing=28, row_spacing=6)
-        flow.addWidget(group(label("Blend", "secondary"), blend, spacing=10))
-        for widget in (self.bass, self.outro_drums, self.intro_drums):
-            flow.addWidget(widget)
-        details.addWidget(controls)
-        column.addWidget(self.transition_details)
-        self.transition_empty = label("Add a second song to the arrangement to create a transition.", "secondary")
-        column.addWidget(self.transition_empty)
-        self.blend_bars.valueChanged.connect(lambda _: self.apply_transition())
-        for switch in (self.bass, self.outro_drums, self.intro_drums):
-            switch.toggled.connect(lambda _: self.apply_transition())
-        return bar
-
-    def build_inspector(self):
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setMinimumWidth(320)
-        scroll.setMaximumWidth(420)
-        pane = QFrame()
-        pane.setObjectName("pane")
-        self.inspector_stack = QStackedWidget(pane)
-        outer = QVBoxLayout(pane)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.addWidget(self.inspector_stack)
-
+    def build_detail(self):
+        detail = QFrame()
+        detail.setObjectName("panel")
+        detail.setMinimumHeight(196)
+        row = QHBoxLayout(detail)
+        row.setContentsMargins(6, 6, 6, 6)
+        row.setSpacing(6)
+        self.clip_stack = QStackedWidget()
         empty = QWidget()
         empty_column = QVBoxLayout(empty)
-        empty_column.setContentsMargins(22, 20, 22, 20)
-        empty_column.setSpacing(6)
-        empty_column.addWidget(label("No clip selected", "heading"))
-        empty_column.addWidget(label("Select a clip in the arrangement to edit its cue points, key, pitch and timing.",
-                                     "secondary", True))
         empty_column.addStretch(1)
-        self.inspector_stack.addWidget(empty)
+        hint = label("Select a clip in the arrangement to edit its start and end, tempo, key and pitch.", "secondary")
+        hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_column.addWidget(hint)
+        empty_column.addStretch(1)
+        self.clip_stack.addWidget(empty)
+        self.clip_editor = QWidget()
+        boxes = QHBoxLayout(self.clip_editor)
+        boxes.setContentsMargins(0, 0, 0, 0)
+        boxes.setSpacing(6)
+        boxes.addWidget(self.build_clip_box())
+        boxes.addWidget(self.build_sample_box())
+        boxes.addWidget(self.build_display_box(), 1)
+        self.clip_stack.addWidget(self.clip_editor)
+        row.addWidget(self.clip_stack, 1)
+        row.addWidget(self.build_transition_box())
+        return detail
 
-        self.editor = QWidget()
-        column = QVBoxLayout(self.editor)
-        column.setContentsMargins(20, 18, 20, 16)
-        column.setSpacing(0)
-        self.clip_title = label("", "title", True)
-        column.addWidget(self.clip_title)
-        column.addSpacing(4)
-        self.clip_state = label("", "secondary", True)
-        column.addWidget(self.clip_state)
-        column.addSpacing(16)
-        self.cue_editor = CueEditor(self.bands)
-        self.cue_editor.setMinimumHeight(96)
-        self.cue_editor.cuesChanged.connect(self.set_cues)
-        column.addWidget(self.cue_editor)
-        column.addSpacing(10)
-        cues = QGridLayout()
-        cues.setHorizontalSpacing(12)
-        cues.setVerticalSpacing(4)
-        cues.addWidget(label("In point", "small"), 0, 0)
-        cues.addWidget(label("Out point", "small"), 0, 1)
-        self.cue_in, self.cue_out = TimeSpinBox(), TimeSpinBox()
-        cues.addWidget(Stepper(self.cue_in, self.bar_length, "in point by one bar"), 1, 0)
-        cues.addWidget(Stepper(self.cue_out, self.bar_length, "out point by one bar"), 1, 1)
-        column.addLayout(cues)
-        column.addSpacing(6)
-        column.addWidget(label(f"Handles and buttons move by bars. Hold Shift while dragging for beats, "
-                               f"or {FREE_KEY} to place freely.", "hint", True))
-        column.addSpacing(18)
+    def build_clip_box(self):
+        frame, strip, strip_row, body = self.box(width=196)
+        self.clip_strip = strip
+        self.clip_name = ElidedLabel()
+        self.clip_name.setFont(T.font(12, QFont.Weight.DemiBold))
+        strip_row.addWidget(self.clip_name, 1)
+        self.clip_state = label("", "hint", True)
+        body.addWidget(self.clip_state)
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(5)
+        self.cue_in = ValueBox(0, 3600, step=self.bar_length, fine=self.beat_length, decimals=3, width=96,
+                               text=lambda v: clock_ms(v), parse=parse_time)
+        self.cue_out = ValueBox(0, 3600, step=self.bar_length, fine=self.beat_length, decimals=3, width=96,
+                                text=lambda v: clock_ms(v), parse=parse_time)
+        for widget, name in ((self.cue_in, "start"), (self.cue_out, "end")):
+            widget.setToolTip(f"Clip {name} in the original song. Drag to move by bars, Shift for beats, "
+                              "or double-click to type a time.")
+        self.cue_in.committed.connect(lambda value: self.set_clip_value("cue_in", value))
+        self.cue_out.committed.connect(lambda value: self.set_clip_value("cue_out", value))
+        grid.addWidget(label("Start", "field"), 0, 0)
+        grid.addWidget(self.cue_in, 0, 1)
+        grid.addWidget(label("End", "field"), 1, 0)
+        grid.addWidget(self.cue_out, 1, 1)
+        body.addLayout(grid)
+        body.addStretch(1)
+        moves = QHBoxLayout()
+        moves.setSpacing(2)
+        self.earlier = tool_button("arrow-left", "Move earlier in the mix (Cmd+Left)", lambda: self.nudge(-1))
+        self.later = tool_button("arrow-right", "Move later in the mix (Cmd+Right)", lambda: self.nudge(1))
+        self.remove_btn = button("Remove", self.remove_clip, "danger", "trash")
+        self.remove_btn.setToolTip("Remove this clip from the mix. The song stays in your library. (Delete)")
+        moves.addWidget(self.earlier)
+        moves.addWidget(self.later)
+        moves.addStretch(1)
+        moves.addWidget(self.remove_btn)
+        body.addLayout(moves)
+        return frame
 
-        column.addWidget(label("Tempo and key", "section"))
-        column.addSpacing(10)
-        form = QGridLayout()
-        form.setHorizontalSpacing(12)
-        form.setVerticalSpacing(8)
-        form.setColumnStretch(1, 1)
-        self.bpm = DoubleSpinBox()
-        self.bpm.setDecimals(3)
-        self.bpm.setRange(20, 300)
-        self.bpm.setSingleStep(.1)
+    def build_sample_box(self):
+        frame, strip, strip_row, body = self.box("Sample", width=236)
+        tempo = QHBoxLayout()
+        tempo.setSpacing(6)
+        tempo.addWidget(label("BPM", "field"))
+        self.bpm = ValueBox(20, 300, step=.1, fine=.001, decimals=3, width=78)
+        self.bpm.setToolTip("The song's own tempo. Drag (Shift for fine steps) or double-click to type.")
+        self.bpm.committed.connect(self.set_bpm)
+        tempo.addWidget(self.bpm)
+        self.use_bpm_btn = button("Use suggested", self.use_timing_bpm, "ghost")
+        tempo.addWidget(self.use_bpm_btn)
+        tempo.addStretch(1)
+        body.addLayout(tempo)
+        key = QHBoxLayout()
+        key.setSpacing(6)
+        key.addWidget(label("Key", "field"))
         self.key = ComboBox()
         self.key.addItem("Unknown", "")
         keys = [(code, f"{note} {mode}") for mode in ("minor", "major") for note in djmix.NOTES
                 for code in [camelot(f"{note} {mode}")]]
         for code, name in sorted(keys, key=lambda item: (item[0][-1], int(item[0][:-1]))):
-            self.key.addItem(f"{code}   {display_key(name)}", name)
-        form.addWidget(label("Source BPM", "secondary"), 0, 0)
-        form.addWidget(Stepper(self.bpm, None, "BPM"), 0, 1)
-        form.addWidget(label("Key", "secondary"), 1, 0)
-        form.addWidget(self.key, 1, 1)
-        column.addLayout(form)
-        column.addSpacing(18)
-
-        column.addWidget(label("Pitch", "section"))
-        column.addSpacing(6)
-        self.transpose = Switch("Transpose this song")
-        column.addWidget(self.transpose)
-        column.addSpacing(4)
+            self.key.addItem(f"{code}  {display_key(name)}", name)
+        self.key.currentIndexChanged.connect(lambda _: self.set_key())
+        key.addWidget(self.key, 1)
+        body.addLayout(key)
         pitch = QHBoxLayout()
-        pitch.setSpacing(12)
-        pitch.addWidget(label("Semitones", "secondary"))
-        self.shift = SignedSpinBox()
-        self.shift.setRange(-12, 12)
-        shift = Stepper(self.shift, None, "semitones")
-        shift.setFixedWidth(130)
-        pitch.addStretch(1)
-        pitch.addWidget(shift)
-        column.addLayout(pitch)
-        column.addSpacing(6)
+        pitch.setSpacing(8)
+        self.transpose_knob = Knob()
+        self.transpose_knob.setToolTip("Transpose in semitones. Drag up or down; double-click for the original key.")
+        self.transpose_knob.committed.connect(self.set_transpose)
+        pitch.addWidget(self.transpose_knob)
+        advice = QVBoxLayout()
+        advice.setSpacing(3)
+        self.match_btn = button("Match key", self.match_key)
+        self.match_btn.setToolTip("Transpose to the suggested key for a smoother blend with the previous song")
+        advice.addWidget(self.match_btn, 0, Qt.AlignmentFlag.AlignLeft)
         self.shift_hint = label("", "hint", True)
-        column.addWidget(self.shift_hint)
-        column.addSpacing(18)
+        advice.addWidget(self.shift_hint)
+        pitch.addLayout(advice, 1)
+        body.addLayout(pitch)
+        warp = QHBoxLayout()
+        warp.setSpacing(4)
+        self.stabilize = toggle("Stabilize", "Gentle tempo correction in confidently detected passages. "
+                                             "Cached for previews and exports.")
+        self.stabilize.clicked.connect(self.set_stabilize)
+        self.timing_btn = button("Analyze", self.analyze_timing)
+        self.timing_btn.setToolTip("Check whether the tempo drifts across the whole song")
+        self.compare_timing_btn = button("A/B", self.compare_timing)
+        self.compare_timing_btn.setToolTip("Compare fixed and stabilized tempo while it plays")
+        warp.addWidget(self.stabilize)
+        warp.addWidget(self.timing_btn)
+        warp.addWidget(self.compare_timing_btn)
+        warp.addStretch(1)
+        body.addLayout(warp)
+        self.timing_hint = label("", "hint", True)
+        body.addWidget(self.timing_hint)
+        body.addStretch(1)
+        return frame
 
-        column.addWidget(label("Timing", "section"))
-        column.addSpacing(6)
-        self.timing_hint = label("", "secondary", True)
-        column.addWidget(self.timing_hint)
-        column.addSpacing(10)
-        timing = QHBoxLayout()
-        timing.setSpacing(6)
-        self.timing_btn = button("Analyze timing", self.analyze_timing)
-        self.use_bpm_btn = button("Use suggested BPM", self.use_timing_bpm, "ghost")
-        timing.addWidget(self.timing_btn)
-        timing.addWidget(self.use_bpm_btn)
-        timing.addStretch(1)
-        column.addLayout(timing)
-        column.addSpacing(6)
-        self.stabilize = Switch("Stabilize tempo")
-        self.stabilize.setToolTip("Optional gentle correction in confidently detected passages. Cached for previews and exports.")
-        column.addWidget(self.stabilize)
-        column.addSpacing(6)
-        self.compare_timing_btn = button("Compare A and B", self.compare_timing)
-        self.compare_timing_btn.setToolTip("Listen to fixed tempo against stabilized tempo, switching while it plays")
-        compare = QHBoxLayout()
-        compare.addWidget(self.compare_timing_btn)
-        compare.addStretch(1)
-        column.addLayout(compare)
-        column.addStretch(1)
-        column.addSpacing(14)
-        divider = QFrame()
-        divider.setObjectName("divider")
-        column.addWidget(divider)
-        column.addSpacing(10)
-        moves = QHBoxLayout()
-        moves.setSpacing(4)
-        self.earlier = button("Earlier", lambda: self.nudge(-1), "ghost", "arrow-left")
-        self.later = button("Later", lambda: self.nudge(1), "ghost", "arrow-right")
-        self.later.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
-        self.remove_btn = button("Remove", self.remove_clip, "danger", "trash")
-        self.remove_btn.setToolTip("Remove this clip from the mix. The song stays in your library.")
-        moves.addWidget(self.earlier)
-        moves.addWidget(self.later)
-        moves.addStretch(1)
-        moves.addWidget(self.remove_btn)
-        column.addLayout(moves)
-        self.inspector_stack.addWidget(self.editor)
+    def build_display_box(self):
+        frame, strip, strip_row, body = self.box()
+        self.sample_name = ElidedLabel()
+        self.sample_name.setProperty("role", "boxTitle")
+        strip_row.addWidget(self.sample_name, 1)
+        body.setContentsMargins(0, 0, 0, 0)
+        self.cue_editor = CueEditor(self.bands)
+        self.cue_editor.setToolTip(f"Drag the Start and End markers. They snap to bars; hold Shift for beats "
+                                   f"or {FREE_KEY} to place them freely.")
+        self.cue_editor.cuesChanged.connect(self.set_cues)
+        body.addWidget(self.cue_editor, 1)
+        return frame
 
-        for spin in (self.cue_in, self.cue_out, self.shift):
-            spin.valueChanged.connect(lambda _: self.apply_clip())
-        self.bpm.valueChanged.connect(lambda _: self.apply_track())
-        self.key.currentIndexChanged.connect(lambda _: self.apply_track())
-        self.transpose.toggled.connect(self.transpose_changed)
-        self.stabilize.toggled.connect(lambda _: self.apply_clip())
-        scroll.setWidget(pane)
-        return scroll
+    def build_transition_box(self):
+        frame, strip, strip_row, body = self.box(width=280)
+        self.transition_title = label("Transition", "boxTitle")
+        strip_row.addWidget(self.transition_title)
+        strip_row.addStretch(1)
+        self.prev_transition = tool_button("chevron-left", "Previous transition ([)", lambda: self.step_transition(-1), 12)
+        self.next_transition = tool_button("chevron-right", "Next transition (])", lambda: self.step_transition(1), 12)
+        strip_row.addWidget(self.prev_transition)
+        strip_row.addWidget(self.next_transition)
+        self.transition_details = QWidget()
+        details = QVBoxLayout(self.transition_details)
+        details.setContentsMargins(0, 0, 0, 0)
+        details.setSpacing(6)
+        names = QGridLayout()
+        names.setHorizontalSpacing(8)
+        names.setVerticalSpacing(2)
+        self.from_name, self.to_name = ElidedLabel(), ElidedLabel()
+        self.from_key, self.to_key = label("", "small"), label("", "small")
+        names.addWidget(label("Out", "field"), 0, 0)
+        names.addWidget(self.from_name, 0, 1)
+        names.addWidget(self.from_key, 0, 2)
+        names.addWidget(label("In", "field"), 1, 0)
+        names.addWidget(self.to_name, 1, 1)
+        names.addWidget(self.to_key, 1, 2)
+        names.setColumnStretch(1, 1)
+        details.addLayout(names)
+        self.verdict = label("", "small")
+        self.verdict.setTextFormat(Qt.TextFormat.RichText)
+        details.addWidget(self.verdict)
+        blend = QHBoxLayout()
+        blend.setSpacing(6)
+        blend.addWidget(label("Blend", "field"))
+        self.blend_bars = ValueBox(1, 32, step=1, suffix=" bars", width=70)
+        self.blend_bars.setToolTip("Overlap length in bars. Drag up or down, or double-click to type.")
+        self.blend_bars.committed.connect(lambda value: self.set_transition_value("in", "blend_bars", int(value)))
+        blend.addWidget(self.blend_bars)
+        blend.addStretch(1)
+        self.bass = toggle("Bass swap", "Hand the low end over in one bar at the middle of the blend instead of crossfading it")
+        self.bass.clicked.connect(lambda checked: self.set_transition_value("in", "bass_swap", checked))
+        blend.addWidget(self.bass)
+        details.addLayout(blend)
+        drums = QHBoxLayout()
+        drums.setSpacing(4)
+        explain = ("Turn on only if the whole overlap has no pitched bass, vocals, melody or tonal tails. "
+                   "This changes the key advice, not the audio.")
+        self.outro_drums = toggle("Drum outro", "The outgoing song's overlap is beats only. " + explain)
+        self.intro_drums = toggle("Drum intro", "The incoming song's overlap is beats only. " + explain)
+        self.outro_drums.clicked.connect(lambda checked: self.set_transition_value("out", "outro_percussive", checked))
+        self.intro_drums.clicked.connect(lambda checked: self.set_transition_value("in", "intro_percussive", checked))
+        drums.addWidget(self.outro_drums)
+        drums.addWidget(self.intro_drums)
+        drums.addStretch(1)
+        details.addLayout(drums)
+        body.addWidget(self.transition_details)
+        self.transition_empty = label("Add a second song to the arrangement to create a transition.", "hint", True)
+        body.addWidget(self.transition_empty)
+        body.addStretch(1)
+        actions = QHBoxLayout()
+        actions.setSpacing(4)
+        self.preview_btn = button("Preview", self.preview, "primary", "play")
+        self.preview_btn.setToolTip("Render this blend with four bars either side, then play it (P)")
+        self.render_btn = button("Render mix", self.render_full)
+        self.render_btn.setToolTip("Render the whole arrangement so you can play and seek anywhere (Cmd+R)")
+        actions.addWidget(self.preview_btn)
+        actions.addWidget(self.render_btn)
+        actions.addStretch(1)
+        body.addLayout(actions)
+        return frame
 
     def build_status_bar(self):
         bar = QFrame()
         bar.setObjectName("statusBar")
-        bar.setFixedHeight(32)
+        bar.setFixedHeight(24)
         row = QHBoxLayout(bar)
-        row.setContentsMargins(18, 0, 12, 0)
-        row.setSpacing(10)
+        row.setContentsMargins(6, 0, 4, 0)
+        row.setSpacing(8)
         self.status = ElidedLabel("Ready")
         self.status.setProperty("role", "small")
         row.addWidget(self.status, 1)
         self.job_area = QWidget()
         job = QHBoxLayout(self.job_area)
         job.setContentsMargins(0, 0, 0, 0)
-        job.setSpacing(10)
+        job.setSpacing(8)
         self.job_text = ElidedLabel("")
         self.job_text.setProperty("role", "small")
         self.job_text.setFixedWidth(300)
         self.job_text.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.job_bar = QProgressBar()
         self.job_bar.setRange(0, 0)
-        self.job_bar.setFixedWidth(120)
+        self.job_bar.setFixedWidth(110)
         self.job_bar.setTextVisible(False)
         self.cancel_btn = button("Cancel", self.cancel_job, "ghost")
         self.cancel_btn.setToolTip("Stop after the current processing step")
@@ -735,6 +721,9 @@ class Studio(QMainWindow):
         clip = self.selected_clip()
         track = self.session.tracks.get(clip.track_id) if clip else None
         return 240 / track.bpm if track and track.bpm else 1.0
+
+    def beat_length(self):
+        return self.bar_length() / 4
 
     def snapshot(self):
         return {"clips": copy.deepcopy(self.session.clips), "tempo": self.session.target_bpm,
@@ -824,6 +813,11 @@ class Studio(QMainWindow):
 
     # Refresh -------------------------------------------------------------------------------
 
+    def mix_audio(self):
+        if not self.audio_span or self.player.source().isEmpty():
+            return None
+        return (*self.audio_span, self.levels, self.audio_revision == self.revision)
+
     def refresh(self):
         self.updating = True
         try:
@@ -832,7 +826,7 @@ class Studio(QMainWindow):
             self.timeline.selection = self.selected_id
             self.timeline.transition = self.transition_index()
             self.timeline.harmony = {i: self.harmony(i)[0] for i in range(1, len(clips))}
-            self.timeline.rendered = self.rendered_range()
+            self.timeline.mix_audio = self.mix_audio()
             self.timeline.refresh()
             self.overview.invalidate()
             self.refresh_header()
@@ -846,17 +840,16 @@ class Studio(QMainWindow):
 
     def refresh_header(self):
         name = self.session.name or "Untitled mix"
+        state = "" if not self.dirty else " (edited)" if self.project_path else " (not saved)"
         self.setWindowTitle(f"{name}[*]")
         self.setWindowModified(self.dirty)
-        self.project_title.set_text(name)
-        self.edited_label.setText(("Edited" if self.project_path else "Not saved yet") if self.dirty else "")
-        if not self.tempo.hasFocus():
-            self.tempo.blockSignals(True)
+        self.setWindowFilePath(str(self.project_path) if self.project_path else "")
+        if self.tempo.editor is None:
             self.tempo.setValue(self.session.target_bpm)
-            self.tempo.blockSignals(False)
         duration = self.timeline.duration()
         count = len(self.session.clips)
-        self.arrangement_summary.setText(f"{count} {'song' if count == 1 else 'songs'}, {clock(duration)}" if count else "Empty")
+        summary = f"{count} {'song' if count == 1 else 'songs'}, {clock(duration)}" if count else "Empty"
+        self.arrangement_summary.setText(f"{name}{state}   {summary}")
 
     def refresh_library(self):
         model = self.library_model
@@ -864,7 +857,6 @@ class Studio(QMainWindow):
         scroll = self.library.verticalScrollBar().value()
         model.session = self.session
         model.query = self.search.text()
-        model.order = self.sort.currentData() or "added"
         clip = self.selected_clip()
         if clip:
             model.context = djmix.transpose(parsed_key(self.session.tracks[clip.track_id].key), clip.shift)
@@ -877,6 +869,11 @@ class Studio(QMainWindow):
         self.library.verticalScrollBar().setValue(scroll)
         count = len(self.session.tracks)
         self.library_count.setText(f"{count} {'song' if count == 1 else 'songs'}" if count else "")
+        self.preview_strip.set_track(self.session.tracks.get(self.library.current_id() or ""))
+
+    def library_selected(self):
+        self.preview_strip.set_track(self.session.tracks.get(self.library.current_id() or ""))
+        self.refresh_actions()
 
     def refresh_transition(self):
         clips = self.session.clips
@@ -890,73 +887,71 @@ class Studio(QMainWindow):
         if not has:
             self.transition_title.setText("Transition")
             return
-        self.transition_title.setText(f"Transition {index} of {len(clips) - 1}")
+        self.transition_title.setText(f"Transition {index} → {index + 1}")
         outgoing, incoming = clips[index - 1], clips[index]
         a, b = self.session.tracks[outgoing.track_id], self.session.tracks[incoming.track_id]
         self.from_name.set_text(a.name)
         self.to_name.set_text(b.name)
         for widget, track, clip in ((self.from_key, a, outgoing), (self.to_key, b, incoming)):
             key = djmix.transpose(parsed_key(track.key), clip.shift)
-            text = display_key(key) if key else "Key unknown"
-            widget.setText(text + (f", {clip.shift:+d}" if clip.shift else ""))
+            text = f"{camelot(key)} {display_key(key, True)}" if key else "Key?"
+            widget.setText(text + (f" ({clip.shift:+d})" if clip.shift else ""))
         state, text = self.harmony(index)
         dot = {"good": T.GOOD, "bad": T.BAD}.get(state, T.TEXT_3)
         self.verdict.setText(f'<span style="color:{dot}">●</span>&nbsp; {text}')
         self.blend_bars.setValue(incoming.blend_bars)
-        self.bass.set_state(incoming.bass_swap)
-        self.outro_drums.set_state(outgoing.outro_percussive)
-        self.intro_drums.set_state(incoming.intro_percussive)
+        self.bass.setChecked(incoming.bass_swap)
+        self.outro_drums.setChecked(outgoing.outro_percussive)
+        self.intro_drums.setChecked(incoming.intro_percussive)
 
     def refresh_inspector(self):
         clip = self.selected_clip()
         if not clip:
-            self.inspector_stack.setCurrentIndex(0)
+            self.clip_stack.setCurrentIndex(0)
             return
-        self.inspector_stack.setCurrentIndex(1)
-        self.editor.setEnabled(not self.rendering)
+        self.clip_stack.setCurrentIndex(1)
+        self.clip_editor.setEnabled(not self.rendering)
         clips = self.session.clips
         index = clips.index(clip)
         track = self.session.tracks[clip.track_id]
-        self.clip_title.setText(track.name)
+        color = T.clip_color(track.id)
+        self.clip_strip.setStyleSheet(f"QFrame#boxTitle {{ background: {color}; }}")
+        self.clip_name.setStyleSheet(f"color: {DARK_TEXT};")
+        self.clip_name.set_text(track.name)
         self.clip_state.setText(f"Song {index + 1} of {len(clips)}. {plain(track.status)}.".replace("..", "."))
         following = clips[index + 1].blend_bars if index + 1 < len(clips) else 0
         self.cue_editor.set_clip(track, clip, clip.blend_bars if index else 0, following)
-        self.cue_in.setMaximum(track.duration)
-        self.cue_out.setMaximum(track.duration)
-        self.cue_in.setValue(clip.cue_in)
-        self.cue_out.setValue(clip.cue_out)
+        self.sample_name.set_text(Path(track.path).name)
+        for widget, value in ((self.cue_in, clip.cue_in), (self.cue_out, clip.cue_out)):
+            widget.setMaximum(track.duration)
+            widget.setValue(value)
         self.bpm.setValue(track.bpm or 128)
-        position = self.key.findData(track.key or "")
-        self.key.setCurrentIndex(max(0, position))
-        self.transpose.set_state(clip.transpose)
-        self.shift.setValue(clip.semitones)
-        self.shift.parentWidget().setEnabled(clip.transpose)
-        suggestion = None
+        self.key.setCurrentIndex(max(0, self.key.findData(track.key or "")))
+        self.transpose_knob.setValue(clip.shift)
+        self.key_suggestion = None
         if index:
-            previous = clips[index - 1]
             candidate = copy.copy(clip)
             candidate.transpose = False
-            shifts = blend_advice(self.session, previous, candidate)["suggested_b_shifts"]
-            suggestion = next((s for s in shifts if s["semitones"]), None) if shifts and shifts[0]["semitones"] else None
+            shifts = blend_advice(self.session, clips[index - 1], candidate)["suggested_b_shifts"]
+            if shifts and shifts[0]["semitones"]:
+                self.key_suggestion = shifts[0]
         processed = djmix.transpose(parsed_key(track.key), clip.shift)
-        if suggestion:
-            reason = SUGGESTION_REASONS.get(suggestion["reason"], suggestion["reason"])
-            advice = f"{display_key(suggestion['resulting_key'])}, {reason}"
-        if clip.shift and processed:
-            text = f"Shifted {clip.shift:+d} to {display_key(processed)}."
-            if suggestion and suggestion["semitones"] == clip.shift:
-                text = f"Shifted {clip.shift:+d} to {advice}."
-            elif suggestion:
-                text += f" {suggestion['semitones']:+d} would give {advice}."
+        suggestion = self.key_suggestion
+        if suggestion and suggestion["semitones"] == clip.shift:
+            text = f"In {display_key(processed)}, {SUGGESTION_REASONS.get(suggestion['reason'], suggestion['reason'])}."
         elif suggestion:
-            text = f"Transposing by {suggestion['semitones']:+d} gives {advice}."
+            text = (f"{suggestion['semitones']:+d} gives {display_key(suggestion['resulting_key'])}, "
+                    f"{SUGGESTION_REASONS.get(suggestion['reason'], suggestion['reason'])}.")
+        elif clip.shift and processed:
+            text = f"Plays in {display_key(processed)}."
         else:
-            text = "The song plays in its original key unless you turn this on."
+            text = "Original key."
         self.shift_hint.setText(text)
+        self.match_btn.setEnabled(bool(suggestion) and suggestion["semitones"] != clip.shift)
         timing = track.timing
         state, bpm_suggestion = timing.get("state"), timing.get("bpm")
         idle = not self.jobs
-        self.stabilize.set_state(clip.stabilize)
+        self.stabilize.setChecked(clip.stabilize)
         self.stabilize.setEnabled((state == "drift" or clip.stabilize) and idle)
         self.timing_btn.setEnabled(idle)
         self.compare_timing_btn.setEnabled(state == "drift" and idle)
@@ -964,16 +959,17 @@ class Studio(QMainWindow):
         self.use_bpm_btn.setVisible(show_bpm)
         self.use_bpm_btn.setEnabled(idle)
         if show_bpm:
-            self.use_bpm_btn.setText(f"Use {bpm_suggestion:.3f} BPM")
+            self.use_bpm_btn.setText(f"Use {bpm_suggestion:.3f}")
+            self.use_bpm_btn.setToolTip("Apply the BPM measured across the whole song. Your cues stay as they are.")
         if state == "drift":
-            self.timing_hint.setText(f"Tempo varies in this song. Correction would cover {timing['coverage']:.0%} of it; "
-                                     "other passages keep fixed timing with smooth joins. Compare A and B before using it.")
+            self.timing_hint.setText(f"Tempo drifts. Stabilize covers {timing['coverage']:.0%} of the song; "
+                                     "compare A and B first.")
         elif state == "steady":
-            self.timing_hint.setText("Tempo is steady in the analyzed passages. No correction needed.")
+            self.timing_hint.setText("Tempo is steady. No correction needed.")
         elif state == "uncertain":
-            self.timing_hint.setText("Not enough reliable beats to measure. Check the BPM by ear; correction is unavailable.")
+            self.timing_hint.setText("Not enough reliable beats to measure. Check the BPM by ear.")
         else:
-            self.timing_hint.setText("Analyze timing to check whether the tempo drifts across the song.")
+            self.timing_hint.setText("Analyze to check for tempo drift across the song.")
         self.earlier.setEnabled(index > 0)
         self.later.setEnabled(index < len(clips) - 1)
 
@@ -1044,14 +1040,14 @@ class Studio(QMainWindow):
         if chosen is None or chosen.isNull():
             self.player.pause()
             self.audio.setMuted(True)
-            self.output_button.setIcon(T.icon("speaker", T.BAD, 18))
+            self.output_button.setIcon(T.icon("speaker", T.BAD, 16))
             self.output_button.setToolTip("Audio output unavailable")
             self.say("Audio output unavailable. Connect it or choose another output.")
             return
         self.audio.setMuted(False)
         if self.audio.device().id() != chosen.id():
             self.audio.setDevice(chosen)
-        self.output_button.setIcon(T.icon("speaker", T.TEXT_2, 18))
+        self.output_button.setIcon(T.icon("speaker", T.TEXT_2, 16))
         self.output_button.setToolTip("Playing through " + chosen.description())
 
     def change_audio_output(self, value):
@@ -1149,6 +1145,7 @@ class Studio(QMainWindow):
         self.timeline.invalidate()
         self.overview.invalidate()
         self.cue_editor.update()
+        self.preview_strip.update()
 
     # Library -------------------------------------------------------------------------------
 
@@ -1354,73 +1351,68 @@ class Studio(QMainWindow):
         if clip:
             self.edit(lambda: (setattr(clip, "cue_in", cue_in), setattr(clip, "cue_out", cue_out)))
 
-    def apply_track(self):
+    def set_clip_value(self, name, value):
+        clip = self.selected_clip()
+        if clip and not self.updating and getattr(clip, name) != value:
+            self.edit(lambda: setattr(clip, name, value))
+
+    def set_bpm(self, value):
         clip = self.selected_clip()
         if self.updating or not clip:
             return
         track = self.session.tracks[clip.track_id]
-        # Do not round precise analyzed BPMs merely because the field shows three decimals.
-        bpm = self.bpm.value() if self.bpm.value() != round(track.bpm, self.bpm.decimals()) else track.bpm
-        key = self.key.currentData() or ""
-        if bpm == track.bpm and key == track.key:
+        if value == track.bpm:
             return
 
         def mutate():
-            track.bpm, track.key = bpm, key
-            track.status, track.estimated = "BPM and key edited manually", False
+            track.bpm = value
+            track.status, track.estimated = "BPM edited manually", False
 
         if self.edit(mutate):
             self.touched.add(track.id)
-            self.say("Saved. Preview again to hear the change.")
+            self.say("BPM changed. Preview again to hear it.")
 
-    def apply_clip(self):
+    def set_key(self):
         clip = self.selected_clip()
         if self.updating or not clip:
             return
-        values = {}
-        if self.cue_in.value() != round(clip.cue_in, self.cue_in.decimals()):
-            values["cue_in"] = self.cue_in.value()
-        if self.cue_out.value() != round(clip.cue_out, self.cue_out.decimals()):
-            values["cue_out"] = self.cue_out.value()
-        for name, value in (("transpose", self.transpose.isChecked()), ("semitones", self.shift.value()),
-                            ("stabilize", self.stabilize.isChecked())):
-            if getattr(clip, name) != value:
-                values[name] = value
-        if values:
-            self.edit(lambda: [setattr(clip, name, value) for name, value in values.items()])
+        track = self.session.tracks[clip.track_id]
+        key = self.key.currentData() or ""
+        if key == track.key:
+            return
 
-    def apply_transition(self):
+        def mutate():
+            track.key = key
+            track.status, track.estimated = "Key edited manually", False
+
+        if self.edit(mutate):
+            self.touched.add(track.id)
+
+    def set_transpose(self, semitones):
+        clip = self.selected_clip()
+        if self.updating or not clip or clip.shift == semitones:
+            return
+        self.edit(lambda: (setattr(clip, "semitones", int(semitones)), setattr(clip, "transpose", semitones != 0)))
+
+    def match_key(self):
+        if self.key_suggestion:
+            self.set_transpose(self.key_suggestion["semitones"])
+
+    def set_stabilize(self, checked):
+        self.set_clip_value("stabilize", bool(checked))
+        self.refresh()
+
+    def set_transition_value(self, side, name, value):
         index = self.transition_index()
         if self.updating or not index:
             return
-        outgoing, incoming = self.session.clips[index - 1], self.session.clips[index]
-        changes = [(incoming, "blend_bars", self.blend_bars.value()), (incoming, "bass_swap", self.bass.isChecked()),
-                   (outgoing, "outro_percussive", self.outro_drums.isChecked()),
-                   (incoming, "intro_percussive", self.intro_drums.isChecked())]
-        changes = [(clip, name, value) for clip, name, value in changes if getattr(clip, name) != value]
-        if changes:
-            self.edit(lambda: [setattr(clip, name, value) for clip, name, value in changes])
+        clip = self.session.clips[index if side == "in" else index - 1]
+        if getattr(clip, name) != value:
+            self.edit(lambda: setattr(clip, name, value))
+        self.refresh()
 
-    def transpose_changed(self, enabled):
-        if self.updating:
-            return
-        clip = self.selected_clip()
-        if not clip:
-            return
-        if enabled and self.shift.value() == 0:
-            index = self.session.clips.index(clip)
-            if index:
-                candidate = copy.copy(clip)
-                candidate.transpose = False
-                advice = blend_advice(self.session, self.session.clips[index - 1], candidate)
-                if advice["suggested_b_shifts"]:
-                    self.shift.blockSignals(True)
-                    self.shift.setValue(advice["suggested_b_shifts"][0]["semitones"])
-                    self.shift.blockSignals(False)
-        self.apply_clip()
-
-    def change_tempo(self):
-        value = self.tempo.value()
+    def change_tempo(self, value=None):
+        value = self.tempo.value() if value is None else value
         if self.updating or self.rendering or value == self.session.target_bpm:
             return
         self.edit(lambda: setattr(self.session, "target_bpm", value))
@@ -1706,28 +1698,28 @@ class Studio(QMainWindow):
 
     def update_play_icon(self):
         playing = self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
-        self.play_btn.setIcon(T.icon("pause" if playing else "play", T.ON_ACCENT, 20, T.ON_ACCENT))
+        # The transport lights green while playing, as in a DAW.
+        self.play_btn.setIcon(T.icon("pause" if playing else "play", T.PLAYING if playing else T.TEXT, 14,
+                                     T.PLAYING if playing else T.TEXT))
         self.play_btn.setToolTip("Pause (Space)" if playing else "Play (Space)")
         self.play_btn.setAccessibleName("Pause" if playing else "Play")
 
     def update_time(self):
         loaded = not self.player.source().isEmpty()
-        self.time_label.setText(clock(self.player.position() / 1000, True) if loaded else "0:00.0")
+        seconds = self.audio_origin + self.player.position() / 1000 if loaded else 0.0
+        self.position_label.setText(bar_position(seconds, self.session.target_bpm))
+        self.time_label.setText(clock(seconds, True))
         duration = self.player.duration() / 1000
-        self.duration_label.setText(f"/ {clock(duration)}" if loaded and duration > 0 else "")
         if not loaded:
             self.source_label.set_text("Nothing rendered yet")
-        elif self.audio_revision != self.revision:
-            self.source_label.set_text(f"{self.loaded_label}, changed since")
         else:
-            self.source_label.set_text(self.loaded_label)
+            length = f", {clock(duration)}" if duration > 0 else ""
+            changed = ", changed since" if self.audio_revision != self.revision else ""
+            self.source_label.set_text(f"{self.loaded_label}{length}{changed}")
 
     def sync_position(self):
         self.update_time()
-        if self.player.source().isEmpty():
-            playhead = None
-        else:
-            playhead = self.audio_origin + self.player.position() / 1000
+        playhead = None if self.player.source().isEmpty() else self.audio_origin + self.player.position() / 1000
         self.timeline.set_playhead(playhead)
         self.overview.playhead = playhead
         self.overview.update()
@@ -1744,6 +1736,7 @@ class Studio(QMainWindow):
                     self.meter.set_levels(float(left), float(right), time.monotonic())
         elif not self.meter.decay():
             self.meter_timer.stop()
+        self.timeline.viewport().update()
 
     def closeEvent(self, event):
         self.player.stop()

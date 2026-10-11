@@ -1,8 +1,9 @@
 """Visual system for DJ Studio: palette, type, stylesheet and drawn icons.
 
-Color carries meaning. Cool blues are sound (waveforms). Amber marks things the
-user acts on: play, preview, the selection, cue handles. Mint and coral only
-report harmonic match or clash.
+The interface follows the conventions of arrangement-based DAWs such as Ableton
+Live: flat gray panels separated by dark gutters, compact controls, value boxes
+you drag, and a color per song. Orange marks switched-on states and the current
+selection. Green and red only report harmonic match or clash.
 """
 from __future__ import annotations
 
@@ -15,36 +16,46 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import (QColor, QFont, QFontDatabase, QIcon, QPainter, QPainterPath, QPalette,
                            QPen, QPixmap)
 
-# Surfaces, darkest first. The stage (timeline) sits below the panes so waveforms read first.
-INK = "#0A0C18"
-BASE = "#10121F"
-RAISED = "#171A2C"
-HOVER = "#1F2338"
-PRESSED = "#272C46"
-LINE = "#1E2236"
-LINE_STRONG = "#2E3350"
-EDGE_HOVER = "#3C4266"
+# Surfaces. Gutters sit between panels; fields are the darkest insets.
+GUTTER = "#0E0E0E"
+BASE = "#212121"
+TITLE = "#2A2A2A"
+LANE = "#1A1A1A"
+LANE_ALT = "#1E1E1E"
+FIELD = "#141414"
+INK = LANE
+RAISED = "#343434"
+HOVER = "#3E3E3E"
+PRESSED = "#4A4A4A"
+LINE = "#2C2C2C"
+LINE_STRONG = "#454545"
+EDGE_HOVER = "#5A5A5A"
 
-TEXT = "#E8EAF4"
-TEXT_2 = "#A2A7C2"
-TEXT_3 = "#7A80A0"
+TEXT = "#DCDCDC"
+TEXT_2 = "#A3A3A3"
+TEXT_3 = "#737373"
 
-ACCENT = "#FFB547"
-ACCENT_HOVER = "#FFC46E"
-ACCENT_PRESSED = "#EBA13A"
-ON_ACCENT = "#1B1306"
+ACCENT = "#FFA234"
+ACCENT_HOVER = "#FFB65E"
+ACCENT_PRESSED = "#E88E22"
+ON_ACCENT = "#1A1206"
+PLAYING = "#5FD36B"
 
-# Waveform bands, low to high.
-LOW = "#3D63FF"
-MID = "#33C3E8"
-HIGH = "#E4F4FF"
+# Neutral waveform shades for places without a song color.
+LOW = "#7D8796"
+MID = "#AEB7C4"
+HIGH = "#E6EAF0"
 BANDS = (LOW, MID, HIGH)
 
-GOOD = "#4FD1A1"
-BAD = "#FF7A6B"
-SELECTION = "#33395E"
+GOOD = "#6FD08C"
+BAD = "#FF6B5E"
+SELECTION = "#3D4A60"
 
-SIZE_SMALL, SIZE_META, SIZE_BODY, SIZE_HEADING, SIZE_TITLE, SIZE_READOUT = 12, 13, 14, 16, 20, 30
+# One color per song, stable across sessions. Light, saturated, readable with dark text.
+CLIP_COLORS = ("#FF8F8F", "#FFB35C", "#E9D45D", "#A8DF5E", "#5ED8A2", "#5CCBEA", "#8FA2FF", "#CF8FFF",
+               "#FF8FC8", "#C9B38A")
+
+SIZE_SMALL, SIZE_META, SIZE_BODY, SIZE_HEADING, SIZE_TITLE, SIZE_READOUT = 11, 11, 12, 13, 15, 16
 
 # Barlow (SIL Open Font License, see assets/fonts/OFL.txt): a DIN-style grotesque,
 # the lettering of mixer panels and rack gear. The platform face is the fallback.
@@ -103,10 +114,28 @@ def reduced_motion() -> bool:
     return _reduced_motion
 
 
-def color(value: str, alpha: float = 1.0) -> QColor:
+def color(value, alpha: float = 1.0) -> QColor:
     result = QColor(value)
     result.setAlphaF(alpha)
     return result
+
+
+def mix(first, second, amount: float) -> QColor:
+    a, b = QColor(first), QColor(second)
+    return QColor(round(a.red() + (b.red() - a.red()) * amount), round(a.green() + (b.green() - a.green()) * amount),
+                  round(a.blue() + (b.blue() - a.blue()) * amount))
+
+
+def clip_color(identity: str) -> str:
+    try:
+        return CLIP_COLORS[int(identity[:8], 16) % len(CLIP_COLORS)]
+    except (ValueError, TypeError):
+        return CLIP_COLORS[sum(map(ord, str(identity))) % len(CLIP_COLORS)]
+
+
+def clip_bands(base) -> tuple:
+    """Waveform shades of a song color: deep lows, true mids, pale highs."""
+    return mix(base, "#000000", .38), QColor(base), mix(base, "#FFFFFF", .62)
 
 
 # Icons are drawn on a 24-unit grid with a 1.7-unit stroke, at twice the display size.
@@ -265,125 +294,108 @@ def stylesheet() -> str:
     check = _asset("check", ON_ACCENT, 14)
     tick = _asset("check", ACCENT, 14)
     return f"""
-QMainWindow, QDialog {{ background: {BASE}; }}
+QMainWindow, QDialog {{ background: {GUTTER}; }}
+QDialog {{ background: {BASE}; }}
 QWidget {{ color: {TEXT}; }}
 QLabel {{ background: transparent; }}
-QLabel[role="readout"] {{ font-size: {SIZE_READOUT}px; font-weight: 500; }}
-QLabel[role="small"] {{ color: {TEXT_2}; font-size: {SIZE_META}px; }}
 QLabel[role="title"] {{ font-size: {SIZE_TITLE}px; font-weight: 600; }}
 QLabel[role="heading"] {{ font-size: {SIZE_HEADING}px; font-weight: 600; }}
-QLabel[role="section"] {{ font-size: {SIZE_BODY}px; font-weight: 600; color: {TEXT}; }}
+QLabel[role="boxTitle"] {{ font-size: 12px; font-weight: 600; color: {TEXT_2}; }}
+QLabel[role="section"] {{ font-weight: 600; color: {TEXT}; }}
 QLabel[role="secondary"] {{ color: {TEXT_2}; }}
-QLabel[role="hint"] {{ color: {TEXT_3}; font-size: {SIZE_META}px; }}
-QLabel[role="good"] {{ color: {GOOD}; }}
-QLabel[role="bad"] {{ color: {BAD}; }}
+QLabel[role="small"] {{ color: {TEXT_2}; font-size: {SIZE_SMALL}px; }}
+QLabel[role="hint"] {{ color: {TEXT_3}; font-size: {SIZE_SMALL}px; }}
+QLabel[role="field"] {{ color: {TEXT_2}; font-size: {SIZE_SMALL}px; }}
+QLabel[role="readout"] {{ font-size: {SIZE_READOUT}px; font-weight: 500; }}
+QLabel[role="lcd"] {{ background: {FIELD}; border: 1px solid {LINE_STRONG}; border-radius: 2px; padding: 1px 8px;
+                      font-size: 15px; font-weight: 500; }}
 
-QFrame#topBar, QFrame#statusBar {{ background: {BASE}; }}
-QFrame#topBar {{ border-bottom: 1px solid {LINE}; }}
-QFrame#statusBar {{ border-top: 1px solid {LINE}; }}
-QFrame#pane {{ background: {BASE}; }}
-QFrame#stage {{ background: {INK}; }}
-QFrame#transitionBar {{ background: {BASE}; border-top: 1px solid {LINE}; }}
+QFrame#panel {{ background: {BASE}; border-radius: 4px; }}
+QFrame#controlBar {{ background: {BASE}; border-radius: 4px; }}
+QFrame#statusBar {{ background: {GUTTER}; }}
+QFrame#box {{ background: {TITLE}; border-radius: 3px; }}
+QFrame#boxTitle {{ background: {RAISED}; border-top-left-radius: 3px; border-top-right-radius: 3px; }}
 QFrame#divider {{ background: {LINE}; max-height: 1px; min-height: 1px; border: 0; }}
-QFrame#notice {{ background: {RAISED}; border: 1px solid {LINE_STRONG}; border-radius: 8px; }}
+QFrame#notice {{ background: {TITLE}; border: 1px solid {LINE_STRONG}; border-radius: 3px; }}
 QFrame#notice[tone="error"] {{ border-color: {BAD}; }}
 
-QPushButton {{ background: {RAISED}; color: {TEXT}; border: 1px solid {LINE_STRONG}; border-radius: 6px;
-              padding: 6px 12px; font-weight: 500; min-height: 18px; }}
-QPushButton:hover {{ background: {HOVER}; border-color: {EDGE_HOVER}; }}
+QPushButton {{ background: {RAISED}; color: {TEXT}; border: 1px solid {GUTTER}; border-radius: 2px;
+              padding: 3px 9px; font-size: 12px; min-height: 16px; }}
+QPushButton:hover {{ background: {HOVER}; }}
 QPushButton:pressed {{ background: {PRESSED}; }}
 QPushButton:focus {{ border-color: {ACCENT}; }}
-QPushButton:disabled {{ color: {TEXT_3}; background: {BASE}; border-color: {LINE}; }}
-QPushButton[role="primary"] {{ background: {ACCENT}; color: {ON_ACCENT}; border-color: {ACCENT}; font-weight: 600; }}
-QPushButton[role="primary"]:hover {{ background: {ACCENT_HOVER}; border-color: {ACCENT_HOVER}; }}
-QPushButton[role="primary"]:pressed {{ background: {ACCENT_PRESSED}; border-color: {ACCENT_PRESSED}; }}
-QPushButton[role="primary"]:focus {{ border-color: {HIGH}; }}
-QPushButton[role="primary"]:disabled {{ background: {RAISED}; color: {TEXT_3}; border-color: {LINE}; }}
+QPushButton:disabled {{ color: {TEXT_3}; background: {TITLE}; }}
+QPushButton:checked {{ background: {ACCENT}; color: {ON_ACCENT}; border-color: {ACCENT_PRESSED}; }}
+QPushButton:checked:hover {{ background: {ACCENT_HOVER}; }}
+QPushButton:checked:disabled {{ background: #6B532F; color: #2A2116; }}
+QPushButton[role="primary"] {{ background: {ACCENT}; color: {ON_ACCENT}; border-color: {ACCENT_PRESSED}; font-weight: 600; }}
+QPushButton[role="primary"]:hover {{ background: {ACCENT_HOVER}; }}
+QPushButton[role="primary"]:pressed {{ background: {ACCENT_PRESSED}; }}
+QPushButton[role="primary"]:disabled {{ background: {TITLE}; color: {TEXT_3}; border-color: {GUTTER}; }}
 QPushButton[role="ghost"] {{ background: transparent; border-color: transparent; color: {TEXT_2}; }}
 QPushButton[role="ghost"]:hover {{ background: {HOVER}; color: {TEXT}; }}
-QPushButton[role="ghost"]:disabled {{ color: {TEXT_3}; background: transparent; }}
-QPushButton[role="danger"] {{ background: transparent; border-color: transparent; color: {BAD}; }}
-QPushButton[role="danger"]:hover {{ background: rgba(255, 122, 107, 0.12); }}
-QPushButton[role="danger"]:disabled {{ color: {TEXT_3}; background: transparent; }}
-QPushButton:checked {{ background: {ACCENT}; color: {ON_ACCENT}; border-color: {ACCENT}; }}
+QPushButton[role="danger"] {{ color: {BAD}; }}
 
-QToolButton {{ background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 4px; }}
+QToolButton {{ background: transparent; border: 1px solid transparent; border-radius: 2px; padding: 2px; }}
 QToolButton:hover {{ background: {HOVER}; }}
 QToolButton:pressed {{ background: {PRESSED}; }}
-QToolButton:focus {{ border-color: {ACCENT}; }}
 QToolButton:checked {{ background: {PRESSED}; }}
-QToolButton#play {{ background: {ACCENT}; border: 0; border-radius: 20px; }}
-QToolButton#play:hover {{ background: {ACCENT_HOVER}; }}
-QToolButton#play:pressed {{ background: {ACCENT_PRESSED}; }}
-QToolButton#play:focus {{ border: 2px solid {HIGH}; }}
-QToolButton#play:disabled {{ background: {RAISED}; }}
+QToolButton:focus {{ border-color: {ACCENT}; }}
+QToolButton[role="transport"] {{ background: {RAISED}; border: 1px solid {GUTTER}; }}
+QToolButton[role="transport"]:hover {{ background: {HOVER}; }}
+QToolButton[role="transport"]:checked {{ background: {RAISED}; }}
+QToolButton::menu-indicator {{ image: none; width: 0; }}
 
-QLineEdit {{ background: {RAISED}; border: 1px solid {LINE}; border-radius: 6px; padding: 6px 8px;
-            selection-background-color: {SELECTION}; }}
-QLineEdit:hover {{ border-color: {LINE_STRONG}; }}
+QLineEdit {{ background: {FIELD}; border: 1px solid {LINE_STRONG}; border-radius: 2px; padding: 3px 6px;
+            selection-background-color: {SELECTION}; font-size: 12px; }}
 QLineEdit:focus {{ border-color: {ACCENT}; }}
 
-QAbstractSpinBox {{ background: {RAISED}; border: 1px solid {LINE_STRONG}; border-radius: 6px; padding: 5px 8px;
-                   selection-background-color: {SELECTION}; min-height: 18px; }}
-QAbstractSpinBox:hover {{ border-color: {EDGE_HOVER}; }}
-QAbstractSpinBox:focus {{ border-color: {ACCENT}; }}
-QAbstractSpinBox:disabled {{ color: {TEXT_3}; background: {BASE}; border-color: {LINE}; }}
-QAbstractSpinBox::up-button, QAbstractSpinBox::down-button {{ width: 0; border: 0; }}
-QAbstractSpinBox[role="readout"] {{ background: transparent; border-color: transparent; font-size: 22px; font-weight: 600;
-                                   padding: 2px 4px; }}
-QAbstractSpinBox[role="readout"]:hover {{ background: {RAISED}; border-color: {LINE_STRONG}; }}
-QAbstractSpinBox[role="readout"]:focus {{ background: {RAISED}; border-color: {ACCENT}; }}
-
-QComboBox {{ background: {RAISED}; border: 1px solid {LINE_STRONG}; border-radius: 6px; padding: 5px 26px 5px 10px;
-            min-height: 18px; }}
+QComboBox {{ background: {FIELD}; border: 1px solid {LINE_STRONG}; border-radius: 2px; padding: 2px 22px 2px 6px;
+            min-height: 16px; font-size: 12px; }}
 QComboBox:hover {{ border-color: {EDGE_HOVER}; }}
 QComboBox:focus {{ border-color: {ACCENT}; }}
-QComboBox:disabled {{ color: {TEXT_3}; background: {BASE}; border-color: {LINE}; }}
-QComboBox::drop-down {{ border: 0; width: 24px; subcontrol-origin: padding; subcontrol-position: center right; }}
-QComboBox::down-arrow {{ image: url("{chevron}"); width: 10px; height: 10px; }}
-QComboBox[role="quiet"] {{ background: transparent; border-color: transparent; color: {TEXT_2}; }}
-QComboBox[role="quiet"]:hover {{ background: {RAISED}; border-color: {LINE_STRONG}; color: {TEXT}; }}
-QComboBox QAbstractItemView {{ background: {RAISED}; border: 1px solid {LINE_STRONG}; padding: 4px; outline: 0;
-                              selection-background-color: {HOVER}; selection-color: {TEXT}; }}
+QComboBox:disabled {{ color: {TEXT_3}; border-color: {LINE}; }}
+QComboBox::drop-down {{ border: 0; width: 18px; subcontrol-origin: padding; subcontrol-position: center right; }}
+QComboBox::down-arrow {{ image: url("{chevron}"); width: 9px; height: 9px; }}
+QComboBox QAbstractItemView {{ background: {TITLE}; border: 1px solid {LINE_STRONG}; padding: 2px; outline: 0;
+                              selection-background-color: {SELECTION}; selection-color: {TEXT}; }}
 
-QCheckBox {{ spacing: 8px; }}
-QCheckBox::indicator {{ width: 16px; height: 16px; border: 1px solid {LINE_STRONG}; border-radius: 4px; background: {RAISED}; }}
-QCheckBox::indicator:hover {{ border-color: {EDGE_HOVER}; }}
+QCheckBox {{ spacing: 6px; }}
+QCheckBox::indicator {{ width: 13px; height: 13px; border: 1px solid {LINE_STRONG}; border-radius: 2px; background: {FIELD}; }}
 QCheckBox::indicator:checked {{ background: {ACCENT}; border-color: {ACCENT}; image: url("{check}"); }}
 
-QSlider::groove:horizontal {{ height: 4px; background: {LINE_STRONG}; border-radius: 2px; }}
-QSlider::sub-page:horizontal {{ background: {TEXT_2}; border-radius: 2px; }}
-QSlider::handle:horizontal {{ width: 12px; height: 12px; margin: -4px 0; border-radius: 6px; background: {TEXT}; }}
-QSlider::handle:horizontal:hover {{ background: #FFFFFF; }}
+QSlider::groove:horizontal {{ height: 3px; background: {FIELD}; border: 1px solid {LINE_STRONG}; }}
+QSlider::sub-page:horizontal {{ background: {TEXT_2}; }}
+QSlider::handle:horizontal {{ width: 8px; height: 14px; margin: -6px 0; border-radius: 1px; background: {TEXT}; }}
 
 QScrollArea {{ background: transparent; border: 0; }}
-QScrollArea > QWidget > QWidget {{ background: transparent; }}
-QScrollBar:horizontal {{ height: 8px; background: transparent; margin: 0; }}
-QScrollBar:vertical {{ width: 8px; background: transparent; margin: 0; }}
-QScrollBar::handle {{ background: {LINE_STRONG}; border-radius: 4px; min-width: 32px; min-height: 32px; }}
-QScrollBar::handle:hover {{ background: {TEXT_3}; }}
+QScrollBar:horizontal {{ height: 9px; background: {LANE}; margin: 0; }}
+QScrollBar:vertical {{ width: 9px; background: {BASE}; margin: 0; }}
+QScrollBar::handle {{ background: {LINE_STRONG}; border-radius: 2px; min-width: 28px; min-height: 28px; margin: 2px; }}
+QScrollBar::handle:hover {{ background: {EDGE_HOVER}; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; }}
 QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
 
-QListView {{ background: transparent; border: 0; outline: 0; }}
-QSplitter::handle {{ background: {LINE}; }}
-QSplitter::handle:horizontal {{ width: 1px; }}
-QSplitter::handle:vertical {{ height: 1px; }}
+QTableView {{ background: {BASE}; border: 0; outline: 0; gridline-color: transparent;
+             selection-background-color: {SELECTION}; selection-color: {TEXT}; }}
+QHeaderView {{ background: {TITLE}; border: 0; }}
+QHeaderView::section {{ background: {TITLE}; color: {TEXT_2}; border: 0; border-right: 1px solid {BASE};
+                       padding: 3px 6px; font-size: 11px; font-weight: 600; }}
+QHeaderView::section:hover {{ color: {TEXT}; }}
+QSplitter::handle {{ background: {GUTTER}; }}
 
-QProgressBar {{ background: {LINE}; border: 0; border-radius: 1px; max-height: 3px; min-height: 3px; }}
-QProgressBar::chunk {{ background: {ACCENT}; border-radius: 1px; }}
+QProgressBar {{ background: {FIELD}; border: 0; max-height: 3px; min-height: 3px; }}
+QProgressBar::chunk {{ background: {ACCENT}; }}
 
-QMenuBar {{ background: {BASE}; border-bottom: 1px solid {LINE}; }}
-QMenuBar::item {{ padding: 6px 10px; background: transparent; }}
-QMenuBar::item:selected {{ background: {HOVER}; border-radius: 4px; }}
-QMenu {{ background: {RAISED}; border: 1px solid {LINE_STRONG}; border-radius: 8px; padding: 6px; }}
-QMenu::item {{ padding: 6px 28px 6px 12px; border-radius: 4px; }}
-QMenu::item:selected {{ background: {HOVER}; }}
+QMenuBar {{ background: {GUTTER}; }}
+QMenuBar::item {{ padding: 4px 10px; background: transparent; }}
+QMenuBar::item:selected {{ background: {HOVER}; }}
+QMenu {{ background: {TITLE}; border: 1px solid {LINE_STRONG}; padding: 4px; }}
+QMenu::item {{ padding: 4px 24px 4px 10px; }}
+QMenu::item:selected {{ background: {SELECTION}; }}
 QMenu::item:disabled {{ color: {TEXT_3}; }}
-QMenu::indicator {{ width: 14px; height: 14px; }}
+QMenu::indicator {{ width: 13px; height: 13px; }}
 QMenu::indicator:checked {{ image: url("{tick}"); }}
-QToolButton::menu-indicator {{ image: none; width: 0; }}
-QMenu::separator {{ height: 1px; background: {LINE}; margin: 5px 4px; }}
-QToolTip {{ background: {HOVER}; color: {TEXT}; border: 1px solid {LINE_STRONG}; padding: 6px 8px; border-radius: 4px; }}
-QMessageBox QLabel {{ font-size: {SIZE_BODY}px; }}
+QMenu::separator {{ height: 1px; background: {LINE_STRONG}; margin: 4px 2px; }}
+QToolTip {{ background: {TITLE}; color: {TEXT}; border: 1px solid {LINE_STRONG}; padding: 4px 6px; }}
 """
