@@ -35,7 +35,7 @@ class WindowsAudioToolsTests(unittest.TestCase):
             with patch('ci.install_windows_audio.urllib.request.urlopen', return_value=io.BytesIO(data)):
                 self.assertEqual(install(target, [spec]), (target/'bin').resolve())
             self.assertEqual((target/'bin/tool.exe').read_bytes(), b'fixture executable')
-            self.assertEqual(sorted(str(p.relative_to(target)) for p in target.rglob('*') if p.is_file()),
+            self.assertEqual(sorted(p.relative_to(target).as_posix() for p in target.rglob('*') if p.is_file()),
                              ['bin/tool.exe', 'manifest.json'])
             manifest = json.loads((target/'manifest.json').read_text())
             self.assertEqual(manifest['files']['bin/tool.exe'], hashlib.sha256(b'fixture executable').hexdigest())

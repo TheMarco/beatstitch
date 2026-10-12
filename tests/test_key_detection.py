@@ -99,6 +99,10 @@ class KeyDetectionTests(unittest.TestCase):
         children, event = [], threading.Event()
 
         def waiting_child(command, **options):
+            # Windows invokes taskkill during cleanup; keep that real command
+            # instead of replacing it with a second sleeping analysis worker.
+            if Path(command[0]).name.casefold() in ('taskkill', 'taskkill.exe'):
+                return launch(command, **options)
             child = launch([sys.executable, '-c', 'import time; time.sleep(20)'], **options)
             children.append(child); event.set()
             return child
