@@ -249,7 +249,7 @@ class ABTransport(QObject):
                 self.position_frame() >= self.mixer.frames):
             self._set_playing(False)
             self._reset()
-            self.positionChanged.emit(round(self.mixer.frames * 1000 / RATE))
+            self.positionChanged.emit(self.position())
 
     def close(self):
         self._set_playing(False)

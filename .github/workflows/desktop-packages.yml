@@ -1,0 +1,72 @@
+name: Desktop package validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/package-validation]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-packages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core-package:
+    name: Core desktop on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
+      PIP_NO_CACHE_DIR: '1'
+      OMP_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13.5'
+      - name: Install Linux audio and Qt system libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg rubberband-cli libegl1 libopengl0 libxcb-cursor0 libxkbcommon-x11-0
+      - name: Install pinned Windows audio tools
+        if: runner.os == 'Windows'
+        run: python ci/install_windows_audio.py --destination build/audio-tools --github-path
+      - name: Install CPU analysis and desktop dependencies
+        run: |
+          python -m pip install torch==2.11.0 torchaudio==2.11.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -r requirements-desktop.txt -r requirements-key.txt pyinstaller==6.22.3
+      - name: Prepare verified core models and original practice audio
+        run: |
+          python download_structure_model.py
+          python download_content_model.py
+          python download_key_model.py
+          python build_demo_assets.py
+          python build_listening_lessons.py
+      - name: Check packaging, key-runtime compatibility and offline help
+        run: python -m unittest tests.test_windows_audio_tools tests.test_package_check tests.test_key_detection tests.test_help -v
+      - name: Build and exercise the self-contained package
+        run: python build_desktop.py --check
+      - name: Keep build reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: package-reports-${{ matrix.os }}
+          retention-days: 3
+          if-no-files-found: warn
+          path: |
+            dist/package-check-*/report.json
+            build/audio-tools/manifest.json
+            build/DJ Studio/warn-DJ Studio.txt
+            build/DJ Studio.spec

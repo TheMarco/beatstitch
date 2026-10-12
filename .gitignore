@@ -4,3 +4,7 @@ outputs/
 .DS_Store
 build/
 dist/
+assets/models/*.ckpt
+assets/models/*.pth
+assets/sections/
+assets/key/*.pt

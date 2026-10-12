@@ -14,10 +14,11 @@ from pathlib import Path
 import uuid
 
 import numpy as np
-from scipy.ndimage import gaussian_filter1d, uniform_filter1d
-from scipy.signal import butter, correlate, find_peaks, sosfiltfilt
+from scipy.ndimage import gaussian_filter1d
+from scipy.signal import correlate, find_peaks
 
 import djmix
+from studio_storage import managed_cache
 
 VERSION = 1
 RENDER_VERSION = 2
@@ -29,16 +30,9 @@ def signature(path):
     return [str(path), stat.st_size, stat.st_mtime_ns]
 
 
-def features(path):
-    raw = djmix.ffmpeg('-i', str(path), '-map', '0:a:0', '-ar', '12000',
-                       '-ac', '1', '-f', 'f32le', '-').stdout
-    audio = np.frombuffer(raw, dtype='<f4')
-    if len(audio) < 12000:
-        return np.zeros(0)
-    low = sosfiltfilt(butter(3, [35, 180], btype='bandpass', fs=12000, output='sos'), audio)
-    energy = np.sqrt(np.maximum(0, uniform_filter1d(low * low, 60)))[::12]
-    rise = np.maximum(0, energy - np.r_[np.zeros(10), energy[:-10]])
-    return gaussian_filter1d(rise, 2)
+def features(path, cache=None, progress=lambda message: None):
+    from studio_timing_features import extract
+    return extract(path, cache, progress)
 
 
 def fit_grid(onset, nominal_bpm):
@@ -185,12 +179,19 @@ def summarize(windows, duration):
 
 
 def analyze(path, bpm, duration, cache=None, progress=lambda message: None):
+    return _analyze(path, bpm, duration, cache, progress)
+
+
+@managed_cache
+def _analyze(path, bpm, duration, cache_dir, progress):
     from studio_cache import digest
+    from studio_process import check_cancelled
+    check_cancelled()
     if not math.isfinite(bpm) or not 20 <= bpm <= 300:
         raise djmix.MixError('Enter an approximate BPM before timing analysis.')
     identity = signature(path)
     key = [VERSION, identity, float(bpm), float(duration)]
-    destination = Path(cache)/(digest(key)+'.json') if cache else None
+    destination = Path(cache_dir)/(digest(key)+'.json') if cache_dir else None
     if destination and destination.exists():
         try:
             result = json.loads(destination.read_text())
@@ -200,9 +201,10 @@ def analyze(path, bpm, duration, cache=None, progress=lambda message: None):
         except (OSError, ValueError, KeyError, TypeError):
             pass
     progress('Reading rhythm across the whole song')
-    onset = features(path)
+    onset = features(path, cache_dir, progress)
     windows = []
     for offset in range(0, len(onset)-16000+1, 6000):
+        check_cancelled()
         if offset % 30000 == 0:
             progress(f'Analyzing timing · {offset//1000}s / {int(duration)}s')
         window = fit_grid(onset[offset:offset+16000], bpm)
@@ -215,8 +217,16 @@ def analyze(path, bpm, duration, cache=None, progress=lambda message: None):
     if destination:
         destination.parent.mkdir(parents=True, exist_ok=True)
         temporary = destination.with_suffix('.'+uuid.uuid4().hex+'.tmp')
-        temporary.write_text(json.dumps({'key': key, 'timing': result}, allow_nan=False))
-        os.replace(temporary, destination)
+        data = json.dumps({'key': key, 'timing': result}, allow_nan=False)
+        from studio_storage import require_space
+        require_space(destination.parent, len(data.encode('utf-8')), 'save timing analysis')
+        try:
+            check_cancelled()
+            temporary.write_text(data)
+            check_cancelled()
+            os.replace(temporary, destination)
+        finally:
+            temporary.unlink(missing_ok=True)
     return result
 
 

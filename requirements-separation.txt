@@ -1,0 +1,2 @@
+# Optional listening prototype; keep outside the production desktop environment.
+demucs==4.1.0

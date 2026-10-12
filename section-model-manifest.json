@@ -1,0 +1,37 @@
+{
+  "edmformer.safetensors": {
+    "sha256": "24bf4ab9d308f46ba1f625060f95587b220c24a721b63c744ea4e0d8a70be8f6",
+    "size": 104467676,
+    "research_source": "edm98/data/checkpoints/model.safetensors"
+  },
+  "musicfm.pt": {
+    "sha256": "218b483a0256ddef736267425fabb166fd97008983696bb9270def464b47bded",
+    "size": 1316802088,
+    "research_source": "edm98/data/checkpoints/pretrained_msd.pt"
+  },
+  "musicfm-stats.json": {
+    "sha256": "c36c61ab10ca4d2e7fdfefc3fcc15205316bec276a06a47baa3641a62c546f22",
+    "size": 2277,
+    "research_source": "edm98/data/checkpoints/msd_stats.json"
+  },
+  "edmformer.yaml": {
+    "sha256": "cd5c4decd627209bd4071d2c2247455fea73b41e1577669bfe84c972966c525b",
+    "size": 833,
+    "research_source": "edm98/configs/edmformer.yaml"
+  },
+  "musicfm-config.json": {
+    "sha256": "7a63cb5706c9a37483f1973a3c226d54eb504ce15cf62cb52637019540c8a75d",
+    "size": 2239,
+    "research_source": "musicfm-config.json"
+  },
+  "muq/model.safetensors": {
+    "sha256": "273febab2be02872c37d2c37e48a9d6c52c1c9392f3eeeabd498efa281ccb7a6",
+    "size": 1333825096,
+    "research_source": "muq-weights/model.safetensors"
+  },
+  "muq/config.json": {
+    "sha256": "237335ee27d8fb951ce778701a12a79e06c51ae636dd786f97e45f51ce532543",
+    "size": 3133,
+    "research_source": "muq-weights/config.json"
+  }
+}
