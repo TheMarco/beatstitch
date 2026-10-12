@@ -9,7 +9,7 @@ import wave
 from unittest.mock import patch
 import numpy as np
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import QCoreApplication, QEvent, Qt, QUrl
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtWidgets import QApplication
 from PySide6.QtTest import QSignalSpy, QTest
@@ -49,9 +49,12 @@ class ListeningTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        with patch.object(Studio, "load_bands"):
-            self.w = Studio(self.root)
-        self.addCleanup(self.w.close)
+        # Undo can request waveform work too. These transport tests use empty
+        # source fixtures and must not start unrelated decoders during teardown.
+        bands = patch.object(Studio, "load_bands")
+        bands.start(); self.addCleanup(bands.stop)
+        self.w = Studio(self.root)
+        self.addCleanup(self.close_window)
         self.real_player = self.w.player
         self.w.player = Player()
         self.w.source_audition.player = Player()
@@ -61,6 +64,19 @@ class ListeningTests(unittest.TestCase):
         self.w.session = Session(tracks={"a": self.track}, clips=[Clip("a", 0, 240) for _ in range(3)])
         self.w.selected_id = self.w.session.clips[2].id
         self.w.refresh()
+
+    def close_window(self):
+        self.real_player.stop()
+        self.real_player.setSource(QUrl())
+        self.w.close()
+        self.assertFalse(self.w.jobs)
+        self.assertFalse(self.w.band_workers)
+        self.app.processEvents()  # Deliver queued layout callbacks while their widgets exist.
+        self.w.deleteLater()
+        # Closing a QWidget hides it; it does not destroy its QMediaPlayer.
+        # Dispose the native decoder before TemporaryDirectory removes the WAV.
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        self.app.processEvents()
 
     def record(self, kind="mix", index=None, start=0, duration=300):
         path = self.root / f"{kind}-{index}.wav"

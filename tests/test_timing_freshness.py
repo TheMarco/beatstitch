@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import patch
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
+from PySide6.QtCore import QCoreApplication, QEvent
 from PySide6.QtWidgets import QApplication
 
 import djmix
@@ -26,7 +27,10 @@ class TimingFreshnessTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name); self.source = self.root / 'song.wav'
         self.source.write_bytes(b'original source fixture')
-        with patch.object(Studio, 'load_bands'): self.w = Studio(self.root)
+        # Undo must not launch unrelated waveform work on this non-audio fixture.
+        bands = patch.object(Studio, 'load_bands')
+        bands.start(); self.addCleanup(bands.stop)
+        self.w = Studio(self.root)
         self.addCleanup(self.close)
         self.track = Track('song', str(self.source), 'Song', 120, 120, cue_out=120)
         self.track.timing = {'version': VERSION, 'source': signature(self.source), 'state': 'drift',
@@ -36,7 +40,12 @@ class TimingFreshnessTests(unittest.TestCase):
         self.w.selected_id = self.w.session.clips[0].id; self.w.refresh()
 
     def close(self):
-        self.w.jobs.clear(); self.w.close(); self.app.processEvents()
+        self.w.close()
+        self.assertFalse(self.w.jobs); self.assertFalse(self.w.band_workers)
+        self.app.processEvents()  # Deliver queued layout callbacks before deleting the widgets.
+        self.w.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        self.app.processEvents()
 
     def test_changed_source_with_any_saved_result_is_explained_and_unavailable(self):
         self.source.write_bytes(b'replaced source with different audio')
