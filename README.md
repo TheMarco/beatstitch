@@ -2,8 +2,9 @@
 
 A native **Qt / PySide6 desktop application** for arranging EDM mixes. No browser,
 webview, server, or online audio service is required. The code supports macOS,
-Windows, and Linux. Native interaction has been exercised on macOS; core packaged
-audio checks also pass on Windows Server 2022 and Ubuntu 24.04 x86-64 runners.
+Windows, and Linux. Native interaction has been exercised on macOS; packaged audio
+checks and both optional analysis workers also pass on Windows Server 2022 and
+Ubuntu 24.04 x86-64 runners.
 
 ## Desktop app
 
@@ -136,6 +137,9 @@ ordinary linked project; create another portable copy to copy its media too.
    fits the selected clip. Select a song and click **Listen**, **Start**, or
    **Ending** beneath its waveform to audition the original without adding it.
    The source slider seeks within the original song; its tempo and pitch are unchanged.
+   Seeking keeps paused audio paused. Focus the slider and use Left/Right for one
+   second, Page Up/Down for ten seconds, or Home/End for the beginning/end; choose
+   **Listen** to start from there. Positioning never adds a clip or changes cues.
 2. Drag songs onto the arrangement, or double-click a library row. Songs alternate
    between the Deck A and Deck B lanes and overlap automatically. Drag clips to
    reorder them, or use the arrow buttons in the Clip box.
@@ -564,6 +568,13 @@ Keep the full output folder together on Windows/Linux. Each platform needs its o
 build and playback/export test. The local macOS bundle is ad-hoc signed, not notarized.
 The macOS builder creates the `.app` directly from the executable and resources;
 it avoids an extra distribution folder containing another copy of the model pack.
+The macOS arm64 build also includes a locally tested Qt 6.11.2 accessibility
+ownership fix: selecting library rows while an accessibility client inspects the
+window could otherwise crash the app. Packaging verifies the exact matching Qt
+runtime and patch assets, includes the corresponding source and notices, and
+re-signs the bundle. Other Mac runtimes require a reviewed rebuild. See
+[`vendor/qt-cocoa/README.md`](vendor/qt-cocoa/README.md) for the upstream change,
+rebuild instructions and the limits of the native checks.
 Engine and dependency licenses apply to any distribution of the bundled binaries.
 The interface font, Barlow, is bundled from `assets/fonts` under the SIL Open Font
 License (`assets/fonts/OFL.txt`); without those files the app falls back to the
@@ -608,9 +619,9 @@ machine, also open the app, import local songs, edit and save/reopen a mix, list
 through its selected output device, test a device disconnect, and export/reopen
 audio. Verify native layout, keyboard access and the optional analysis packs there
 too. Optional model inference, detection accuracy, musical quality and novice listening sessions are
-not established by a passing core package report. The Windows/Linux core builds
-have passed the automated checks below; their physical devices, native workflows
-and optional packs still require validation.
+not established by a passing core package report. The Windows/Linux builds and
+both optional workers have passed the separate automated checks below; their
+physical devices and native workflows still require validation.
 
 ### Current scope
 
@@ -1915,6 +1926,20 @@ portable manifest paths, and `.gitattributes` preserving exact vendored source b
 the upstream checksum guard was retained. These results cover the named runners,
 not every Windows/Linux release, architecture or physical audio device.
 
+The subsequent full build, [run 38215948485](https://github.com/TheMarco/dj-studio/actions/runs/38215948485),
+passed at commit `46128d5a9ac328e9e68b4890c4b7774095f168d9` on both runners:
+**36 focused tests, 12 frozen-app checks and both actual optional workers per OS**.
+The clean runners downloaded and verified the complete section and separation
+packs before building; the installed workers then ran with model hubs offline
+and developer paths removed. The section worker returned valid bounded regions;
+separation returned four finite stereo stems of the expected length. Linux took
+58.3 seconds for sections and 17.2 for separation; Windows took 46.7 and 21.7.
+These timings describe the short generated check, not full-song performance.
+Reports are under `outputs/cross-platform-check/run-38215948485`, with their hashes
+and executable identities in `outputs/cross-platform-check/optional-run.json`.
+No application binaries or user audio were uploaded. Passing these workers does
+not establish detection accuracy or the sound quality of separated music.
+
 ### Checking optional workers in an existing package
 
 `ci/check_optional_workers.py` runs the actual bundled section and separation
@@ -1943,3 +1968,164 @@ executable's SHA-256. This establishes execution and output shape for that packa
 not musical accuracy, vocal-removal quality, long-file behavior or another OS.
 Five focused checks cover invalid outputs, real child timeouts, preserved existing
 files, recorded failures and isolation from developer paths.
+
+### Measuring the original voice prompts
+
+`benchmark_content.py` measures the original 0.2 voice-prompt policy against human
+voice/no-voice annotations in the [Jamendo singing-voice corpus](https://zenodo.org/records/2585988).
+It uses only the official 61-song training partition for this development baseline;
+the 16 validation and 16 test songs remain reserved. Download the published
+`jamando.zip` archive into `outputs/content-benchmark/` before running:
+
+```sh
+python benchmark_content.py outputs/content-benchmark/jamando.zip \
+  --out outputs/content-benchmark/baseline.json --max-new 1
+# Continue the same frozen selection, reusing the measured first song:
+python benchmark_content.py outputs/content-benchmark/jamando.zip \
+  --out outputs/content-benchmark/baseline.json
+```
+
+The runner verifies the published archive size and checksum and freezes its SHA-256,
+partition, annotation hashes, detector source, weights, runtime and scoring protocol
+before inference. It calls the app's actual analysis without supplying labels or
+label-derived audio duration. Only one song is extracted at a time; temporary audio
+and caches are removed after each recording. Saved observations and scores are
+validated on resume. Interrupted or failed experiments cannot appear complete.
+The archive occupies 327 MB; no full expanded dataset is retained or bundled.
+
+The unchanged threshold completed all **61 songs / 238.7 annotated minutes / 2,832
+overlapping windows**, with no failed recordings. On the question “does this window
+contain any annotated voice?”, there were 641 correct prompts, one unnecessary
+prompt, 1,605 missed voice-containing windows and 585 correct negatives. Window
+precision was **99.84%**, but recall only **28.54%**. Positive prompts can be useful;
+absence of a prompt is very weak evidence that no voice is present.
+
+The app merges positive ten-second windows into listening ranges, which extend
+before or after actual words. Evaluating those ranges by annotated time gives
+**70.14% precision and 39.39% recall**. This is a different question from window
+presence; the ranges must not be presented as exact vocal boundaries. Annotation
+gaps remain unknown, never automatic negative labels. A check of one actual vocal
+excerpt against the model's original DFT-convolution frontend found a maximum
+class-score difference below `1e-7`, so the observed misses are not explained by
+that frontend substitution on the checked example.
+
+Evidence is in `outputs/content-benchmark/baseline{,.plan}.json` and
+`outputs/content-benchmark/frontend-parity.json`. Six focused tests cover merged
+ranges, missing annotations, boundary semantics, invalid inputs, reserved-partition
+exclusion and resume integrity. These are development results, not calibration or
+proof of generalization to AI-generated EDM. Training-data overlap is unaudited.
+The labels do not judge competing vocals, melodies or the musical quality of a
+transition. This baseline did not change the app; the subsequent policy evaluation
+and update are described below.
+
+### More sensitive possible-vocal suggestions
+
+The app now uses a **0.08 detector-score cutoff** for possible-vocal listening
+ranges, chosen on the development partition above. This is a decision threshold,
+**not an 8% probability**. It also matches the existing voice veto for drum-led
+passages, so a window cannot be recommended as drum-led while being flagged for
+possible voice. The original cached classification and raw observations remain
+valid: opening an existing project uses the improved suggestions without analyzing
+its songs again. Cues, protection choices, rendered audio and saved annotations
+are not rewritten.
+
+`validate_voice_threshold.py` froze this single candidate and acceptance criteria
+before processing either reserved partition. It required at least 95% window
+precision, 80% recall, at most 5% false prompts on non-vocal windows, a recall gain
+of at least 25 percentage points, and a positive lower bound on the paired
+song-bootstrap recall-gain interval. The 16-song validation partition passed:
+recall improved from **33.16% to 93.65%**, precision was **99.62%**, and the false
+prompt rate remained **1.41%**. No thresholds were refitted afterward.
+
+The first final-test run correctly refused one inconsistent annotation. In
+`03 - Si Dieu.mp3`, both metadata and decoded audio end at about 182.507 seconds,
+but the last *no singing* label extends to 272.199 seconds. All earlier boundaries
+are inside the file. `repair_voice_reference.py` documented an amendment that
+ends only this unavailable non-vocal tail at the audio end, preserving every
+earlier label, the detector, the thresholds, and the acceptance criteria. The
+original failed report is retained; the other 15 predictions were reused.
+
+After that disclosed data correction, all **16 final-test songs / 763 windows**
+were scored. Vocal-window recall rose from **24.03% to 86.40%**, with **99.39%**
+precision. There were **3 false prompts among 197 non-vocal windows**, in two
+songs. The recall gain was **62.37 percentage points**, with a paired bootstrap
+95% interval of **52.48–72.59 points**, resampling entire songs. The fixed criteria
+passed. This is a small, non-EDM-specific corpus, not proof that voices in generated
+music will be detected reliably or a calibration for user-facing percentages.
+
+The merged listening ranges remain approximate. By annotated time, they covered
+**92.00%** of vocal audio but only **67.14%** of the highlighted time contained
+voice. Ten-second observations include pauses and neighboring instrumental sound.
+Listen and adjust boundaries; overlapping suggestions do not prove that two people
+are singing simultaneously. No prompt still does not prove a vocal-free passage.
+
+Reports and frozen plans are `outputs/content-benchmark/voice-validation{,.plan}.json`,
+`voice-test{,.plan}.json` (original failure), and `voice-test-corrected{,.plan}.json`.
+The original evaluation sources are preserved in
+`outputs/content-benchmark/source-snapshots/before-voice-policy`; source and
+runtime identity guards intentionally refuse to resume those experiments under
+changed detector code. Focused tests cover the data amendment, scoring, test gate,
+song bootstrap, cached-observation reuse and downstream overlap advice. This update
+adds no model weights and leaves musical decisions with the user.
+
+### Exploratory voice-confidence calibration (not installed)
+
+`calibrate_voice_confidence.py` reuses the raw passage scores and human singing
+annotations from the completed Jamendo experiments. It downloads nothing,
+extracts no audio, and performs no model inference. It verifies the archive,
+official partitions, saved measurements, per-song audio hashes, and the single
+documented missing-tail correction. Incomplete results, changed labels or
+detectors, and duplicate audio across partitions are rejected. Annotation gaps
+stay unknown and are excluded explicitly; they are never negative labels.
+
+The target is **any annotated singing in a fully annotated ten-second source
+window**. This is not confidence in exact vocal boundaries, simultaneous vocals,
+melody clashes, or a good mix. The single monotone map uses only the saved voice
+score as its input. It is fitted to the 61 training songs and written to a frozen
+plan before either held-out score report is loaded. There is no method selection
+or refitting on validation/test. Both partitions were already inspected for the
+earlier voice-threshold experiment, so this is exploratory reuse, **not a new
+unseen test**. Neither the existing 0.08 prompt cutoff nor the application changes.
+
+```sh
+.venv/bin/python -m unittest tests.test_voice_confidence tests.test_content_benchmark tests.test_voice_threshold
+.venv/bin/python calibrate_voice_confidence.py outputs/content-benchmark/jamando.zip \
+  --development outputs/content-benchmark/baseline.json \
+  --validation outputs/content-benchmark/voice-validation.json \
+  --test outputs/content-benchmark/voice-test-corrected.json \
+  --out outputs/content-benchmark/voice-confidence-repeat.json
+```
+
+Use a fresh output path; earlier evidence cannot be overwritten. A failure after
+the plan is frozen is saved as `failed`, including completed measurements, rather
+than leaving a misleading running result. The completed experiment and frozen
+map are `outputs/content-benchmark/voice-confidence-exploration{,.plan}.json`.
+
+The fitted map is `sigmoid(3.8869527753 * logit(p) + 12.0046087381)`, fitted on
+2,832 windows from 61 songs. Inputs are clipped to `[1e-12, 1 - 1e-12]` before
+the logit. Its substantial correction shows why raw class scores should not be
+displayed as percentages of voice presence.
+
+| Partition | Fully labelled windows | Excluded windows | Raw-score Brier | Mapped Brier | Training-prevalence constant Brier |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Validation, 16 songs | 709 | 13 | 0.537890 | 0.031807 | 0.160213 |
+| Previously inspected test, 16 songs | 763 | 80 | 0.530807 | 0.058645 | 0.194157 |
+
+Lower Brier is better. The mapping also improves binary log loss over both
+baselines on both partitions. Resampling entire songs, with all their overlapping
+windows together, gives mapped-minus-constant Brier 95% intervals of
+`[-0.165820, -0.090412]` on validation and `[-0.187910, -0.088103]` on test.
+Both satisfy the predeclared comparison rule. The report also includes per-song
+mean Brier, reliability bins, contributing song counts, and paired comparisons
+with the raw scores. These intervals do not include uncertainty from fitting
+the map and cannot resolve dataset or training-overlap bias.
+
+Overall improvement does not establish reliable percentages everywhere. In the
+test 0.60–0.70 band, the map averaged 64.3%, while only 5/14 windows contained
+annotated singing, across eight songs. The 0.90–1.00 band was much stronger:
+499 windows across all 16 songs averaged 99.0% and were positive 99.2% of the
+time. Sparse and pure bins can have zero-width empirical bootstrap intervals;
+that does not prove certainty on future songs. The midrange needs more data.
+Fresh independent evaluation on full songs and generated EDM is still needed,
+as is validation of actual two-song overlap judgments. The artifact explicitly
+sets `ui_promotion_allowed: false`; numeric confidence is not installed.

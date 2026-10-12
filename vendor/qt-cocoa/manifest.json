@@ -1,0 +1,23 @@
+{
+  "qt_version": "6.11.2",
+  "architecture": "arm64",
+  "source_url": "https://codeload.github.com/qt/qtbase/tar.gz/refs/tags/v6.11.2",
+  "source_archive": "assets/qt/qtbase-v6.11.2.tar.gz",
+  "source_archive_sha256": "06cd7aa6b3ab19cb5a1664a2891ef0df960f78c97fa31b80b1d6d7ee70688414",
+  "patch_url": "https://codereview.qt-project.org/c/qt/qtbase/+/765434",
+  "patch_revision": "c7fd3f34b997bb363be15650647665b3b6b8a5f4",
+  "patch_review_status": "NEW as observed 2026-10-12; locally tested candidate, not an upstream release",
+  "original_source_sha256": "1e1c3699f9de098a0c4979128ce8f43779976416ef3d41ca875073a2a4b26f27",
+  "patched_source_sha256": "722e5b07c1dc8c307fa0bcdf8e9fde306ce9aaaf79efa879dbcac1c9e216eac2",
+  "sdk_gui_config_sha256": "7100fa58a84b5c844c16fa67c4bf17cecce29bb4f80d45c25f3637c16e2ae32c",
+  "runtime_sha256": {
+    "Core": "1567713b94e01e21eed2fcc572cf3ee64711494d6517ea0c5310ff72c8cc92a7",
+    "Gui": "1a504db16259d661c60dc82bccd885b46f47250e951c3c9886f57c9e8b105aac"
+  },
+  "files_sha256": {
+    "libqcocoa.dylib": "76a80435533386cb2144ba9b088f57832fcbd4eadce40ce05e1567def6e5e0d0",
+    "upstream.patch": "f3409a797a4d68146f040749f099e975957f94a029b328f7242d860fd31dcda3",
+    "CMakeLists.txt": "cf7f33973deeb7923dcf23bd8141571b4ab779f0a98d37c23a28d6c256fd48cd"
+  },
+  "native_evidence": "outputs/qt-accessibility-research/patched-native-check.json"
+}

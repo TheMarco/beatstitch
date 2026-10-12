@@ -16,7 +16,7 @@ from studio_engine import Clip, Session, Track
 from studio_help import HelpDialog, matching_topics
 from studio_help_content import TOPICS
 from studio_help_course import COURSE_IDS
-from studio_timing import VERSION
+from studio_timing import VERSION, signature
 
 
 class HelpTests(unittest.TestCase):
@@ -30,7 +30,8 @@ class HelpTests(unittest.TestCase):
         with patch.object(Studio, "load_bands"):
             self.window = Studio(Path(self.folder.name))
         self.addCleanup(self.close_window)
-        track = Track("song", "missing.wav", "Test song", 120, 120, cue_out=120)
+        source = Path(self.folder.name) / 'song.wav'; source.write_bytes(b'timing UI fixture')
+        track = Track("song", str(source), "Test song", 120, 120, cue_out=120)
         self.window.session = Session(tracks={"song": track}, clips=[Clip("song", 0, 120)])
         self.window.selected_id = self.window.session.clips[0].id
         self.window.refresh()
@@ -44,6 +45,7 @@ class HelpTests(unittest.TestCase):
 
     def drift(self):
         return {"version": VERSION, "state": "drift", "coverage": .4,
+                "source": signature(self.window.session.tracks['song'].path),
                 "map": [[0, 0], [120, 120]], "regions": [{"start": 16, "end": 64}]}
 
     def test_timing_results_explain_availability_without_claiming_perfection(self):
@@ -55,6 +57,7 @@ class HelpTests(unittest.TestCase):
                  (self.drift(), "Correction available", True, "not a confidence score")]
         for timing, title, enabled, explanation in cases:
             with self.subTest(state=title):
+                if timing: timing['source'] = signature(w.session.tracks['song'].path)
                 w.session.tracks["song"].timing = timing
                 w.refresh()
                 self.assertEqual(w.timing_result.text(), title)

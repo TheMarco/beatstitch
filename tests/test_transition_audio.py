@@ -21,6 +21,30 @@ class MonitoringTests(unittest.TestCase):
     def setUpClass(cls):
         cls.app = QCoreApplication.instance() or QCoreApplication([])
 
+    def test_end_seek_stays_at_last_loop_sample_and_nonloop_keeps_exact_end(self):
+        from studio_blend_choices import ChoiceTransport
+        audio = np.column_stack((np.arange(960), -np.arange(960))).astype(np.float32) / 5000
+        for transport in (BlendTransport, ChoiceTransport):
+            with self.subTest(transport=transport.__name__):
+                player = transport(sink_factory=Sink)
+                try:
+                    player.mixer = player.MIXER(audio, np.zeros_like(audio))
+                    player.select(player.DEFAULT); player.set_loop(True)
+                    player.seek(20)
+                    self.assertEqual(player.position_frame(), len(audio) - 1)
+                    self.assertEqual(player.position(), 20)
+                    self.assertFalse(player.playing)
+                    # Resuming from End plays the final sample before wrapping.
+                    heard = np.frombuffer(player.mixer.read(2), dtype='<f4').reshape(-1, 2)
+                    np.testing.assert_allclose(heard, audio[[-1, 0]], atol=1e-7)
+                    player.set_loop(False); player.seek(20)
+                    self.assertEqual(player.position_frame(), len(audio))
+                    self.assertEqual(player.position(), 20)
+                    self.assertEqual(player.mixer.read(1), b'')
+                    player.seek(0); self.assertEqual(player.position_frame(), 0)
+                finally:
+                    player.close()
+
     def test_monitor_switches_preserve_clock_and_mix_gain(self):
         outgoing = np.full((2000, 2), .2, dtype=np.float32)
         incoming = np.full_like(outgoing, .4)

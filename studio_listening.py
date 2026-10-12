@@ -1,7 +1,7 @@
 """Native source audition, independent of the arrangement transport."""
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QUrl, Signal
+from PySide6.QtCore import Qt, QSignalBlocker, QUrl, Signal
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout
 
@@ -44,9 +44,16 @@ class SourceAudition(QFrame):
             row.addWidget(widget)
         box.addLayout(row)
         self.seek = QSlider(Qt.Orientation.Horizontal)
+        self.seek.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.seek.setSingleStep(1000)
+        self.seek.setPageStep(10000)
         self.seek.setAccessibleName("Position in the original song")
-        self.seek.setToolTip("Seek in the original source audio. This does not change your mix or cues.")
+        self.seek.setToolTip("Choose a position in the original song. Left/Right moves one second; "
+                             "Page Up/Down moves ten seconds; Home/End goes to either end. "
+                             "Seeking keeps paused audio paused. Choose Listen to start. Your mix and cues stay unchanged.")
+        self.seek.setAccessibleDescription(self.seek.toolTip())
         self.seek.sliderMoved.connect(self.seek_to)
+        self.seek.valueChanged.connect(lambda ms: self.seek_to(ms) if not self.seek.isSliderDown() else None)
         box.addWidget(self.seek)
         self.position = QLabel("0:00 / 0:00 · Original audio")
         self.position.setProperty("role", "small")
@@ -66,7 +73,8 @@ class SourceAudition(QFrame):
             self.player.setSource(QUrl())
         self.description.setText(track.name if track else "Select a song to listen before adding it.")
         self.description.setToolTip(track.name if track else "")
-        self.seek.setRange(0, round(track.duration * 1000) if track else 0)
+        with QSignalBlocker(self.seek):
+            self.seek.setRange(0, round(track.duration * 1000) if track else 0)
         self.position_changed(self.player.position())
         self.update_controls()
 
@@ -80,21 +88,30 @@ class SourceAudition(QFrame):
         if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
             self.player.pause()
         else:
-            self.listen_at(self.player.position() / 1000)
+            position = self.pending_position if self.pending_position is not None else self.player.position()
+            self.listen_at(position / 1000)
 
     def listen_at(self, seconds):
+        self.cue_at(seconds, play=True)
+
+    def cue_at(self, seconds, *, play=False):
+        """Load/seek quietly unless Listen requested playback, including while loading."""
         if not self.track:
             return
         if not Path(self.track.path).is_file():
             self.failed.emit(f"Cannot find {self.track.name}. Locate its audio file before listening.")
             return
-        self.aboutToPlay.emit()
+        if play:
+            self.aboutToPlay.emit()
         url = QUrl.fromLocalFile(str(Path(self.track.path).resolve()))
         self.pending_position = max(0, min(round(seconds * 1000), round(self.track.duration * 1000)))
-        self.pending_play = True
+        self.position_changed(self.pending_position)
         if self.player.source() != url:
+            self.pending_play = play
             self.player.setSource(url)
         else:
+            # A seek during an explicitly requested load must not cancel Play.
+            self.pending_play = self.pending_play or play
             self.media_ready(self.player.mediaStatus())
 
     def media_ready(self, status):
@@ -108,15 +125,14 @@ class SourceAudition(QFrame):
                 self.player.play()
 
     def seek_to(self, milliseconds):
-        if self.player.source().isEmpty():
-            self.listen_at(milliseconds / 1000)
-        else:
-            self.pending_position = None
-            self.player.setPosition(milliseconds)
+        self.cue_at(milliseconds / 1000)
 
     def position_changed(self, milliseconds):
+        if self.pending_position is not None:
+            milliseconds = self.pending_position
         if not self.seek.isSliderDown():
-            self.seek.setValue(milliseconds)
+            with QSignalBlocker(self.seek):
+                self.seek.setValue(milliseconds)
         duration = self.track.duration if self.track else 0
         self.position.setText(f"{clock(milliseconds / 1000)} / {clock(duration)} · Original audio")
 

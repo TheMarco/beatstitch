@@ -248,6 +248,12 @@ class Studio(QMainWindow):
                 and isinstance(watched, (QAbstractButton, QComboBox)) and watched.window() is self):
             event.accept()
             return True
+        # A focused slider owns Home; the mix's rewind action is window-wide.
+        if (event.type() == QEvent.Type.ShortcutOverride and event.key() == Qt.Key.Key_Home
+                and event.modifiers() == Qt.KeyboardModifier.NoModifier
+                and isinstance(watched, QSlider) and watched.window() is self):
+            event.accept()
+            return True
         return super().eventFilter(watched, event)
 
     # Preferences and session restore -------------------------------------------------------
@@ -1544,7 +1550,8 @@ class Studio(QMainWindow):
         self.match_btn.setToolTip(advice["reason"] + " Advice uses both neighboring key labels where available. "
                                  "Apply a suggestion only if you want to try it, then listen. Mix review controls suggestion limits.")
         timing = track.timing
-        bpm_suggestion = timing.get("bpm")
+        from studio_timing import current_analysis as current_timing
+        bpm_suggestion = current_timing(track).get("bpm")
         idle = not self.jobs
         guidance = timing_guidance(timing, clip.stabilize, not idle, track=track)
         self.timing_result.setText(guidance.title)
@@ -1557,7 +1564,11 @@ class Studio(QMainWindow):
         self.stabilize.setToolTip(("Turn off correction. " if clip.stabilize else "Turn on correction. " if guidance.available
                                   else "Correction unavailable. ") + guidance.explanation)
         self.stabilize.setAccessibleDescription(self.stabilize.toolTip())
-        self.timing_btn.setEnabled(idle)
+        source_available = Path(track.path).is_file()
+        self.timing_btn.setEnabled(idle and source_available)
+        self.timing_btn.setToolTip('Check whether the tempo drifts across the whole song' if source_available else
+                                   'Reconnect this song’s source audio before analyzing timing.')
+        self.timing_btn.setAccessibleDescription(self.timing_btn.toolTip())
         can_compare = guidance.available and any(
             min(clip.cue_out, region["end"]) - max(clip.cue_in, region["start"]) >= 8
             for region in timing.get("regions", []))
@@ -2149,6 +2160,11 @@ class Studio(QMainWindow):
     def set_clip_value(self, name, value):
         clip = self.selected_clip()
         if clip and not self.updating and getattr(clip, name) != value:
+            if name == 'stabilize' and value:
+                track = self.session.tracks[clip.track_id]
+                guidance = timing_guidance(track.timing, track=track)
+                if not guidance.available:
+                    self.say(guidance.explanation); self.refresh(); return
             action = {"cue_in": "Change song start", "cue_out": "Change song end", "transpose": "Toggle pitch shift",
                       "stabilize": "Toggle tempo correction"}.get(name, "Change song setting")
             self.edit(lambda: setattr(clip, name, value), action=action)
@@ -2356,7 +2372,9 @@ class Studio(QMainWindow):
         if not clip:
             return
         track = copy.deepcopy(self.session.tracks[clip.track_id])
-        from studio_timing import analyze
+        from studio_timing import analyze, source_matches
+        if not Path(track.path).is_file():
+            self.say('Reconnect this song’s source audio before analyzing timing.'); self.refresh(); return
 
         def work(progress, emit):
             return analyze(Path(track.path), track.bpm, track.duration, self.data / "timing-cache", progress)
@@ -2364,6 +2382,11 @@ class Studio(QMainWindow):
         def finished(timing):
             current = self.session.tracks.get(track.id)
             if current is None:
+                return
+            if (current.path != track.path or current.bpm != track.bpm or current.duration != track.duration
+                    or not source_matches(timing, current)):
+                self.say('The song changed while timing was being checked. Analyze again; no timing result was applied.')
+                self.refresh()
                 return
 
             def mutate():
@@ -2386,8 +2409,11 @@ class Studio(QMainWindow):
         if not clip:
             return
         track = self.session.tracks[clip.track_id]
-        suggestion = track.timing.get("bpm")
+        from studio_timing import current_analysis as current_timing
+        suggestion = current_timing(track).get("bpm")
         if suggestion is None:
+            self.say('No current timing BPM suggestion. Reconnect missing audio or Analyze timing again.')
+            self.refresh()
             return
 
         def mutate():
@@ -2404,6 +2430,10 @@ class Studio(QMainWindow):
         clip = self.selected_clip()
         if not clip:
             return
+        track = self.session.tracks[clip.track_id]
+        guidance = timing_guidance(track.timing, track=track)
+        if not guidance.available:
+            self.say(guidance.explanation); self.refresh(); return
         from studio_audition import TimingComparison, prepare_comparison
         snapshot, selected = copy.deepcopy(self.session), copy.deepcopy(clip)
         self.player.pause()

@@ -147,14 +147,20 @@ def review_mix(session, preferred_percent=6.0, max_shift=2):
             notes.append(("missing", "Source file is missing. Use Reconnect audio… to choose the original at its new location before listening or exporting."))
         if track.bpm:
             from studio_tempo_curve import clip_tempo_range
-            limits = clip_tempo_range(session, index)
-            change = max(((bpm / track.bpm - 1) * 100 for bpm in limits), key=abs)
-            if abs(change) > preferred_percent:
-                notes.append(("tempo", f"Tempo changes by up to {change:+.1f}%, beyond your preferred {preferred_percent:g}% limit."))
+            try:
+                limits = clip_tempo_range(session, index)
+            except djmix.MixError as error:
+                notes.append(('layout', 'Tempo range cannot be checked yet. ' + str(error)))
+            else:
+                change = max(((bpm / track.bpm - 1) * 100 for bpm in limits), key=abs)
+                if abs(change) > preferred_percent:
+                    notes.append(("tempo", f"Tempo changes by up to {change:+.1f}%, beyond your preferred {preferred_percent:g}% limit."))
         if abs(clip.shift) > max_shift:
             notes.append(("pitch", f"Pitch changes by {clip.shift:+d} st, beyond your suggested-shift limit. Listen for altered voices or instruments."))
         guidance = timing_guidance(track.timing, clip.stabilize, track=track)
-        if guidance.title in ("Timing inconclusive", "Timing not analyzed"):
+        if guidance.title == 'Timing needs updating':
+            notes.append(('timing', 'Saved timing does not match the source audio. Reconnect missing audio or Analyze timing again before using correction or its BPM suggestion.'))
+        elif guidance.title in ("Timing inconclusive", "Timing not analyzed"):
             notes.append(("timing", guidance.title + ". Check the source BPM and listen for beats drifting apart."))
         elif guidance.available and not clip.stabilize:
             notes.append(("correction", "Tempo correction is available but off. Compare A/B before deciding whether it helps."))

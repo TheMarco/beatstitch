@@ -17,6 +17,9 @@ from studio_storage import managed_cache, require_space
 
 VERSION = 1
 RATE, WINDOW, STEP = 32000, 10, 5
+# Listening prompts use the validated, more sensitive cutoff. Raw observations
+# and their version-1 classification remain reusable; this is not a probability.
+VOICE_PROMPT_THRESHOLD = .08
 MODEL_SHA256 = '5240bdc47444e331bbeb54fd741d2b3f933a4526e84b0c17bf3593df94b13962'
 MODEL_SIZE = 25237595
 MODEL_URL = 'https://zenodo.org/api/records/3987831/files/Cnn10_mAP=0.380.pth/content'
@@ -42,7 +45,12 @@ def verify_model(path=None):
 
 
 def state(scores, rms_db):
-    """Ranking thresholds, not calibrated probabilities or proof of absence."""
+    """Version-1 cached classification, not current voice-prompt policy.
+
+    Keep this stable so saved raw observations remain valid. Drum-led selection
+    already vetoes voice scores >= .08; voice_regions uses that same cutoff.
+    Neither classification nor score is a calibrated probability or absence proof.
+    """
     if rms_db < -65: return 'quiet'
     if scores['voice'] >= .2: return 'voice'
     if scores['drums'] >= .35 and scores['voice'] < .08 and scores['pitched'] < .15:
@@ -157,16 +165,20 @@ def drum_regions(result):
             if len(r['observations']) >= 2 and r['end'] - r['start'] >= 5]
 
 
-def voice_regions(result):
+def voice_regions(result, *, threshold=VOICE_PROMPT_THRESHOLD):
     """Tentative listening ranges, never precise vocal boundaries or absence claims.
 
     Merge only overlapping/touching positive windows. A single positive window
     can prompt a listen, but uncertainty or an observation gap cannot join two
-    separated candidates. Other windows may disagree inside a candidate.
+    separated candidates. Other windows may disagree inside a candidate. Use
+    saved scores so this policy improvement needs no new inference. The optional
+    cutoff lets offline measurements reproduce the former .2 prompt policy.
     """
+    if not math.isfinite(threshold) or not 0 < threshold < 1:
+        raise ValueError('Voice prompt cutoff must be between zero and one.')
     regions = []
     for window in result.get('windows', []):
-        if window['state'] != 'voice':
+        if window['rms_db'] < -65 or window['scores']['voice'] < threshold:
             continue
         start, end = window['start'], window['end']
         if regions and start <= regions[-1]['end']:

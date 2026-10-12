@@ -30,6 +30,30 @@ def observations(track):
 
 
 class ContentTests(unittest.TestCase):
+    def test_more_sensitive_voice_prompts_reuse_legacy_observations_without_changing_them(self):
+        from tests.test_transitions import project
+        with tempfile.TemporaryDirectory() as temporary:
+            track = project().tracks['1']; path = Path(temporary) / 'song.wav'
+            path.write_bytes(b'fixture'); track.path = str(path)
+            result = observations(track)
+            for window in result['windows']:
+                window['scores']['voice'] = .01
+            for index, value in [(0, .079), (1, .08), (2, .09), (5, .9)]:
+                result['windows'][index]['scores']['voice'] = value
+            result['windows'][5]['rms_db'] = -80.
+            for window in result['windows']:
+                window['state'] = state(window['scores'], window['rms_db'])
+            track.content = result
+            original = copy.deepcopy(result)
+            with patch('studio_content_model.ContentModel', side_effect=AssertionError('Do not infer again')):
+                saved = current_content(track)
+                self.assertTrue(saved)
+                self.assertEqual(voice_regions(saved), [{'start': 5., 'end': 20., 'observations': 2}])
+                self.assertEqual(voice_regions(saved, threshold=.2), [])
+            self.assertEqual(result, original)
+            self.assertEqual(result['windows'][2]['state'], 'uncertain')
+            self.assertFalse(any(r['start'] < 20 and r['end'] > 5 for r in drum_regions(saved)))
+
     def test_voice_ranges_keep_gaps_and_never_turn_unknown_or_quiet_into_absence(self):
         def window(start, voice, rms=-18):
             scores = {'voice': voice, 'drums': .1, 'pitched': .3, 'music': .8}

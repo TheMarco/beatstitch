@@ -184,7 +184,10 @@ class BlendTransport(ABTransport):
 
     def seek(self, milliseconds):
         if self.mixer is not None:
-            milliseconds = max(0, min(milliseconds, self.mixer.length * 1000 / RATE))
+            # The exact loop boundary is also the next loop's zero. An explicit
+            # End gesture should land on the last sample, not jump to the start.
+            last_frame = self.mixer.length - (1 if self.mixer.loop else 0)
+            milliseconds = max(0, min(milliseconds, last_frame * 1000 / RATE))
             self.mixer.stop_at = self.mixer.length
         super().seek(milliseconds)
 

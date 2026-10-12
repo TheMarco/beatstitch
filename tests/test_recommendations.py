@@ -135,6 +135,11 @@ class RecommendationTests(unittest.TestCase):
         self.assertEqual(evidence['state'], 'not_checked')
         self.assertFalse(evidence['can_check'])
         self.assertIn('longer than the available audio', evidence['reason'])
+        self.assertTrue(any(kind == 'layout' and 'Shorten it' in note for song in report['songs'] for kind, note in song['notes']))
+        project.tempo_enabled = True
+        project.tempo_points = [{'beat': 0., 'bpm': 120.}, {'beat': 32., 'bpm': 130.}]
+        curved = review_mix(project)
+        self.assertTrue(any(kind == 'layout' for song in curved['songs'] for kind, _ in song['notes']))
         self.assertTrue(any(kind == "missing" for song in report["songs"] for kind, _ in song["notes"]))
 
 

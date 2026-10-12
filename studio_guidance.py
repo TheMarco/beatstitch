@@ -1,7 +1,7 @@
 """User-facing timing states. Detection results and control availability are separate."""
 from dataclasses import dataclass
 
-from studio_timing import VERSION
+from studio_timing import VERSION, source_matches
 
 
 @dataclass(frozen=True)
@@ -23,7 +23,17 @@ def timing_guidance(timing, enabled=False, busy=False, *, track=None):
         except OSError:
             valid = False
         state = 'authored' if valid else None
-    if state == "drift" and timing.get("map"):
+    elif state in ('drift', 'steady', 'uncertain') and track is not None and not source_matches(timing, track):
+        state = 'stale'
+    if state == 'stale':
+        result = TimingGuidance(
+            'Timing needs updating',
+            'Saved analysis does not match this source.\nReconnect missing audio or Analyze again.',
+            'The source audio changed, moved, is unavailable, or has no saved identity. '
+            'The old timing result and BPM suggestion are not current. Reconnect missing audio first, '
+            'then Analyze timing again. You can turn an existing correction off; '
+            'the app will not render a correction map from a different source.')
+    elif state == "drift" and timing.get("map"):
         coverage = min(1., max(0., timing.get("coverage", 0.)))
         result = TimingGuidance(
             "Correction available",

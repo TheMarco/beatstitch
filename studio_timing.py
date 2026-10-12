@@ -30,6 +30,22 @@ def signature(path):
     return [str(path), stat.st_size, stat.st_mtime_ns]
 
 
+def source_matches(timing, track):
+    """Timing observations describe source audio, independent of later mix BPM edits."""
+    try:
+        return timing.get('source') == signature(track.path)
+    except OSError:
+        return False
+
+
+def current_analysis(track):
+    timing = track.timing
+    if (timing.get('version') != VERSION or not source_matches(timing, track)
+            or (timing.get('state') == 'authored' and timing.get('bpm') != track.bpm)):
+        return {}
+    return timing
+
+
 def features(path, cache=None, progress=lambda message: None):
     from studio_timing_features import extract
     return extract(path, cache, progress)

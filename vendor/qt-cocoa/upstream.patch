@@ -1,0 +1,140 @@
+From c7fd3f34b997bb363be15650647665b3b6b8a5f4 Mon Sep 17 00:00:00 2001
+From: Caleb Meadows <caleblee789@gmail.com>
+Date: Sat, 29 Aug 2026 11:55:34 -0500
+Subject: [PATCH] macOS: Do not delete table interfaces for synthesized elements
+
+Synthesized Cocoa table elements share the parent table accessibility
+ID. The cleanup added in b1ed5f656f064e553b33752f8e87d2f5b9553e38 can
+therefore delete the table interface when a placeholder is released
+while selected children are resolved.
+
+Skip interface deletion for parent-managed elements. Cover the
+ownership contract with native selected-children queries, table ID
+stability checks, cell role checks, and column-count changes.
+
+Amends b1ed5f656f064e553b33752f8e87d2f5b9553e38 (dev).
+
+Fixes: QTBUG-149612
+Pick-to: 6.12 6.11
+Change-Id: I94ba93c4d5cf6377a933601a6eaf466869c7f6f6
+---
+
+diff --git a/src/plugins/platforms/cocoa/qcocoaaccessibilityelement.mm b/src/plugins/platforms/cocoa/qcocoaaccessibilityelement.mm
+index 204fe0e..eeb0af1 100644
+--- a/src/plugins/platforms/cocoa/qcocoaaccessibilityelement.mm
++++ b/src/plugins/platforms/cocoa/qcocoaaccessibilityelement.mm
+@@ -219,7 +219,9 @@
+ + (void)removeElementsFromCache:(NSArray *)array {
+     for (uint i = 0; i < array.count; ++i) {
+         QMacAccessibilityElement *cell = [array objectAtIndex:i];
+-        if (cell->axid) { // it's a proper cell, remove from cache
++        if (cell->axid && !cell.isManagedByParent) {
++            // Proper cells own their interface. Synthesized elements use their
++            // parent table's ID and must not remove that interface.
+             QAccessibleCache::instance()->deleteInterface(cell->axid);
+         }
+     }
+@@ -263,7 +265,8 @@
+         [QMacAccessibilityElement removeElementsFromCache:columns];
+         [columns release]; // will also release all entries first
+     }
+-    QAccessibleCache::instance()->deleteInterface(axid);
++    if (axid && !self.isManagedByParent)
++        QAccessibleCache::instance()->deleteInterface(axid);
+     [super dealloc];
+ }
+ 
+diff --git a/tests/auto/other/qaccessibilitymac/tst_qaccessibilitymac.mm b/tests/auto/other/qaccessibilitymac/tst_qaccessibilitymac.mm
+index c2e832a5..4ef24ae 100644
+--- a/tests/auto/other/qaccessibilitymac/tst_qaccessibilitymac.mm
++++ b/tests/auto/other/qaccessibilitymac/tst_qaccessibilitymac.mm
+@@ -73,6 +73,7 @@
+     @property (readonly) CGRect rect;
+     @property (readonly) NSArray *actions;
+     @property (readonly) bool valid;
++    @property (readonly) NSArray *selectedChildren;
+ @end
+ 
+ @implementation TestAXObject
+@@ -154,6 +155,21 @@
+     return arr;
+ }
+ 
++- (NSArray *)selectedChildren
++{
++    NSArray *arr = nil;
++    AXError err;
++
++    if (kAXErrorSuccess != (err = AXUIElementCopyAttributeValue(reference,
++                                                                 kAXSelectedChildrenAttribute,
++                                                                 (CFTypeRef *) &arr))) {
++        axError = true;
++        qDebug() << "AXUIElementCopyAttributeValue(kAXSelectedChildrenAttribute) returned error = "
++                 << AXErrorTag(err) << "with reference" << reference;
++    }
++    return [arr autorelease];
++}
++
+ - (NSArray *)tabs
+ {
+     NSArray *arr;
+@@ -712,6 +728,7 @@
+ void tst_QAccessibilityMac::tableViewTest()
+ {
+     QTableWidget *tw = new QTableWidget(3, 2, m_window);
++    tw->setSelectionBehavior(QAbstractItemView::SelectRows);
+     struct Person
+     {
+         const char *name;
+@@ -775,6 +792,51 @@
+         QVERIFY([childObject.role isEqualToString:NSAccessibilityRowRole] ||
+                [childObject.role isEqualToString:NSAccessibilityColumnRole]);
+     }
++
++    // Resolving the row children above creates synthesized cell placeholders.
++    // Promoting one of them to a real selected cell must not delete the parent
++    // table interface, whose ID is shared by the synthesized element.
++    QAccessibleInterface *tableInterface = QAccessible::queryAccessibleInterface(tw);
++    QVERIFY(tableInterface);
++    const QAccessible::Id tableId = QAccessible::uniqueId(tableInterface);
++    for (int rowIndex = 0; rowIndex < tw->rowCount(); ++rowIndex) {
++        tw->selectRow(rowIndex);
++        QCoreApplication::processEvents();
++
++        NSArray *selectedChildren = [tv selectedChildren];
++        QVERIFY(QAccessible::accessibleInterface(tableId));
++        QCOMPARE([selectedChildren count], columnCount);
++        for (id selectedChild in selectedChildren) {
++            TestAXObject *childObject = [[[TestAXObject alloc]
++                    initWithAXUIElementRef:(AXUIElementRef)selectedChild] autorelease];
++            QVERIFY([childObject.role isEqualToString:NSAccessibilityCellRole]);
++        }
++    }
++
++    tw->setColumnCount(3);
++    tw->setItem(0, 2, new QTableWidgetItem(QStringLiteral("Philosopher")));
++    tw->selectRow(0);
++    QCoreApplication::processEvents();
++    NSArray *selectedChildren = [tv selectedChildren];
++    QVERIFY(QAccessible::accessibleInterface(tableId));
++    QCOMPARE([selectedChildren count], 3u);
++    for (id selectedChild in selectedChildren) {
++        TestAXObject *childObject = [[[TestAXObject alloc]
++                initWithAXUIElementRef:(AXUIElementRef)selectedChild] autorelease];
++        QVERIFY([childObject.role isEqualToString:NSAccessibilityCellRole]);
++    }
++
++    tw->setColumnCount(2);
++    tw->selectRow(1);
++    QCoreApplication::processEvents();
++    selectedChildren = [tv selectedChildren];
++    QVERIFY(QAccessible::accessibleInterface(tableId));
++    QCOMPARE([selectedChildren count], columnCount);
++    for (id selectedChild in selectedChildren) {
++        TestAXObject *childObject = [[[TestAXObject alloc]
++                initWithAXUIElementRef:(AXUIElementRef)selectedChild] autorelease];
++        QVERIFY([childObject.role isEqualToString:NSAccessibilityCellRole]);
++    }
+ }
+ 
+ void tst_QAccessibilityMac::treeViewTest()

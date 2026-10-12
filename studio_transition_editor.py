@@ -200,7 +200,8 @@ class TransitionEditor(QDialog):
         row.addWidget(self.compare)
         self.seek = QSlider(Qt.Orientation.Horizontal)
         self.seek.setAccessibleName('Blend playback position')
-        self.seek.setToolTip('Seek within this blend. Outgoing, Blend and Incoming always share the same position.')
+        self.seek.setSingleStep(1000); self.seek.setPageStep(5000)
+        self.seek.setToolTip('Seek within this blend. Left/Right moves one second; Page Up/Down moves five seconds; Home/End goes to either end. Outgoing, Blend and Incoming share the same position. Seeking keeps paused audio paused.')
         self.seek.sliderMoved.connect(self.seek_to)
         # Keyboard changes commit immediately; programmatic position updates block signals.
         self.seek.valueChanged.connect(lambda ms: self.seek_to(ms) if not self.seek.isSliderDown() else None)

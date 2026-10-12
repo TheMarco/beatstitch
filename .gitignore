@@ -8,3 +8,4 @@ assets/models/*.ckpt
 assets/models/*.pth
 assets/sections/
 assets/key/*.pt
+assets/qt/*.tar.gz

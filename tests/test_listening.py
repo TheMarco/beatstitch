@@ -9,10 +9,10 @@ import wave
 from unittest.mock import patch
 import numpy as np
 
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import Qt, QUrl
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtWidgets import QApplication
-from PySide6.QtTest import QTest
+from PySide6.QtTest import QSignalSpy, QTest
 
 from desktop_app import Studio
 from studio_engine import Clip, Session, Track
@@ -24,14 +24,16 @@ class Player:
         self.state = QMediaPlayer.PlaybackState.PausedState
         self.loops = QMediaPlayer.Loops.Once
         self.play_count = 0
+        self.position_calls = []
+        self.media_state = QMediaPlayer.MediaStatus.LoadedMedia
 
     def source(self): return self.url
     def setSource(self, url): self.url, self.pos = url, 0
     def position(self): return self.pos
-    def setPosition(self, value): self.pos = value
+    def setPosition(self, value): self.pos = value; self.position_calls.append(value)
     def duration(self): return 300000
     def playbackState(self): return self.state
-    def mediaStatus(self): return QMediaPlayer.MediaStatus.LoadedMedia
+    def mediaStatus(self): return self.media_state
     def pause(self): self.state = QMediaPlayer.PlaybackState.PausedState
     def stop(self): self.pause(); self.pos = 0
     def play(self): self.state = QMediaPlayer.PlaybackState.PlayingState; self.play_count += 1
@@ -185,6 +187,69 @@ class ListeningTests(unittest.TestCase):
         with patch.object(w, "start_render"):
             w.toggle_play()
         self.assertEqual(source.player.playbackState(), QMediaPlayer.PlaybackState.PausedState)
+
+    def test_source_keyboard_seek_moves_audio_in_seconds_without_starting_playback(self):
+        source = self.w.source_audition
+        source.set_track(self.track)
+        source.player.setSource(QUrl.fromLocalFile(str(Path(self.track.path).resolve())))
+        before = self.w.session.to_dict()
+        for key, expected in [(Qt.Key.Key_Right, 1000), (Qt.Key.Key_PageUp, 11000),
+                              (Qt.Key.Key_End, 240000), (Qt.Key.Key_Home, 0)]:
+            QTest.keyClick(source.seek, key)
+            self.assertEqual(source.player.position(), expected)
+            self.assertEqual(source.player.play_count, 0)
+        self.assertEqual(self.w.session.to_dict(), before)
+
+    def test_focused_source_home_does_not_trigger_window_mix_rewind(self):
+        w = self.w
+        source = w.source_audition
+        source.set_track(self.track)
+        source.player.setSource(QUrl.fromLocalFile(str(Path(self.track.path).resolve())))
+        source.seek_to(12000)
+        w.seek_timeline(75)
+        w.show(); w.activateWindow(); source.seek.setFocus(); QApplication.processEvents()
+        QTest.keyClick(source.seek, Qt.Key.Key_Home)
+        self.assertEqual(source.player.position(), 0)
+        self.assertEqual(w.mix_cursor, 75)
+        self.assertEqual(source.player.play_count, 0)
+
+    def test_source_seek_before_loading_stays_silent_and_preserves_play_intent(self):
+        source = self.w.source_audition
+        source.set_track(self.track)
+        source.player.media_state = QMediaPlayer.MediaStatus.LoadingMedia
+        announce = QSignalSpy(source.aboutToPlay)
+        source.seek_to(17000)
+        self.assertFalse(source.pending_play)
+        self.assertEqual(announce.count(), 0)
+        source.position_changed(0)  # Decoder has not reached the requested time yet.
+        self.assertEqual(source.seek.value(), 17000)
+        source.toggle()  # An explicit Listen preserves the pending seek.
+        self.assertEqual(source.pending_position, 17000)
+        self.assertTrue(source.pending_play)
+        self.assertEqual(announce.count(), 1)
+        QTest.keyClick(source.seek, Qt.Key.Key_Right)
+        self.assertEqual(source.pending_position, 18000)
+        self.assertTrue(source.pending_play)
+        self.assertEqual(source.player.play_count, 0)
+        source.player.media_state = QMediaPlayer.MediaStatus.LoadedMedia
+        source.media_ready(source.player.media_state)
+        self.assertEqual(source.player.position(), 18000)
+        self.assertEqual(source.player.play_count, 1)
+
+    def test_source_position_updates_and_song_changes_do_not_seek_or_play(self):
+        source = self.w.source_audition
+        source.set_track(self.track)
+        source.player.setSource(QUrl.fromLocalFile(str(Path(self.track.path).resolve())))
+        source.player.pos = 90000
+        source.position_changed(90000)
+        self.assertEqual(source.seek.value(), 90000)
+        self.assertEqual(source.player.position_calls, [])
+        short = Track('short', self.track.path, 'Short', 5, 128, 'C minor', cue_out=5)
+        source.set_track(short)
+        self.assertEqual(source.seek.value(), 0)
+        self.assertEqual(source.player.position_calls, [])
+        self.assertFalse(source.pending_play)
+        self.assertEqual(source.player.play_count, 0)
 
     def test_review_visits_each_transition_without_changing_mix(self):
         w = self.w

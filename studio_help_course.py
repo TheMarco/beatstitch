@@ -138,6 +138,11 @@ LESSONS = (
     4. Note its BPM and key, but treat them as estimates. If a value looks surprising,
        check the rhythm or notes before basing a whole mix on it.
 
+    You can position the source slider before listening; seeking keeps paused audio
+    paused. With the slider focused, **Left/Right** moves one second, **Page Up/Down**
+    moves ten seconds, and **Home/End** goes to the beginning/end. Choose **Listen**
+    to start from that position. This is separate from moving a song's Start/End cues.
+
     The key detector, **OpenKeyScan**, estimates from the first minute, or the whole
     source if shorter. Later musical passages can differ. **Beat This** supplies the
     beat-based BPM estimate; an opening-passage estimate is also retained when one

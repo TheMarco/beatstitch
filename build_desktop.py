@@ -90,6 +90,10 @@ def main():
     parser.add_argument('--check', action='store_true', help='Run the finished package without developer PATH tools and write an audio/Qt check report.')
     options=parser.parse_args()
     destination=options.dist_dir.resolve()
+    cocoa_plugin = None
+    if sys.platform == 'darwin':
+        from macos_qt_patch import verify_patch
+        cocoa_plugin = verify_patch(root)
     djmix.require_tools()
     from studio_structure import MODEL_SHA256, model_path
     checkpoint = model_path()
@@ -154,6 +158,9 @@ def main():
     environment=os.environ.copy()
     environment.setdefault('PYINSTALLER_CONFIG_DIR',str(root/'build'/'pyinstaller-cache'))
     run_packager(args, root, destination, environment)
+    if cocoa_plugin is not None:
+        from macos_qt_patch import apply_patch
+        apply_patch(destination / 'DJ Studio.app', root, cocoa_plugin)
     if options.check:
         check_package(destination)
 
