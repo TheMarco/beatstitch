@@ -47,6 +47,7 @@ class HelpDialog(QDialog):
         self.setMinimumSize(740, 470)
         self.topics = {topic["id"]: topic for topic in TOPICS}
         self.current_topic = None
+        self.reading_positions = {}
         self.history, self.history_index = [], -1
         column = QVBoxLayout(self)
         column.setContentsMargins(18, 16, 18, 16)
@@ -80,8 +81,11 @@ class HelpDialog(QDialog):
         navigation = QHBoxLayout()
         self.back_btn = QPushButton("Back")
         self.forward_btn = QPushButton("Forward")
+        self.back_btn.setToolTip('Return to the previous topic at your saved reading position.')
+        self.forward_btn.setToolTip('Revisit the next topic at your saved reading position.')
         for widget, step in ((self.back_btn, -1), (self.forward_btn, 1)):
             widget.setAutoDefault(False)
+            widget.setAccessibleDescription(widget.toolTip())
             widget.clicked.connect(lambda checked=False, direction=step: self.go(direction))
             navigation.addWidget(widget)
         self.search = QLineEdit()
@@ -168,6 +172,7 @@ class HelpDialog(QDialog):
             identity = next((t["id"] for t in matches if t["id"] == self.current_topic), matches[0]["id"])
             self.open_topic(identity, remember=False, clear_search=False)
         else:
+            self.save_reading_position()
             self.current_topic = None
             self.update_course_navigation()
             self.browser.setMarkdown("# No matching topics\n\nTry a shorter search, such as **tempo**, **key**, "
@@ -180,6 +185,7 @@ class HelpDialog(QDialog):
     def open_topic(self, identity, remember=True, clear_search=True):
         if identity not in self.topics:
             return
+        self.save_reading_position()
         if clear_search and self.search.text():
             with QSignalBlocker(self.search):
                 self.search.clear()
@@ -204,12 +210,16 @@ class HelpDialog(QDialog):
                 formatting.setBottomMargin(6 if heading else 4 if block.textList() else 10)
             cursor.setBlockFormat(formatting)
             block = block.next()
-        self.browser.verticalScrollBar().setValue(0)
+        self.browser.verticalScrollBar().setValue(self.reading_positions.get(identity, 0))
         if remember and (self.history_index < 0 or self.history[self.history_index] != identity):
             self.history = self.history[:self.history_index + 1] + [identity]
             self.history_index = len(self.history) - 1
         self.back_btn.setEnabled(self.history_index > 0)
         self.forward_btn.setEnabled(self.history_index + 1 < len(self.history))
+
+    def save_reading_position(self):
+        if self.current_topic is not None:
+            self.reading_positions[self.current_topic] = self.browser.verticalScrollBar().value()
 
     def follow_link(self, url):
         if url.scheme() == "help":

@@ -67,7 +67,7 @@ def install(destination, archives=ARCHIVES):
             extract(spec, archive, stage)
             archive.unlink()
         manifest = {'archives': archives, 'files': {
-            str(p.relative_to(stage)): hashlib.sha256(p.read_bytes()).hexdigest()
+            p.relative_to(stage).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
             for p in sorted(stage.rglob('*')) if p.is_file()}}
         (stage / 'manifest.json').write_text(json.dumps(manifest, indent=2)+'\n', encoding='utf-8')
         stage.rename(destination)

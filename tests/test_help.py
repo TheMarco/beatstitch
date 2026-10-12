@@ -174,6 +174,36 @@ class HelpTests(unittest.TestCase):
         self.assertTrue(guide.topic_list.wordWrap())
         self.assertEqual(guide.topic_list.horizontalScrollBar().maximum(), 0)
 
+    def test_reference_history_and_empty_search_preserve_reading_position(self):
+        guide = HelpDialog()
+        self.addCleanup(guide.close)
+        guide.resize(740, 470)
+        guide.show()
+        guide.open_topic('learn-check-bpm')
+        self.app.processEvents()
+        scroll = guide.browser.verticalScrollBar()
+        lesson_position = scroll.maximum() // 2
+        self.assertGreater(lesson_position, 0)
+        scroll.setValue(lesson_position)
+        guide.follow_link(QUrl('help:tempo'))
+        self.app.processEvents()
+        reference_position = scroll.maximum() // 3
+        self.assertGreater(reference_position, 0)
+        scroll.setValue(reference_position)
+        guide.back_btn.click()
+        self.app.processEvents()
+        self.assertEqual(guide.current_topic, 'learn-check-bpm')
+        self.assertEqual(scroll.value(), lesson_position)
+        guide.forward_btn.click()
+        self.app.processEvents()
+        self.assertEqual(guide.current_topic, 'tempo')
+        self.assertEqual(scroll.value(), reference_position)
+        guide.search.setText('zz-no-match-zz')
+        guide.search.clear()
+        guide.open_topic('tempo')
+        self.app.processEvents()
+        self.assertEqual(scroll.value(), reference_position)
+
 
 if __name__ == "__main__":
     unittest.main()
