@@ -350,7 +350,7 @@ REFERENCE_TOPICS = (
     {
         "id": "first-mix",
         "title": "Make a mix with the guided setup",
-        "keywords": "first mix guide beginner wizard tutorial choose songs checkboxes draft cancel replace undo",
+        "keywords": "first mix guide beginner wizard tutorial choose songs checkboxes draft cancel replace undo missing files refresh reconnect drive",
         "body": (
             "## Choose, listen, then apply\n\n"
             "Choose **Mix guide** above the arrangement or in the **File** menu. An empty arrangement also "
@@ -358,7 +358,9 @@ REFERENCE_TOPICS = (
             "1. **Choose songs.** Check at least two library songs, or use **Add files… / Add folder…**. "
             "**Listen** auditions an original song; the slider, **Start** and **Ending** help you explore it. "
             "Filtering by name does not uncheck hidden songs. A song with no BPM needs a known value entered "
-            "with **BPM…** before it can be selected. Missing source files must be restored.\n"
+            "with **BPM…** before it can be selected. A missing source is explained beside its song: restore "
+            "the file or reconnect its drive, then click **Refresh** and select it. If files moved, close "
+            "the guide and use **File → Reconnect source audio…** to locate them.\n"
             "2. **Mix settings.** A suggested common tempo balances the largest speed changes. Read every "
             "song’s percentage change; you can type another BPM. A warning about half/double-time means the "
             "source BPM labels need checking, not that the app has fixed them. **Starting overlap** is a "
@@ -377,6 +379,9 @@ REFERENCE_TOPICS = (
             "arrangement; imported songs remain in the library. Source BPM values entered in the guide apply "
             "only for selected songs when you create the mix. **Stop and close** waits for the current import "
             "step to finish safely. Already imported songs remain available.\n\n"
+            "If a selected source disappears while the guide is open, it stops before continuing or "
+            "replacing your arrangement and names the missing songs. Restore those files and retry; "
+            "your existing arrangement stays intact.\n\n"
             "The guide starts fresh clips using the library’s start/end cues, original keys and a bass handoff. "
             "It does not copy pitch, stabilization, cue or overlap edits from an existing arrangement. "
             "If one exists, the review explicitly says it will be replaced. One **Undo Create mix with guide** "

@@ -118,6 +118,9 @@ class FirstMixGuide(QDialog):
             button = QPushButton(title); button.clicked.connect(lambda checked=False, f=folder: self.import_audio(f))
             button.setToolTip('Add audio to the library and estimate BPM and key locally. Imported songs remain in the library if you cancel the guide.')
             row.addWidget(button)
+        refresh = QPushButton('Refresh')
+        refresh.setToolTip('Check again after restoring a missing file or reconnecting a drive. Your available song selections stay selected.')
+        refresh.clicked.connect(self.refresh_songs); row.addWidget(refresh)
         self.filter = QLineEdit(); self.filter.setPlaceholderText('Find a song'); self.filter.setAccessibleName('Find a song in the guide')
         self.filter.setToolTip('Filter by song name. Songs you already checked stay selected when hidden by this filter.')
         self.filter.textChanged.connect(self.filter_songs); row.addWidget(self.filter, 1); box.addLayout(row)
@@ -145,14 +148,20 @@ class FirstMixGuide(QDialog):
             field, chosen, name, bpm, listen = self.rows[identity]
             valid = track.bpm is not None and math.isfinite(track.bpm) and 20 <= track.bpm <= 300
             available = Path(track.path).is_file()
-            name.setText(f'{track.name}\n{track.bpm:.1f} BPM · {display_key(track.key) or "Key unknown"} · {clock(track.duration)}'
-                         if valid else f'{track.name}\nBPM needed · {clock(track.duration)}')
+            details = (f'{track.bpm:.1f} BPM · {display_key(track.key) or "Key unknown"} · {clock(track.duration)}'
+                       if valid else f'BPM needed · {clock(track.duration)}')
+            if not available:
+                details += '\nSource file missing. Restore it and click Refresh, or close this guide and use File → Reconnect source audio…'
+            name.setText(f'{track.name}\n{details}')
             chosen.setAccessibleName('Include ' + track.name)
             chosen.setEnabled(valid and available)
             if not chosen.isEnabled(): chosen.setChecked(False)
             chosen.setToolTip('Include this song in the draft.' if valid and available else
-                              'Source file is missing. Restore it before including this song.' if not available else
+                              'Restore the missing source file and click Refresh, or close this guide and use File → Reconnect source audio…' if not available else
                               'Enter a source BPM using BPM…, or choose another song.')
+            chosen.setAccessibleDescription(chosen.toolTip())
+            for button, action in ((bpm, 'Edit source BPM for '), (listen, 'Listen to ')):
+                button.setAccessibleName(action + track.name)
             listen.setEnabled(available); bpm.setEnabled(available)
         self.filter_songs(); self.selection_changed()
 
@@ -242,7 +251,17 @@ class FirstMixGuide(QDialog):
         self.pages.addWidget(page)
 
     def draft(self):
+        self.require_sources(self.selected())
         return starter_session(self.tracks, self.selected(), self.tempo.value(), self.overlap.value(), self.host.session.name)
+
+    def require_sources(self, identities):
+        missing = [self.tracks[identity].name if identity in self.tracks else 'a selected song' for identity in identities
+                   if identity not in self.tracks or not Path(self.tracks[identity].path).is_file()]
+        if missing:
+            names = ', '.join(missing[:3]) + (f' and {len(missing) - 3} more' if len(missing) > 3 else '')
+            raise djmix.MixError(f'Source audio is missing for {names}. Restore the files or reconnect the drive, then try again. '
+                                 'If the files moved, close this guide and use File → Reconnect source audio… '
+                                 'Your arrangement has not changed.')
 
     def balance_tempo(self):
         try:
@@ -277,6 +296,9 @@ class FirstMixGuide(QDialog):
     def next_step(self):
         if self.busy: return
         self.audition.stop()
+        try: self.require_sources(self.selected())
+        except djmix.MixError as error:
+            self.status.setText(str(error)); return
         if self.pages.currentIndex() == 0:
             self.pages.setCurrentIndex(1); self.update_step(); self.balance_tempo(); self.update_settings(); return
         try: session, notes = self.draft()
@@ -308,6 +330,9 @@ class FirstMixGuide(QDialog):
     def apply_plan(self, draft):
         if self.host.revision != self.revision:
             self.planner.status.setText('The arrangement changed. Close the guide and start again before applying.'); return False
+        try: self.require_sources([clip.track_id for clip in draft.clips])
+        except djmix.MixError as error:
+            self.planner.status.setText(str(error)); return False
         def mutate():
             for identity in self.selected():
                 if identity not in self.host.session.tracks: raise djmix.MixError('A selected song is no longer in the library.')

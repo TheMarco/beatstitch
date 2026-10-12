@@ -142,6 +142,54 @@ class GuideTests(unittest.TestCase):
         self.assertEqual(self.w.session.to_dict(), before)
         self.assertEqual(self.w.history, [])
 
+    def test_missing_song_explains_recovery_and_refresh_keeps_other_selections(self):
+        source = Path(self.w.session.tracks['1'].path); source.unlink()
+        guide = self.open_guide()
+        field, chosen, name, bpm, listen = guide.rows['1']
+        self.assertIn('Source file missing', name.text())
+        self.assertIn('File → Reconnect source audio', name.text())
+        self.assertIn('Refresh', name.text())
+        self.assertFalse(chosen.isEnabled()); self.assertFalse(listen.isEnabled())
+        self.assertFalse(bpm.isEnabled()); self.assertFalse(guide.next_button.isEnabled())
+        self.assertEqual(chosen.accessibleDescription(), chosen.toolTip())
+        self.assertEqual(listen.accessibleName(), 'Listen to Song 1')
+        source.touch(); guide.refresh_songs()
+        self.assertEqual(guide.selected(), ['0'])
+        self.assertTrue(chosen.isEnabled()); self.assertTrue(listen.isEnabled())
+        self.assertNotIn('Source file missing', name.text())
+        chosen.click(); self.assertTrue(guide.next_button.isEnabled())
+
+    def test_source_removed_before_either_next_step_keeps_current_arrangement(self):
+        before = copy.deepcopy(self.w.session.to_dict())
+        source = Path(self.w.session.tracks['1'].path)
+        for step in (0, 1):
+            with self.subTest(step=step):
+                source.touch(); guide = self.open_guide()
+                if step: guide.next_step()
+                source.unlink(); guide.next_step()
+                self.assertEqual(guide.pages.currentIndex(), step)
+                self.assertIsNone(guide.planner)
+                self.assertIn('Source audio is missing for Song 1', guide.status.text())
+                self.assertIn('arrangement has not changed', guide.status.text())
+                self.assertEqual(guide.selected(), ['0', '1'])
+                self.assertEqual(self.w.session.to_dict(), before)
+                self.assertEqual(self.w.history, [])
+                guide.reject(); self.app.processEvents()
+
+    def test_source_removed_after_draft_review_cannot_replace_mix_and_can_be_restored(self):
+        before = copy.deepcopy(self.w.session.to_dict())
+        guide = self.open_guide(); planner = self.review(guide)
+        source = Path(self.w.session.tracks['1'].path); source.unlink()
+        planner.commit()
+        self.assertIn('Source audio is missing for Song 1', planner.status.text())
+        self.assertEqual(self.w.session.to_dict(), before)
+        self.assertEqual(self.w.history, [])
+        self.assertFalse(guide.created)
+        source.touch(); planner.commit()
+        self.assertTrue(guide.created)
+        self.assertEqual(len(self.w.history), 1)
+        self.assertEqual([c.track_id for c in self.w.session.clips], ['0', '1'])
+
     def test_import_callbacks_keep_new_songs_but_close_waits_for_completion(self):
         guide = self.open_guide(); before = copy.deepcopy(self.w.session.clips)
         with patch('studio_first_mix.QFileDialog.getOpenFileNames', return_value=([str(self.root / 'new.wav')], '')):
