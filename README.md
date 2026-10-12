@@ -860,16 +860,28 @@ clearance. Source revisions, attribution, license texts and remaining MusicFM MS
 weight questions are documented in [vendor/sections](vendor/sections/README.md).
 The default build remains separate from this optional pack.
 
-For a development environment, install `requirements-sections.txt`. Copy the
-previously downloaded, pinned research assets and build on the target OS:
+For a development environment, install `requirements-sections.txt`, then fetch
+the pinned assets and build on the target OS:
 
 ```sh
-python prepare_section_models.py --research outputs/edmformer-research
+python download_section_models.py
 python build_desktop.py --with-sections
 ```
 
-`prepare_section_models.py` accepts only the exact hashes in
-`section-model-manifest.json`; it does not download anything. The packaged edition
+The installer uses immutable EDM-98, MuQ and architecture-config revisions and
+requires the exact hashes in `section-model-manifest.json`. Verified existing
+files are reused. Downloads are streamed to temporary files; failed or oversized
+downloads cannot replace an existing file. Successfully installed earlier files
+survive a later failure and are reused on retry. Staging reserves 1 GiB of free
+space. The larger training checkpoint is loaded with `weights_only=True`, using
+inert placeholders for unused training configuration, then converted to the exact
+104 MB inference-only safetensors file already used by the app. Its temporary
+418 MB source checkpoint is deleted after verification. No model ID or inference
+weights change. A clean installation downloads about 3.1 GB and retains about
+2.6 GiB of assets; running it on this development machine reused all seven files.
+
+Alternatively, `python prepare_section_models.py --research outputs/edmformer-research`
+copies previously verified local research assets without downloading. The packaged edition
 includes inference code, configuration and weights and does not need this research
 directory, Python, or a network connection at runtime. Windows/Linux packages still
 need native validation. Focused checks:
@@ -1858,19 +1870,24 @@ exclusion from selection, resume integrity and final acceptance.
 
 ### Windows/Linux package verification workflow
 
-`.github/workflows/desktop-packages.yml` builds the core desktop package on
-Ubuntu 24.04 and Windows Server 2022 runners with Python 3.13.5. It runs focused
-packaging, key-runtime and help checks, then builds and exercises the frozen app
-with `build_desktop.py --check`. Jobs have a 35-minute limit and retain small
+`.github/workflows/desktop-packages.yml` builds the desktop package on Ubuntu 24.04
+and Windows Server 2022 runners with Python 3.13.5. The optional-packs input selects
+whether to include and exercise build/drop and vocal-separation models; it defaults
+on, including for validation-branch pushes. Turn it off in a manual dispatch for
+a core-only build. It runs focused packaging, key-runtime, help and provisioning
+checks, then builds and exercises the frozen app with `build_desktop.py --check`.
+With optional packs included, the installed executable also runs both isolated
+workers against generated audio. Jobs have a 35-minute limit and retain small
 verification reports for three days; executable bundles are not uploaded by this
 workflow. It can be dispatched manually once present on the default branch, or
 run from the isolated `codex/package-validation` branch.
 
 The workflow downloads the pinned core models with checksum verification and
 regenerates the original demo/listening audio. It does not upload a user's songs,
-projects, render cache, benchmark audio or local research environments. Optional
-section/separation packs and physical output/native-window checks need separate
-validation; a green core package job does not establish those requirements.
+projects, render cache, benchmark audio or local research environments. Physical
+output and native-window checks need separate validation; neither core checks nor
+worker execution establish musical quality. Only a report that actually includes
+both optional workers validates their execution in the corresponding package.
 
 Windows audio tools are staged with `ci/install_windows_audio.py` from pinned
 [FFmpeg 9.0.2 builds](https://github.com/GyanD/codexffmpeg/releases/tag/9.0.2) and

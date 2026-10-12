@@ -2,6 +2,11 @@ name: Desktop package validation
 
 on:
   workflow_dispatch:
+    inputs:
+      optional_packs:
+        description: Include and exercise build/drop and vocal-separation models
+        type: boolean
+        default: true
   push:
     branches: [codex/package-validation]
 
@@ -13,8 +18,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  core-package:
-    name: Core desktop on ${{ matrix.os }}
+  desktop-package:
+    name: Desktop package on ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -28,6 +33,7 @@ jobs:
       OMP_NUM_THREADS: '1'
       OPENBLAS_NUM_THREADS: '1'
       MKL_NUM_THREADS: '1'
+      DJ_OPTIONAL_PACKS: ${{ github.event_name == 'push' || inputs.optional_packs }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -47,6 +53,9 @@ jobs:
         run: |
           python -m pip install torch==2.11.0 torchaudio==2.11.0 --index-url https://download.pytorch.org/whl/cpu
           python -m pip install -r requirements-desktop.txt -r requirements-key.txt pyinstaller==6.22.3
+      - name: Install optional worker dependencies
+        if: env.DJ_OPTIONAL_PACKS == 'true'
+        run: python -m pip install -r requirements-sections.txt -r requirements-separation.txt
       - name: Prepare verified core models and original practice audio
         run: |
           python download_structure_model.py
@@ -54,10 +63,25 @@ jobs:
           python download_key_model.py
           python build_demo_assets.py
           python build_listening_lessons.py
+      - name: Prepare verified optional models
+        if: env.DJ_OPTIONAL_PACKS == 'true'
+        run: |
+          python download_section_models.py
+          python download_separation_model.py --destination assets/separation
       - name: Check packaging, key-runtime compatibility and offline help
-        run: python -m unittest tests.test_windows_audio_tools tests.test_package_check tests.test_key_detection tests.test_help -v
-      - name: Build and exercise the self-contained package
+        run: python -m unittest tests.test_windows_audio_tools tests.test_package_check tests.test_key_detection tests.test_help tests.test_optional_package_check tests.test_section_model_download -v
+      - name: Build and exercise the core package
+        if: env.DJ_OPTIONAL_PACKS != 'true'
         run: python build_desktop.py --check
+      - name: Build and exercise the package with optional models
+        if: env.DJ_OPTIONAL_PACKS == 'true'
+        run: python build_desktop.py --with-sections --with-separation --check
+      - name: Exercise both packaged optional workers on Windows
+        if: env.DJ_OPTIONAL_PACKS == 'true' && runner.os == 'Windows'
+        run: python -m ci.check_optional_workers --executable "dist/DJ Studio/DJ Studio.exe" --resources "dist/DJ Studio/_internal" --output dist/optional-package-check --sections --separation
+      - name: Exercise both packaged optional workers on Linux
+        if: env.DJ_OPTIONAL_PACKS == 'true' && runner.os == 'Linux'
+        run: python -m ci.check_optional_workers --executable "dist/DJ Studio/DJ Studio" --resources "dist/DJ Studio/_internal" --output dist/optional-package-check --sections --separation
       - name: Keep build reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -67,6 +91,8 @@ jobs:
           if-no-files-found: warn
           path: |
             dist/package-check-*/report.json
+            dist/optional-package-check/report.json
+            dist/optional-package-check/*.log
             build/audio-tools/manifest.json
             build/DJ Studio/warn-DJ Studio.txt
             build/DJ Studio.spec
