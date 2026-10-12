@@ -2,7 +2,8 @@
 
 A native **Qt / PySide6 desktop application** for arranging EDM mixes. No browser,
 webview, server, or online audio service is required. The code supports macOS,
-Windows, and Linux; this development build has been exercised on macOS.
+Windows, and Linux. Native interaction has been exercised on macOS; core packaged
+audio checks also pass on Windows Server 2022 and Ubuntu 24.04 x86-64 runners.
 
 ## Desktop app
 
@@ -25,6 +26,9 @@ the detailed reference. Previous/Next lesson controls follow the learning path;
 the lesson number shows your location, not a saved completion score. Reading the
 course does not change the mix. The listening-examples button opens the existing
 three short A/B exercises.
+Back and Forward restore your reading position within visited topics, including
+after a search with no results. These reading positions last for the guide window's
+lifetime; they are not saved course-completion marks.
 
 **Help > DJ Studio guide** opens the searchable
 offline guide in a native Qt text window. It covers the first-mix workflow, every
@@ -510,8 +514,9 @@ and librosa versions, plus the exact official `openkeyscan3.pt` checkpoint from
 revision `d5cac64bc7195826b6eb10c55b9b0c97fb3287c0`. Its repository MIT license is
 saved at `assets/key/LICENSE.openkeyscan`; the unchanged network source and a
 license copy live in `vendor/openkeyscan`. The package includes only the active
-key model and its license. Packaged users need no downloads or account. Native Windows/Linux builds remain
-to be validated. Source installs without this dependency leave key entry available
+key model and its license. Packaged users need no downloads or account. Windows/Linux
+core packages have passed offline inference checks; physical-device and native-window
+validation remains separate. Source installs without this dependency leave key entry available
 and explain that detection is unavailable.
 
 New imports use OpenKeyScan for the source-key estimate. **Check key** (Song settings
@@ -603,8 +608,9 @@ machine, also open the app, import local songs, edit and save/reopen a mix, list
 through its selected output device, test a device disconnect, and export/reopen
 audio. Verify native layout, keyboard access and the optional analysis packs there
 too. Optional model inference, detection accuracy, musical quality and novice listening sessions are
-not established by a passing package report. Windows and Linux remain unverified
-until their own build and native checks have passed.
+not established by a passing core package report. The Windows/Linux core builds
+have passed the automated checks below; their physical devices, native workflows
+and optional packs still require validation.
 
 ### Current scope
 
@@ -1824,6 +1830,24 @@ only `status: finished` accounts for the complete test. Check that report for th
 current result rather than interpreting a running prefix. The runner checks free
 space before every recording and reuses checksum-verified audio where available.
 
+The frozen final test is now complete: **136 recordings**, **134 beat-based
+estimates**, two abstentions and no processing failures. The beat-based route was
+within the reference BPM's 4% tolerance for **121/136 (89.0%)**, versus **78/136
+(57.4%)** for the earlier opening/refinement route. Only 50/136 beat-based results
+were within 0.5 BPM; these labels and this tolerance do not validate precise grids.
+Among the 134 estimates, the frozen confidence candidate had Brier **0.068174**
+versus the development constant's **0.088959**, and binary log loss **0.244667**
+versus **0.324853**. The paired Brier-difference bootstrap interval was
+**[-0.035293, -0.007868]**, meeting the pre-registered acceptance rule.
+
+This supports further validation, not immediate numeric confidence in the UI.
+For example, the 17 estimates in the 0.50–0.75 band averaged 68.8% predicted
+correctness but were correct only 9/17 times (52.9%, Wilson interval 31.0–73.8%).
+The 0.90–1.00 band was correct 71/72 times, with a 92.5–99.8% interval. Band sizes
+and disagreement remain visible in the report. The test partition has now been
+used; no parameters or thresholds were changed using its outcomes. A subsequent
+refit requires fresh independent evidence.
+
 Even a passing result needs validation on full songs and AI-generated music;
 GiantSteps consists of short EDM previews and model training overlap is unaudited.
 Opening-only fallback and user-entered BPMs are outside this confidence model.
@@ -1861,3 +1885,44 @@ for these runners. The key model accepts both `2.11.0` and the official
 `2.11.0+cpu` spelling, while rejecting other releases and unknown local variants.
 This compatibility check does not itself prove cross-platform inference equality;
 the frozen-app check must actually run on the target platform.
+
+[Run 38213737811](https://github.com/TheMarco/dj-studio/actions/runs/38213737811)
+passed on both runners at source commit
+`8a2d90146635bb6e10557d4d5ec9132a6543724b`: **26 focused tests and 12 frozen-app
+checks per OS**. Both packages ran bundled audio tools, independent pitch/tempo
+processing, offline OpenKeyScan and beat-based BPM inference, a gradual-tempo demo
+transition, FLAC/MP3 exports and Qt decoding with the developer PATH empty.
+Downloaded reports are retained under `outputs/cross-platform-check/run-38213737811`.
+The Windows build required the Rubber Band sidecar DLL, CPU-wheel version handling,
+portable manifest paths, and `.gitattributes` preserving exact vendored source bytes;
+the upstream checksum guard was retained. These results cover the named runners,
+not every Windows/Linux release, architecture or physical audio device.
+
+### Checking optional workers in an existing package
+
+`ci/check_optional_workers.py` runs the actual bundled section and separation
+workers from a temporary directory with developer paths removed and model hubs
+set offline. It generates its own 12-second source, validates section boundaries
+and all four stereo stems, and preserves a small report and diagnostic logs.
+Generated audio and temporary model caches are removed afterward. Each worker has
+a ten-minute limit with process cleanup; existing report directories are refused.
+
+```sh
+python -m ci.check_optional_workers \
+  --executable 'dist/DJ Studio.app/Contents/MacOS/DJ Studio' \
+  --resources 'dist/DJ Studio.app/Contents/Frameworks' \
+  --output outputs/optional-package-check --sections --separation
+```
+
+On Windows/Linux, point `--executable` at the built executable and `--resources`
+at its neighboring `_internal` directory. Select only the packs included in that
+build. This developer-side checker needs NumPy and SoundFile; the application
+workers themselves must use their bundled dependencies and weights.
+
+The installed macOS arm64 package passed both workers on the generated example:
+11.8 seconds for section analysis on CPU and 6.7 seconds for separation. Evidence:
+`outputs/cross-platform-check/mac-optional-workers/report.json`, tied to the
+executable's SHA-256. This establishes execution and output shape for that package,
+not musical accuracy, vocal-removal quality, long-file behavior or another OS.
+Five focused checks cover invalid outputs, real child timeouts, preserved existing
+files, recorded failures and isolation from developer paths.

@@ -185,6 +185,12 @@ class HelpDialog(QDialog):
     def open_topic(self, identity, remember=True, clear_search=True):
         if identity not in self.topics:
             return
+        # Search previews do not fill history for every keystroke. Once the
+        # reader follows a link, keep the visible search result as the origin.
+        if remember and self.current_topic is not None and (
+                self.history_index < 0 or self.history[self.history_index] != self.current_topic):
+            self.history = self.history[:self.history_index + 1] + [self.current_topic]
+            self.history_index = len(self.history) - 1
         self.save_reading_position()
         if clear_search and self.search.text():
             with QSignalBlocker(self.search):

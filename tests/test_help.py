@@ -179,7 +179,8 @@ class HelpTests(unittest.TestCase):
         self.addCleanup(guide.close)
         guide.resize(740, 470)
         guide.show()
-        guide.open_topic('learn-check-bpm')
+        guide.search.setText('140 BPM')
+        self.assertEqual(guide.current_topic, 'learn-check-bpm')
         self.app.processEvents()
         scroll = guide.browser.verticalScrollBar()
         lesson_position = scroll.maximum() // 2
