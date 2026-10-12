@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "id": "timing",
+  "seconds": 16,
+  "bpm": 120,
+  "sha256": {
+    "current": "7e914b5cbb65733be16af5fff28d830a7c241dc96ab9be6883d09e53e7f767b7",
+    "draft": "eee321058c251e092095450d8b99c3ac079372b14dc3479ea4814a61103d3d1f"
+  },
+  "measured": {
+    "current": {
+      "lufs": -21.07,
+      "true_peak_db": -3.0
+    },
+    "draft": {
+      "lufs": -21.06,
+      "true_peak_db": -5.34
+    }
+  },
+  "target_lufs": -21.080000000000002
+}

@@ -1,0 +1,20 @@
+PANNs CNN10 passage detector
+
+Authors: Qiuqiang Kong, Yin Cao, Turab Iqbal, Yuxuan Wang, Wenwu Wang,
+Mark D. Plumbley. PANNs: Large-Scale Pretrained Audio Neural Networks for
+Audio Pattern Recognition (2019/2020).
+Paper: https://arxiv.org/abs/1912.10211
+Official weights: https://doi.org/10.5281/zenodo.3987831
+File: Cnn10_mAP=0.380.pth, 25,237,595 bytes, unchanged except local filename.
+SHA256: 5240bdc47444e331bbeb54fd741d2b3f933a4526e84b0c17bf3593df94b13962
+Weights license: Creative Commons Attribution 4.0 International
+https://creativecommons.org/licenses/by/4.0/
+
+Network adaptation: https://github.com/qiuqiangkong/audioset_tagging_cnn
+Revision: d2f4b8c18eab44737fcc0de1248ae21eb43f6aa4
+MIT license text is preserved in PANNS-LICENSE.MIT.
+DJ Studio keeps only inference, uses an equivalent torch FFT frontend,
+and aggregates AudioSet classes into descriptive passage observations.
+It does not retrain the network or claim that its scores are calibrated
+probabilities, that absent tags prove absent voices, or that drum-led audio
+is free of pitched bass, melody, vocals or reverb tails.

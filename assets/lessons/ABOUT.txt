@@ -1,0 +1,4 @@
+Original synthesized teaching audio created for DJ Studio. No third-party recordings or voices.
+Each lesson contains two 16-second, 48 kHz stereo versions, matched with constant listening gain.
+These intentionally simple examples illustrate choices; they do not benchmark automatic analysis
+or promise that a particular correction will suit every song. Rebuild: build_listening_lessons.py.

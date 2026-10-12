@@ -35,7 +35,8 @@ def run(args: list[str]) -> subprocess.CompletedProcess:
     if command[0] in ("ffmpeg", "ffprobe", "rubberband"):
         command[0] = tool_path(command[0]) or command[0]
     options = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
-    result = subprocess.run(command, capture_output=True, **options)
+    from studio_process import run_command
+    result = run_command(command, options)
     if result.returncode:
         detail = result.stderr.decode(errors="replace")[-3000:]
         raise MixError(f"{Path(args[0]).name} failed:\n{detail}")
@@ -66,6 +67,13 @@ def require_tools() -> None:
 
 def ffmpeg(*args: str) -> subprocess.CompletedProcess:
     return run(["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y", *args])
+
+
+def stream_ffmpeg(*args: str, chunk_bytes=512 * 1024):
+    from studio_process import stream_command
+    command = [tool_path('ffmpeg') or 'ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'error', '-y', *map(str, args)]
+    options = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == 'win32' else {}
+    yield from stream_command(command, options, chunk_bytes)
 
 
 def number(value: str) -> float:
@@ -170,7 +178,7 @@ def probe(path: Path) -> dict:
         name: int(streams[0][name]) for name in ("sample_rate", "channels")}}
 
 
-def meter(path: Path) -> dict:
+def meter(path: Path, *, require_loudness: bool = True) -> dict:
     result = run(["ffmpeg", "-nostdin", "-hide_banner", "-i", str(path), "-map", "0:a:0",
                   "-af", "loudnorm=I=-18:TP=-1:print_format=json", "-f", "null", "-"])
     stderr = result.stderr.decode(errors="replace")
@@ -179,7 +187,9 @@ def meter(path: Path) -> dict:
         raise MixError(f"Could not measure loudness of {path.name}")
     values = json.loads(match.group())
     output = {"lufs": float(values["input_i"]), "true_peak_db": float(values["input_tp"])}
-    if not all(math.isfinite(v) for v in output.values()):
+    valid = (all(math.isfinite(v) for v in output.values()) if require_loudness else
+             math.isfinite(output['true_peak_db']) or output['true_peak_db'] == -math.inf)
+    if not valid:
         raise MixError(f"{path.name} is silent or too short to measure reliably.")
     return output
 

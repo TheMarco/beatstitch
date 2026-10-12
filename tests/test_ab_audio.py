@@ -5,7 +5,7 @@ import numpy as np
 from PySide6.QtCore import QCoreApplication
 from PySide6.QtMultimedia import QtAudio
 
-from prototype_ab_audio import ABMixer, ABTransport, FADE_FRAMES, FRAME_BYTES, RATE
+from studio_ab_audio import ABMixer, ABTransport, FADE_FRAMES, FRAME_BYTES, RATE
 
 
 class Device:

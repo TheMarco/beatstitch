@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import patch
 
 import numpy as np
+import soundfile as sf
 
 import djmix
 from studio_engine import Clip, Session, Track, blend_advice, layout, preview_range, render_session, suggest_order
@@ -64,6 +65,7 @@ class ArrangementTests(unittest.TestCase):
                 track.path=str(source);track.duration=8
                 session.clips[i].cue_out=8;session.clips[i].blend_bars=1
             session.clips[1].transpose=True;session.clips[1].semitones=-2
+            session.clips[1].protected_moments = [{'start': 2, 'end': 6, 'kind': 'favorite', 'label': 'Middle phrase'}]
             original=Path(session.tracks['0'].path).read_bytes()
             with self.assertRaisesRegex(djmix.MixError,'source songs'):
                 render_session(session,Path(session.tracks['0'].path))
@@ -74,8 +76,10 @@ class ArrangementTests(unittest.TestCase):
             print(f"\nThree-track WAV: {result['duration']:.6f}s, {result['true_peak_db']:.2f} dBTP")
 
     def test_append_reuses_two_tracks_and_preview_uses_the_requested_pair(self):
+        from studio_cache import AudioCache
+        from studio_render_cache import prepare_listening
         with tempfile.TemporaryDirectory() as folder:
-            folder=Path(folder);session=project();cache=folder/'cache'
+            folder=Path(folder);session=project();cache=folder/'audio-cache'
             for i,track in enumerate(session.tracks.values()):
                 t=np.arange(12*djmix.SR)/djmix.SR
                 signal=.08*np.sin(2*np.pi*(330+i*110)*t)
@@ -85,11 +89,24 @@ class ArrangementTests(unittest.TestCase):
                 session.clips[i].cue_out=12;session.clips[i].blend_bars=1
             third=session.clips.pop()
             with patch('djmix.prepare',wraps=djmix.prepare) as prepare:
-                first=render_session(session,folder/'first.wav',cache_dir=cache)
+                first=prepare_listening(session,folder/'renders',audio_cache=cache)
                 self.assertEqual((first['reused_tracks'],prepare.call_count),(0,2))
+                self.assertEqual(first['reused_mix_frames'],0)
                 session.clips.append(third);prepare.reset_mock()
-                second=render_session(session,folder/'second.wav',cache_dir=cache)
+                second=prepare_listening(session,folder/'renders',audio_cache=cache)
                 self.assertEqual((second['reused_tracks'],prepare.call_count),(2,1))
+                self.assertGreater(second['reused_mix_frames'],16*djmix.SR)
+                self.assertGreater(second['mixed_mix_frames'],0)
+                # Turning assembly reuse off must reproduce the same audio exactly.
+                with patch.object(AudioCache,'assembled',return_value=(None,None)):
+                    fresh=render_session(session,folder/'fresh.wav',cache_dir=cache)
+                np.testing.assert_array_equal(sf.read(second['path'])[0],sf.read(fresh['path'])[0])
+                # The manifest survives a new cache object and metadata-only edits.
+                session.tracks['0'].name='Renamed song'
+                with patch('studio_engine.render_session',side_effect=AssertionError('Should reuse prepared mix')):
+                    repeated=prepare_listening(session,folder/'renders',audio_cache=cache)
+                self.assertTrue(repeated['cached_render'])
+                self.assertEqual(repeated['path'],second['path'])
                 prepare.reset_mock();session.clips[1].bass_swap=False
                 # Context around the second transition starts at 12s, after track one.
                 region=preview_range(session,2)

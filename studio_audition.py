@@ -8,7 +8,7 @@ import time
 
 import numpy as np
 import soundfile as sf
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSignalBlocker, Qt
 from PySide6.QtMultimedia import QMediaDevices
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
                               QButtonGroup, QCheckBox, QSlider, QDialogButtonBox)
@@ -17,13 +17,17 @@ import djmix
 from studio_ab_audio import ABTransport
 from studio_cache import AudioCache, digest, source_signature
 from studio_engine import Session, layout, render_session
-from studio_timing import corrected_time, mapping, RENDER_VERSION
+from studio_timing import corrected_time, mapping, source_matches, RENDER_VERSION
+from studio_storage import managed_cache
 
 
+@managed_cache
 def prepare_comparison(session, selected, cache_dir, progress=lambda message: None):
     clip = copy.deepcopy(selected)
     track = copy.deepcopy(session.tracks[clip.track_id])
     clip.stabilize = True
+    if not source_matches(track.timing, track):
+        raise djmix.MixError('The saved timing does not match this source. Reconnect missing audio or Analyze timing again before comparing.')
     if mapping(track, clip) is None:
         raise djmix.MixError('No confident correction is available for this track.')
     choices = [r for r in track.timing['regions']
@@ -109,26 +113,42 @@ class TimingComparison(QDialog):
         box = QVBoxLayout(self); box.setContentsMargins(26, 24, 26, 24); box.setSpacing(16)
         title = QLabel(report['name']); title.setProperty('role', 'title'); box.addWidget(title)
         start = report['source_start']
-        info = QLabel(f"{report['target_bpm']:g} BPM project, {report['shift']:+d} semitones, "
+        info = QLabel(f"{report['target_bpm']:g} BPM fixed reference (set curve excluded), {report['shift']:+d} semitones, "
                       f"from {int(start)//60}:{int(start)%60:02d} in the source.\n"
                       'Switch between A and B while it plays. Loudness is matched.')
         info.setWordWrap(True); info.setProperty('role', 'secondary'); box.addWidget(info)
         row = QHBoxLayout(); self.group = QButtonGroup(self)
         for text, variant in [('A: fixed BPM', 'fixed'), ('B: stabilized tempo', 'straightened')]:
             button = QPushButton(text); button.setCheckable(True); button.setMinimumHeight(56)
+            button.setToolTip('A keeps any tempo drift, with normal matching to project BPM and your pitch setting.'
+                              if variant == 'fixed' else
+                              'B adds gentle tempo correction in supported passages. Switching keeps playback running; '
+                              'this only auditions the correction, without enabling it in the mix.')
             self.group.addButton(button); row.addWidget(button)
             button.clicked.connect(lambda checked=False, v=variant: self.player.select(v))
             if variant == 'fixed': button.setChecked(True)
         box.addLayout(row)
-        click = QCheckBox('Steady reference click'); click.toggled.connect(self.player.set_click); box.addWidget(click)
+        click = QCheckBox('Steady reference click')
+        click.setToolTip('A metronome shared by A and B. Listen for kicks moving against it. '
+                         'This click is only for comparison and is never included in your mix or export.')
+        click.toggled.connect(self.player.set_click); box.addWidget(click)
         row = QHBoxLayout(); self.play = QPushButton('Play'); self.play.clicked.connect(self.toggle)
         row.addWidget(self.play)
         self.seek = QSlider(Qt.Orientation.Horizontal); self.seek.setRange(0, round(report['duration']*1000))
-        self.seek.sliderReleased.connect(lambda: self.player.seek(self.seek.value())); row.addWidget(self.seek, 1)
+        self.seek.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.seek.setSingleStep(1000); self.seek.setPageStep(5000)
+        self.seek.setAccessibleName('Timing comparison playback position')
+        self.seek.setToolTip('Seek both versions together. Left/Right moves one second; Page Up/Down moves five seconds; '
+                             'Home/End goes to either end. Seeking keeps paused audio paused.')
+        self.seek.setAccessibleDescription(self.seek.toolTip())
+        self.seek.sliderReleased.connect(lambda: self.player.seek(self.seek.value()))
+        self.seek.valueChanged.connect(lambda ms: self.player.seek(ms) if not self.seek.isSliderDown() else None)
+        row.addWidget(self.seek, 1)
         self.time = QLabel('0:00'); row.addWidget(self.time); box.addLayout(row)
         self.status = QLabel(); self.status.setWordWrap(True); self.status.setProperty('role', 'secondary'); box.addWidget(self.status)
         footer = QLabel('This comparison uses your current cue, pitch and project tempo settings. '
-                        'Close it, then turn on Stabilize tempo in the clip panel to use the correction.')
+                        'Selecting B does not change the mix. Close this window, show Advanced controls if needed, '
+                        'and turn on Stabilize for this song to use the correction.')
         footer.setProperty('role', 'hint'); footer.setWordWrap(True); box.addWidget(footer)
         close = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         close.rejected.connect(self.reject); box.addWidget(close)
@@ -149,7 +169,8 @@ class TimingComparison(QDialog):
             self.status.setText('Output: '+device.description())
 
     def position_changed(self, ms):
-        if not self.seek.isSliderDown(): self.seek.setValue(ms)
+        if not self.seek.isSliderDown():
+            with QSignalBlocker(self.seek): self.seek.setValue(ms)
         self.time.setText(f'{ms//60000}:{ms//1000%60:02d}')
 
     def toggle(self):

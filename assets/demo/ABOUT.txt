@@ -1,0 +1,12 @@
+DJ Studio — First mix demo
+
+Three original, procedurally synthesized dance recordings made for this project.
+No external recordings, samples or loops are used. You may use this audio in demo
+mixes, exports and shared test projects. The generator is build_demo_assets.py.
+
+Each song is 32 bars of 4/4: 8 bars of drums, 8 bars with bass/chords/lead,
+4 bars of breakdown, 4 bars returning to the groove, and 8 bars of drums.
+The musical layer releases before the drums-only ending. BPM, key and beat grids
+come from the composition; this project does not measure analyzer accuracy.
+The three-track mix plays at 126 BPM with eight-bar bass-handoff transitions.
+Pitch and optional blend-level balancing start off. All choices remain editable.

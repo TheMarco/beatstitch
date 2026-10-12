@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "id": "bass",
+  "seconds": 16,
+  "bpm": 120,
+  "sha256": {
+    "current": "25970343e7643bb30689a367f10f465bfff34a9b69b15b88bd0f8157d4970cfa",
+    "draft": "71c4c9c897308f7b557e4f8d50300a28c71d49cae92aec70187cf87cdacfcc48"
+  },
+  "measured": {
+    "current": {
+      "lufs": -20.0,
+      "true_peak_db": -4.04
+    },
+    "draft": {
+      "lufs": -19.99,
+      "true_peak_db": -4.02
+    }
+  },
+  "target_lufs": -20
+}

@@ -1,0 +1,8 @@
+# Optional experimental build/drop analysis; weights include noncommercial terms.
+-r requirements-desktop.txt
+transformers==4.57.1
+x-transformers==2.4.14
+safetensors==0.8.0
+PyYAML==6.0.3
+easydict==1.13
+# MuQ, MusicFM and EDMFormer inference source is pinned in vendor/sections.

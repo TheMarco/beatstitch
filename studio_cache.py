@@ -10,6 +10,8 @@ import tempfile
 import time
 import uuid
 
+import numpy as np
+
 import djmix
 
 
@@ -25,14 +27,40 @@ def source_signature(path):
     return [str(path), stat.st_size, stat.st_mtime_ns]
 
 
+def engine_signature():
+    result = [PIPELINE_VERSION, djmix.SR]
+    for name in ('ffmpeg', 'ffprobe', 'rubberband'):
+        executable = djmix.tool_path(name) if hasattr(djmix, 'tool_path') else shutil.which(name)
+        result.append(source_signature(executable) if executable else name)
+    return result
+
+
 class AudioCache:
     def __init__(self, root: Path, max_bytes=8 * 1024**3):
         self.root = root; self.root.mkdir(parents=True, exist_ok=True)
         self.max_bytes = max_bytes
-        self.engine = [PIPELINE_VERSION, djmix.SR]
-        for name in ('ffmpeg', 'ffprobe', 'rubberband'):
-            executable = djmix.tool_path(name) if hasattr(djmix, 'tool_path') else shutil.which(name)
-            self.engine.append(source_signature(executable) if executable else name)
+        self.engine = engine_signature()
+
+    def assembled(self, ingredients, frames):
+        path = self.root / 'assembled' / (digest([1, ingredients, frames]) + '.raw')
+        try:
+            if path.stat().st_size == frames * 2 * 8:
+                value = np.fromfile(path, dtype='<f8').reshape(-1, 2)
+                if np.isfinite(value).all():
+                    os.utime(path, None)
+                    return path, value
+        except OSError:
+            pass
+        return path, None
+
+    def put_assembled(self, path, audio):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix('.' + uuid.uuid4().hex + '.tmp')
+        try:
+            np.asarray(audio, dtype='<f8').tofile(temporary)
+            os.replace(temporary, path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
     def measurement(self, source: Path):
         signature = source_signature(source)
@@ -49,15 +77,17 @@ class AudioCache:
         temporary.write_text(json.dumps(result, allow_nan=False)); os.replace(temporary, path)
         return result
 
-    def family(self, track, clip, target, gain):
+    def family(self, track, clip, target, gain, tempo=None):
         # Timeline position, overlap length, key labels, and bass envelopes do not
         # affect the transformed source audio. A disabled pitch setting is always zero.
         from studio_timing import mapping, RENDER_VERSION
         points = mapping(track, clip)
         settings = [self.engine, source_signature(track.path),
-                    track.bpm, target, clip.shift, clip.cue_in, gain, True]
+                    float(track.bpm), float(target), clip.shift, float(clip.cue_in), float(gain), True]
         if points is not None:
             settings.append(['timing', RENDER_VERSION, points.tolist(), clip.cue_out])
+        if tempo is not None:
+            settings.append(tempo)
         return self.root / 'audio' / digest(settings)
 
     def get(self, family, start, end):
@@ -85,9 +115,14 @@ class AudioCache:
             stage = Path(temporary)
             shutil.copyfile(low, stage / 'low.raw'); shutil.copyfile(high, stage / 'high.raw')
             (stage / 'entry.json').write_text(json.dumps({'start':start, 'end':end}))
-            os.replace(stage, family / uuid.uuid4().hex)
+            destination = family / uuid.uuid4().hex
+            os.replace(stage, destination)
+        return destination
 
     def prune(self):
+        if self.root.name == 'audio-cache':
+            from studio_storage import StorageManager
+            return StorageManager(self.root.parent).prune()
         entries = []
         for path in (self.root / 'audio').glob('*/*/entry.json'):
             try:
@@ -95,17 +130,25 @@ class AudioCache:
                 entries.append((path.stat().st_mtime_ns, size, path.parent))
             except OSError:
                 continue
-        for path in (self.root / 'auditions').glob('*/report.json'):
+        for path in [*(self.root / 'auditions').glob('*/report.json'),
+                     *(self.root / 'transitions').glob('*/report.json')]:
             try:
                 size = sum(p.stat().st_size for p in path.parent.glob('*.wav'))
                 entries.append((path.stat().st_mtime_ns, size, path.parent))
             except OSError:
                 continue
         total = sum(item[1] for item in entries)
+        for path in (self.root / 'assembled').glob('*.raw'):
+            try:
+                entries.append((path.stat().st_mtime_ns, path.stat().st_size, path))
+                total += path.stat().st_size
+            except OSError:
+                pass
         for _, size, directory in sorted(entries):
             if total <= self.max_bytes:
                 break
             try:
-                shutil.rmtree(directory); total -= size
+                shutil.rmtree(directory) if directory.is_dir() else directory.unlink()
+                total -= size
             except OSError:
                 pass  # A concurrent Windows reader can temporarily keep an entry open.

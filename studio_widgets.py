@@ -2,21 +2,25 @@
 from __future__ import annotations
 
 import math
+import json
+from bisect import bisect_left, bisect_right
+from pathlib import Path
 
 import numpy as np
-from PySide6.QtCore import (QAbstractTableModel, QEvent, QMimeData, QModelIndex, QPointF, QRectF, QSize, Qt,
+from PySide6.QtCore import (QAbstractTableModel, QEvent, QItemSelectionModel, QMimeData, QModelIndex, QPointF, QRectF, QSignalBlocker, QSize, Qt,
                             QTimer, Signal)
-from PySide6.QtGui import QColor, QDrag, QFont, QFontMetricsF, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
-from PySide6.QtWidgets import (QAbstractItemView, QAbstractScrollArea, QComboBox, QFrame, QHBoxLayout, QHeaderView,
+from PySide6.QtGui import QAccessible, QColor, QDrag, QFont, QFontMetricsF, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
+from PySide6.QtWidgets import (QAccessibleWidget, QAbstractItemView, QAbstractScrollArea, QComboBox, QDial, QDoubleSpinBox, QFrame, QHBoxLayout, QHeaderView,
                                QLabel, QLineEdit, QPushButton, QSizePolicy, QStyle, QStyledItemDelegate,
                                QTableView, QToolButton, QWidget)
 
 import djmix
 import studio_theme as T
-from studio_engine import layout
+from studio_engine import layout, overlap_limit
 from studio_waveform import BINS_PER_SECOND
 
 TRACK_MIME = "application/x-dj-track"
+TRACKS_MIME = "application/x-dj-tracks"
 CLIP_MIME = "application/x-dj-clip"
 
 _MAJOR_CAMELOT = {0: "8B", 7: "9B", 2: "10B", 9: "11B", 4: "12B", 11: "1B", 6: "2B", 1: "3B", 8: "4B", 3: "5B", 10: "6B", 5: "7B"}
@@ -176,7 +180,7 @@ class _InlineEditor(QLineEdit):
         super().keyPressEvent(event)
 
 
-class ValueBox(QWidget):
+class ValueBox(QDoubleSpinBox):
     """A DAW number box: drag up or down to change it, hold Shift for fine steps,
     double-click or start typing to enter a value, arrow keys to nudge."""
 
@@ -185,16 +189,23 @@ class ValueBox(QWidget):
     def __init__(self, minimum, maximum, step=1.0, fine=None, decimals=0, suffix="", text=None, parse=None,
                  width=64, height=20, pixels_per_step=4, font_size=12, parent=None):
         super().__init__(parent)
-        self.minimum, self.maximum = minimum, maximum
         self.step, self.fine = step, fine if fine is not None else step
-        self.decimals, self.suffix = decimals, suffix
+        self.display_decimals, self.display_suffix = decimals, suffix
         self._text, self._parse = text, parse
-        self._value = minimum
         self._origin = None
         self._moved = False
         self.pixels = pixels_per_step
         self.font_size = font_size
         self.editor = None
+        # Keep Qt's native value, range and accessibility actions while painting
+        # the compact DAW appearance ourselves.
+        self.setDecimals(6)
+        self.setRange(minimum, maximum)
+        self.setSingleStep(self.step_size())
+        self.setValue(minimum)
+        self.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
+        self.lineEdit().hide()
+        self.valueChanged.connect(self.committed.emit)
         self.setFixedSize(width, height)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setCursor(Qt.CursorShape.SizeVerCursor)
@@ -204,29 +215,46 @@ class ValueBox(QWidget):
         size = self.fine if fine else self.step
         return size() if callable(size) else size
 
-    def value(self):
-        return self._value
+    @property
+    def _value(self):
+        return super().value()
 
     def setValue(self, value):
-        self._value = min(self.maximum, max(self.minimum, value))
+        with QSignalBlocker(self):
+            super().setValue(value)
+            self.setSingleStep(self.step_size())
         self.update()
 
     def setMaximum(self, maximum):
-        self.maximum = maximum
-        self._value = min(self._value, maximum)
+        with QSignalBlocker(self):
+            super().setMaximum(maximum)
         self.update()
 
     def display(self):
-        return self._text(self._value) if self._text else f"{self._value:.{self.decimals}f}{self.suffix}"
+        return self.textFromValue(self._value)
+
+    def textFromValue(self, value):
+        if getattr(self, "_text", None):
+            return self._text(value)
+        return f"{value:.{getattr(self, 'display_decimals', 0)}f}{getattr(self, 'display_suffix', '')}"
+
+    def valueFromText(self, text):
+        try:
+            return self.parse(text)
+        except (ValueError, TypeError):
+            return self._value
+
+    def stepBy(self, steps):
+        self.commit(self._value + steps * self.step_size())
 
     def parse(self, text):
         if self._parse:
             return self._parse(text)
-        return float(text.replace(self.suffix.strip(), "").replace("+", "").strip())
+        return float(text.replace(self.display_suffix.strip(), "").replace("+", "").strip())
 
     def commit(self, value):
         old = self._value
-        self.setValue(round(value, max(self.decimals, 6)))
+        self.setValue(round(value, 6))
         if self._value != old:
             self.committed.emit(self._value)
 
@@ -246,22 +274,29 @@ class ValueBox(QWidget):
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self.isEnabled():
             self._origin = (event.position().y(), self._value)
+            self._drag_value = self._value
+            self._last_y = event.position().y()
+            self._drag_fine = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
             self._moved = False
             self.setFocus(Qt.FocusReason.MouseFocusReason)
 
     def mouseMoveEvent(self, event):
         if not self._origin:
             return
+        fine = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+        if fine != self._drag_fine:
+            self._origin = (self._last_y, self._value)
+            self._drag_fine = fine
         start_y, start_value = self._origin
         steps = int((start_y - event.position().y()) / self.pixels)
+        self._last_y = event.position().y()
         if steps or self._moved:
             self._moved = True
-            fine = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
-            self.setValue(round(start_value + steps * self.step_size(fine), max(self.decimals, 6)))
+            self.setValue(round(start_value + steps * self.step_size(fine), 6))
 
     def mouseReleaseEvent(self, event):
         if self._origin:
-            start_value = self._origin[1]
+            start_value = self._drag_value
             moved = self._moved
             self._origin, self._moved = None, False
             if moved and self._value != start_value:
@@ -320,28 +355,33 @@ class ValueBox(QWidget):
             return
         delta = event.angleDelta().y()
         if delta:
-            self.commit(self._value + (1 if delta > 0 else -1) * self.step_size())
+            fine = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+            self.commit(self._value + (1 if delta > 0 else -1) * self.step_size(fine))
 
 
-class Knob(QWidget):
+class Knob(QDial):
     """Bipolar rotary control. Drag vertically, double-click to reset to zero."""
 
     committed = Signal(int)
 
     def __init__(self, minimum=-12, maximum=12, unit="st", parent=None):
         super().__init__(parent)
-        self.minimum, self.maximum, self.unit = minimum, maximum, unit
-        self._value = 0
+        self.unit = unit
+        self.setRange(minimum, maximum)
+        self.setValue(0)
+        self.valueChanged.connect(self.committed.emit)
         self._origin = None
         self.setFixedSize(52, 50)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setCursor(Qt.CursorShape.SizeVerCursor)
 
-    def value(self):
-        return self._value
+    @property
+    def _value(self):
+        return super().value()
 
     def setValue(self, value):
-        self._value = int(min(self.maximum, max(self.minimum, value)))
+        with QSignalBlocker(self):
+            super().setValue(int(value))
         self.update()
 
     def commit(self, value):
@@ -357,7 +397,7 @@ class Knob(QWidget):
         dial = QRectF((self.width() - 30) / 2, 2, 30, 30)
         painter.setPen(QPen(QColor(T.LINE_STRONG), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap))
         painter.drawArc(dial, 225 * 16, -270 * 16)
-        fraction = (self._value - self.minimum) / (self.maximum - self.minimum)
+        fraction = (self._value - self.minimum()) / (self.maximum() - self.minimum())
         angle = 225 - 270 * fraction
         if self._value:
             painter.setPen(QPen(QColor(T.ACCENT if enabled else T.TEXT_3), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap))
@@ -572,18 +612,61 @@ class Notice(QFrame):
 
 # Arrangement ------------------------------------------------------------------------------
 
-class Timeline(QAbstractScrollArea):
+def _waveform_focus(painter, widget, rect=None):
+    """Make keyboard focus visible on painted widgets without covering the audio."""
+    if widget.hasFocus():
+        painter.save()
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(QColor(T.ACCENT), 2))
+        painter.drawRect(QRectF(rect if rect is not None else widget.rect()).adjusted(1, 1, -1, -1))
+        painter.restore()
+
+
+class _WaveformFocus:
+    def focusInEvent(self, event):
+        super().focusInEvent(event)
+        self._describe()
+        self.update()
+        if isinstance(self, QAbstractScrollArea):
+            self.viewport().update()
+
+    def focusOutEvent(self, event):
+        super().focusOutEvent(event)
+        self.update()
+        if isinstance(self, QAbstractScrollArea):
+            self.viewport().update()
+
+
+def _waveform_accessible_factory(class_name, obj):
+    # Generic QWidget/scroll-area roles are omitted by the macOS accessibility bridge.
+    # A named, focusable group exposes these painted controls and their keyboard help.
+    if isinstance(obj, _WaveformFocus):
+        interface = QAccessibleWidget(obj, QAccessible.Role.Grouping)
+        obj._waveform_accessible = interface
+        return interface
+    return None
+
+
+QAccessible.installFactory(_waveform_accessible_factory)
+
+
+class Timeline(_WaveformFocus, QAbstractScrollArea):
     """Arrangement view: locators and a bar ruler on top, songs alternating on lanes A and B,
     the rendered mix on its own lane, a time ruler below and lane headers on the right."""
 
     trackDropped = Signal(str, int)
+    tracksDropped = Signal(list, int)
     clipMoved = Signal(str, int)
     selected = Signal(str)
     seekRequested = Signal(float)
     transitionSelected = Signal(int)
+    overlapChanged = Signal(int, int)
     viewChanged = Signal()
 
     PAD, LOCATORS, RULER, TIME_RULER, HEADERS, MIX, CLIP_HEADER = 10, 16, 34, 18, 132, 48, 17
+    KEYBOARD_HELP = ("Up/Down selects the previous/next song. Left/Right seeks one beat; "
+                     "Shift+Left/Right seeks one bar. Home/End seeks the beginning/end of the mix. "
+                     "+/− zooms; 0 fits the whole mix. Tab moves to the next control.")
 
     def __init__(self, session, bands, meter, parent=None):
         super().__init__(parent)
@@ -596,6 +679,7 @@ class Timeline(QAbstractScrollArea):
         self.drop_index = None
         self.drag_origin = self.drag_clip = None
         self.ruler_drag = None
+        self.overlap_drag = None
         self.positions = []
         self._labels = []
         self._static = None
@@ -606,7 +690,22 @@ class Timeline(QAbstractScrollArea):
         self.horizontalScrollBar().valueChanged.connect(self._scrolled)
         self.viewport().setMouseTracking(True)
         self.setAccessibleName("Arrangement")
-        self.setAccessibleDescription("Drag songs here from the browser. Drag clips to reorder them.")
+        self.setAccessibleDescription(self.KEYBOARD_HELP)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    def _describe(self):
+        index = next((i for i, c in enumerate(self.session.clips) if c.id == self.selection), None)
+        name = "Arrangement"
+        if index is not None:
+            track = self.session.tracks[self.session.clips[index].track_id]
+            name += f". Song {index + 1} of {len(self.session.clips)}: {track.name}"
+        elif not self.session.clips:
+            name += ". Empty mix"
+        self.setAccessibleName(name)
+        from studio_tempo_curve import session_curve
+        curve = session_curve(self.session)
+        self.setAccessibleDescription(
+            f"Position {clock(float(curve.to_output(self.playhead or 0)), True)} of {clock(float(curve.to_output(self.duration())))}. " + self.KEYBOARD_HELP)
 
     # Geometry
     def duration(self):
@@ -640,6 +739,15 @@ class Timeline(QAbstractScrollArea):
     def visible_range(self):
         return self.time_at(0), self.time_at(self.area_width())
 
+    def overlap_handle(self):
+        """The incoming edge is the movable start of the selected overlap."""
+        if not 0 < self.transition < len(self.positions):
+            return QRectF()
+        position = self.positions[self.transition]
+        edge = self.x(position["start"] / djmix.SR)
+        top, lane, _, _ = self.lanes()
+        return QRectF(edge - 6, top, 12, 2 * lane + 1)
+
     # State
     def refresh(self):
         try:
@@ -651,6 +759,7 @@ class Timeline(QAbstractScrollArea):
         bar.setRange(0, max(0, round(span * self.scale + 2 * self.PAD - self.area_width())))
         bar.setPageStep(self.area_width())
         bar.setSingleStep(24)
+        self._describe()
         self.invalidate()
         self.viewChanged.emit()
 
@@ -659,7 +768,10 @@ class Timeline(QAbstractScrollArea):
         self.viewport().update()
 
     def set_playhead(self, seconds):
+        previous = self.playhead
         self.playhead = seconds
+        if previous is None or seconds is None or int(previous) != int(seconds):
+            self._describe()
         self.viewport().update()
 
     def fit(self):
@@ -695,6 +807,42 @@ class Timeline(QAbstractScrollArea):
         _, _, mix_top, bottom = self.lanes()
         painter.save()
         painter.setClipRect(QRectF(0, 0, self.area_width(), self.viewport().height()))
+        if self.positions:
+            for index, bars, opening in ((0, self.session.fade_in_bars, True),
+                                         (len(self.positions) - 1, self.session.fade_out_bars, False)):
+                if not bars: continue
+                duration = bars * 240 / self.session.target_bpm
+                end = self.positions[-1]['end'] / djmix.SR
+                start = 0 if opening else end - duration
+                top, height = self.lane_top(index), self.lanes()[1]
+                path = QPainterPath()
+                for step in range(65):
+                    phase = step / 64
+                    gain = math.sin((phase if opening else 1 - phase) * math.pi / 2) ** 2
+                    point = QPointF(self.x(start + phase * duration), top + 24 + (1 - gain) * max(1, height - 30))
+                    if step: path.lineTo(point)
+                    else: path.moveTo(point)
+                painter.setPen(QPen(QColor(T.ACCENT), 1.5)); painter.drawPath(path)
+        handle = self.overlap_handle()
+        if not handle.isEmpty():
+            edge = handle.center().x()
+            painter.setPen(QPen(T.color(T.ACCENT, .8), 1))
+            painter.drawLine(QPointF(edge, handle.top()), QPointF(edge, handle.bottom()))
+            painter.fillRect(QRectF(edge - 3, handle.center().y() - 11, 6, 22), QColor(T.ACCENT))
+        if self.overlap_drag:
+            index, _, _, bars, _ = self.overlap_drag
+            right = self.positions[index - 1]["end"] / djmix.SR
+            left = right - bars * 240 / self.session.target_bpm
+            x, end = self.x(left), self.x(right)
+            painter.fillRect(QRectF(x, self.RULER, end - x, mix_top - self.RULER), T.color(T.ACCENT, .13))
+            painter.setPen(QPen(QColor(T.ACCENT), 2, Qt.PenStyle.DashLine))
+            painter.drawLine(QPointF(x, self.RULER), QPointF(x, mix_top))
+            text = f"{bars} bars · {bars * 240 / self.session.target_bpm:g} sec"
+            box = QRectF(max(4, min(x + 8, self.area_width() - 166)), self.RULER + 23, 158, 24)
+            painter.fillRect(box, QColor(T.FIELD))
+            painter.setFont(T.font(12, QFont.Weight.Medium))
+            painter.setPen(QColor(T.ACCENT))
+            painter.drawText(box, Qt.AlignmentFlag.AlignCenter, text)
         if self.drop_index is not None:
             if self.positions:
                 index = self.drop_index
@@ -712,6 +860,7 @@ class Timeline(QAbstractScrollArea):
                                            QPointF(x, self.LOCATORS + 6)]))
         painter.restore()
         self._paint_headers(painter)
+        _waveform_focus(painter, self, self.viewport().rect())
         painter.end()
 
     def _paint_headers(self, painter):
@@ -812,6 +961,8 @@ class Timeline(QAbstractScrollArea):
             tick += step
 
     def _paint_rulers(self, painter, width):
+        from studio_tempo_curve import session_curve
+        curve = session_curve(self.session)
         _, _, mix_top, bottom = self.lanes()
         painter.fillRect(QRectF(0, 0, width, self.LOCATORS), QColor(T.BASE))
         painter.fillRect(QRectF(0, self.LOCATORS, width, self.RULER - self.LOCATORS), QColor(T.TITLE))
@@ -864,7 +1015,7 @@ class Timeline(QAbstractScrollArea):
             painter.fillRect(QRectF(x, bottom + 1, 1, 5), QColor(T.LINE_STRONG))
             painter.setPen(QColor(T.TEXT_3))
             painter.drawText(QRectF(x + 3, bottom + 1, 60, self.TIME_RULER - 2),
-                             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, clock(tick))
+                             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, clock(float(curve.to_output(tick))))
             tick += step
 
     def _paint_overlap(self, painter, index):
@@ -906,6 +1057,14 @@ class Timeline(QAbstractScrollArea):
                                                              end / track.duration, max(1, int(target.width() / 2))),
                                T.mix(base, T.LANE, .4))
         self._paint_curves(painter, index, clip, position, wave)
+        if clip.protected_moments:
+            from studio_timing import corrected_time
+            origin = corrected_time(track, clip, clip.cue_in)
+            scale = track.bpm / self.session.target_bpm * djmix.SR
+            for moment in clip.protected_moments:
+                a, b = [wave.left() + round((corrected_time(track, clip, moment[k]) - origin) * scale) / position['length'] * wave.width()
+                        for k in ('start', 'end')]
+                painter.fillRect(QRectF(a, wave.bottom() - 7, b - a, 7), QColor('#73C9E6'))
         painter.restore()
         # Title bar text: name on the left, key and tempo on the right; the name stays in view.
         visible = QRectF(max(rect.left(), 0.0), rect.top(), min(rect.right(), float(width)) - max(rect.left(), 0.0),
@@ -927,18 +1086,21 @@ class Timeline(QAbstractScrollArea):
         room = visible.width() - 14
         show_meta = room - meta_width > min(120, name_metrics.horizontalAdvance(track.name) + 12)
         name_room = room - (meta_width + 12 if show_meta else 0)
+        in_pair = self.transition > 0 and index in (self.transition - 1, self.transition)
+        name = (("Out · " if index < self.transition else "In · ") if in_pair else "") + track.name
         painter.setPen(QColor(DARK_TEXT))
         painter.setFont(name_font)
         painter.drawText(QRectF(visible.left() + 6, visible.top(), max(0, name_room), self.CLIP_HEADER),
                          Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
-                         name_metrics.elidedText(track.name, Qt.TextElideMode.ElideRight, max(0, name_room)))
+                         name_metrics.elidedText(name, Qt.TextElideMode.ElideRight, max(0, name_room)))
         if show_meta:
             painter.setFont(meta_font)
             painter.setPen(T.color(DARK_TEXT, .78))
             painter.drawText(QRectF(visible.right() - 6 - meta_width - 2, visible.top(), meta_width + 2, self.CLIP_HEADER),
                              Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, meta)
         painter.restore()
-        painter.setPen(QPen(QColor("#F2F2F2"), 1) if selected else QPen(T.mix(base, "#000000", .55), 1))
+        painter.setPen(QPen(QColor("#F2F2F2"), 1.5) if selected else
+                       QPen(QColor(T.ACCENT), 1.5) if in_pair else QPen(T.mix(base, "#000000", .55), 1))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRoundedRect(rect.adjusted(.5, .5, -.5, -.5), 2, 2)
 
@@ -984,12 +1146,13 @@ class Timeline(QAbstractScrollArea):
             return
         painter.fillRect(QRectF(left, rect.top(), right - left, rect.height()), QColor("#232323" if current else "#1C1C1C"))
         if levels is not None and len(levels):
-            seconds = len(levels) / BINS_PER_SECOND
-            first = (block.left() - left) / max(1e-6, right - left) * seconds * BINS_PER_SECOND
-            last = (block.right() - left) / max(1e-6, right - left) * seconds * BINS_PER_SECOND
             peaks = levels.max(axis=1)
             count = max(1, int(block.width()))
-            edges = np.linspace(max(0, first), min(len(peaks), last), count + 1).astype(int)
+            from studio_tempo_curve import session_curve
+            curve = session_curve(self.session)
+            references = np.array([self.time_at(x) for x in np.linspace(block.left(), block.right(), count + 1)])
+            edges = np.clip((curve.to_output(references) - curve.to_output(start)) * BINS_PER_SECOND,
+                            0, len(peaks)).astype(int)
             values = np.array([peaks[a:max(a + 1, b)].max() if a < len(peaks) else 0 for a, b in zip(edges[:-1], edges[1:])])
             reference = max(float(np.percentile(peaks, 99)), 1e-4)
             paint_envelope(painter, block.adjusted(0, 3, 0, -3), np.clip(values / reference, 0, 1),
@@ -1014,6 +1177,15 @@ class Timeline(QAbstractScrollArea):
             if rect.contains(point):
                 self.transitionSelected.emit(index)
                 return
+        if self.overlap_handle().contains(point):
+            index = self.transition
+            self.overlap_drag = (index, point.x(), self.session.clips[index].blend_bars,
+                                 self.session.clips[index].blend_bars,
+                                 overlap_limit(self.session, index, self.positions)["bars"])
+            self.drag_origin = self.drag_clip = None
+            self.setFocus(Qt.FocusReason.MouseFocusReason)
+            self.viewport().update()
+            return
         if point.y() < self.RULER:
             self.ruler_drag = (point, self.time_at(point.x()), self.scale, False)
             return
@@ -1027,6 +1199,12 @@ class Timeline(QAbstractScrollArea):
 
     def mouseMoveEvent(self, event):
         point = event.position()
+        if self.overlap_drag:
+            index, origin, original, _, maximum = self.overlap_drag
+            bars = max(1, min(maximum, round(original + (origin - point.x()) / (240 / self.session.target_bpm * self.scale))))
+            self.overlap_drag = (index, origin, original, bars, maximum)
+            self.viewport().update()
+            return
         if self.ruler_drag:
             origin, moment, scale, _ = self.ruler_drag
             delta = point - origin
@@ -1038,8 +1216,13 @@ class Timeline(QAbstractScrollArea):
                 self.horizontalScrollBar().setValue(round(self.PAD + moment * self.scale - point.x()))
             return
         if not event.buttons():
+            self.viewport().setToolTip(self.toolTip())
             if point.x() >= self.area_width():
                 self.viewport().setCursor(Qt.CursorShape.ArrowCursor)
+            elif self.overlap_handle().contains(point):
+                self.viewport().setCursor(Qt.CursorShape.SizeHorCursor)
+                self.viewport().setToolTip("Drag the start of the overlap left for a longer blend, right for a shorter one. "
+                                           "Snaps to bars; Escape cancels. Or use the Overlap stepper below.")
             elif any(rect.contains(point) for rect, _ in self._labels):
                 self.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
             elif point.y() < self.RULER:
@@ -1074,11 +1257,66 @@ class Timeline(QAbstractScrollArea):
             drag.exec(Qt.DropAction.MoveAction)
 
     def mouseReleaseEvent(self, event):
+        if self.overlap_drag:
+            index, _, original, bars, _ = self.overlap_drag
+            self.overlap_drag = None
+            self.viewport().update()
+            if bars != original:
+                self.overlapChanged.emit(index, bars)
+            return
         if self.ruler_drag:
             origin, moment, _, moved = self.ruler_drag
             self.ruler_drag = None
             if not moved:
                 self.seekRequested.emit(moment)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape and self.overlap_drag:
+            self.overlap_drag = None
+            self.viewport().update()
+            event.accept()
+            return
+        modifiers = event.modifiers()
+        if self.isEnabled() and not (modifiers & ~Qt.KeyboardModifier.ShiftModifier) and not self.overlap_drag:
+            key = event.key()
+            if key in (Qt.Key.Key_Up, Qt.Key.Key_Down) and self.session.clips:
+                clips = self.session.clips
+                index = next((i for i, c in enumerate(clips) if c.id == self.selection), None)
+                index = (0 if index is None else
+                         max(0, min(len(clips) - 1, index + (-1 if key == Qt.Key.Key_Up else 1))))
+                self.selected.emit(clips[index].id)
+                if index < len(self.positions):
+                    self.center_on(self.positions[index]['start'] / djmix.SR)
+                event.accept()
+                return
+            if key in (Qt.Key.Key_Left, Qt.Key.Key_Right, Qt.Key.Key_Home, Qt.Key.Key_End) and self.positions:
+                step = (240 if modifiers & Qt.KeyboardModifier.ShiftModifier else 60) / self.session.target_bpm
+                current = self.playhead or 0.0
+                target = {Qt.Key.Key_Left: current - step, Qt.Key.Key_Right: current + step,
+                          Qt.Key.Key_Home: 0.0, Qt.Key.Key_End: self.duration()}[key]
+                target = min(self.duration(), max(0.0, target))
+                self.seekRequested.emit(target)
+                self._describe()
+                if not self.visible_range()[0] <= target <= self.visible_range()[1]:
+                    self.center_on(target)
+                event.accept()
+                return
+            if key in (Qt.Key.Key_Plus, Qt.Key.Key_Equal, Qt.Key.Key_Minus, Qt.Key.Key_0):
+                if key == Qt.Key.Key_0:
+                    self.fit()
+                else:
+                    self.zoom(1 / 1.5 if key == Qt.Key.Key_Minus else 1.5)
+                event.accept()
+                return
+        super().keyPressEvent(event)
+
+    def event(self, event):
+        # Own Home while focused, before the window's Back to start action takes it.
+        if (event.type() == QEvent.Type.ShortcutOverride and event.key() == Qt.Key.Key_Home
+                and event.modifiers() == Qt.KeyboardModifier.NoModifier):
+            event.accept()
+            return True
+        return super().event(event)
 
     def wheelEvent(self, event):
         modifiers = event.modifiers()
@@ -1106,7 +1344,7 @@ class Timeline(QAbstractScrollArea):
         return len(self.positions)
 
     def dragEnterEvent(self, event):
-        if event.mimeData().hasFormat(TRACK_MIME) or event.mimeData().hasFormat(CLIP_MIME):
+        if any(event.mimeData().hasFormat(kind) for kind in (TRACKS_MIME, TRACK_MIME, CLIP_MIME)):
             event.acceptProposedAction()
 
     def dragMoveEvent(self, event):
@@ -1123,14 +1361,23 @@ class Timeline(QAbstractScrollArea):
         mime = event.mimeData()
         self.drop_index = None
         self.viewport().update()
-        if mime.hasFormat(TRACK_MIME):
+        if mime.hasFormat(TRACKS_MIME):
+            try:
+                identities = json.loads(bytes(mime.data(TRACKS_MIME)))
+                if not isinstance(identities, list) or not all(isinstance(v, str) for v in identities):
+                    raise ValueError('Invalid song selection')
+            except (ValueError, UnicodeError):
+                event.ignore()
+                return
+            self.tracksDropped.emit(identities, index)
+        elif mime.hasFormat(TRACK_MIME):
             self.trackDropped.emit(bytes(mime.data(TRACK_MIME)).decode(), index)
         elif mime.hasFormat(CLIP_MIME):
             self.clipMoved.emit(bytes(mime.data(CLIP_MIME)).decode(), index)
         event.acceptProposedAction()
 
 
-class Overview(QWidget):
+class Overview(_WaveformFocus, QWidget):
     """The whole mix in one strip: lane A above, lane B below, with the visible range outlined."""
 
     navigate = Signal(float)
@@ -1142,12 +1389,22 @@ class Overview(QWidget):
         self._static = None
         self.setFixedHeight(30)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setToolTip("Overview of the whole mix. Click or drag to move there.")
+        self.setToolTip("Overview of the whole mix. Click or drag to move there. "
+                        "Left/Right moves one bar; Shift moves eight bars. Home/End moves to the beginning/end.")
         self.setAccessibleName("Mix overview")
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setProperty('helpTopic', 'shortcuts')
         timeline.viewChanged.connect(self.update)
+
+    def _describe(self):
+        from studio_tempo_curve import session_curve
+        curve = session_curve(self.timeline.session)
+        self.setAccessibleDescription(
+            f"Position {clock(float(curve.to_output(self.timeline.playhead or 0)), True)} of {clock(float(curve.to_output(self.timeline.duration())))}. " + self.toolTip())
 
     def invalidate(self):
         self._static = None
+        self._describe()
         self.update()
 
     def resizeEvent(self, event):
@@ -1200,6 +1457,7 @@ class Overview(QWidget):
             painter.drawRect(QRectF(left, .5, max(3, right - left), self.height() - 1))
             if self.playhead is not None:
                 painter.fillRect(QRectF(self._x(self.playhead, duration) - .5, 0, 1, self.height()), QColor("#F2F2F2"))
+        _waveform_focus(painter, self)
 
     def _go(self, x):
         duration = self.timeline.duration()
@@ -1214,13 +1472,47 @@ class Overview(QWidget):
         if event.buttons() & Qt.MouseButton.LeftButton:
             self._go(event.position().x())
 
+    def event(self, event):
+        if (event.type() == QEvent.Type.ShortcutOverride and event.key() == Qt.Key.Key_Home
+                and event.modifiers() == Qt.KeyboardModifier.NoModifier):
+            event.accept()
+            return True
+        return super().event(event)
 
-class CueEditor(QWidget):
-    """Sample display: the whole song with Start and End markers that snap to bars of the analyzed grid."""
+    def keyPressEvent(self, event):
+        key, modifiers = event.key(), event.modifiers()
+        if (self.isEnabled() and self.timeline.isEnabled() and self.timeline.duration() > 0
+                and not (modifiers & ~Qt.KeyboardModifier.ShiftModifier)
+                and key in (Qt.Key.Key_Left, Qt.Key.Key_Right, Qt.Key.Key_Home, Qt.Key.Key_End)):
+            step = 240 / self.timeline.session.target_bpm * (8 if modifiers & Qt.KeyboardModifier.ShiftModifier else 1)
+            current = self.timeline.playhead or 0.0
+            target = {Qt.Key.Key_Left: current - step, Qt.Key.Key_Right: current + step,
+                      Qt.Key.Key_Home: 0.0, Qt.Key.Key_End: self.timeline.duration()}[key]
+            self.navigate.emit(max(0.0, min(self.timeline.duration(), target)))
+            self._describe()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+
+class CueEditor(_WaveformFocus, QWidget):
+    """Sample display: source track with Start and End markers that snap to bars of the analyzed grid.
+
+    Source-time viewport: fit() shows the whole song as before; zoom_in()/zoom_out() and
+    focus_start()/focus_end() narrow the visible range for accurate cue placement.
+    Public state is view_start/view_end in source seconds; x_of()/time_at() map through it."""
 
     cuesChanged = Signal(float, float)
 
     RULER = 16
+    GRAB = 9
+    MIN_VIEW = 1.5
+    FOCUS_SPAN = 8.0
+    ZOOM_FACTOR = 2.0
+    ACCESSIBLE_LABEL = 'Start and end markers'
+    KEYBOARD_HELP = ("Up selects Start; Down selects End. Left/Right moves that marker by a bar; "
+                     "Shift moves by a beat; Alt/Option moves by 10 milliseconds. "
+                     "+/− zooms; 0 fits the song. Tab moves to the next control.")
 
     def __init__(self, bands, parent=None):
         super().__init__(parent)
@@ -1229,15 +1521,110 @@ class CueEditor(QWidget):
         self.blend_in = self.blend_out = 0
         self.dragging = None
         self.preview = None
+        self.view_start = 0.0
+        self.view_end = 0.0
+        self._focus = "Start"
+        self._pan_origin = None
         self.setMinimumHeight(90)
         self.setMouseTracking(True)
-        self.setAccessibleName("Start and end markers")
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setAccessibleName(self.ACCESSIBLE_LABEL)
+        self.setAccessibleDescription(self.KEYBOARD_HELP)
+
+    def _describe(self):
+        if not self.track or not self.clip:
+            self.setAccessibleName(self.ACCESSIBLE_LABEL + '. No song selected')
+            self.setAccessibleDescription(self.KEYBOARD_HELP)
+            return
+        self.setAccessibleName(f"{self.ACCESSIBLE_LABEL}. {self.track.name}. "
+                               f"{self._focus} selected, {self._focus_time():.3f} seconds")
+        self.setAccessibleDescription(
+            f"Start {self.clip.cue_in:.3f} seconds; End {self.clip.cue_out:.3f} seconds in the original song. "
+            + self.KEYBOARD_HELP)
 
     def set_clip(self, track, clip, blend_in_bars, blend_out_bars):
+        same = (self.track is not None and self.clip is not None and track is not None and clip is not None
+                and self.track.id == track.id and self.clip.id == clip.id)
         self.track, self.clip = track, clip
         self.blend_in, self.blend_out = blend_in_bars, blend_out_bars
         self.preview = None
+        self.dragging = self._pan_origin = None
+        if same:
+            self._set_view(self.view_start, self.view_end)
+        else:
+            self._focus = "Start"
+            self._set_view(0.0, track.duration if track else 0.0)
+        self._describe()
         self.update()
+
+    @property
+    def view_span(self):
+        return max(0.0, self.view_end - self.view_start)
+
+    @property
+    def viewport(self):
+        return (self.view_start, self.view_end)
+
+    @property
+    def zoomed(self):
+        return bool(self.track) and self.view_span < self.track.duration * 0.999
+
+    def _min_span(self):
+        duration = self.track.duration if self.track else 0.0
+        return min(self.MIN_VIEW, duration) if duration > 0 else 0.0
+
+    def _set_view(self, start, end):
+        duration = self.track.duration if self.track else 0.0
+        if duration <= 0:
+            self.view_start, self.view_end = 0.0, 0.0
+            return
+        span = min(duration, max(self._min_span(), end - start))
+        if span >= duration:
+            self.view_start, self.view_end = 0.0, duration
+        else:
+            start = min(max(0.0, start), duration - span)
+            self.view_start, self.view_end = start, start + span
+
+    def fit(self):
+        self._set_view(0.0, self.track.duration if self.track else 0.0)
+        self.update()
+
+    def _focus_time(self):
+        cue_in, cue_out = self.cues()
+        return cue_out if self._focus == "End" else cue_in
+
+    def _zoom(self, factor, center=None):
+        if not self.track or not self.track.duration:
+            return
+        if center is None:
+            center = self._focus_time()
+        span = min(self.track.duration, max(self._min_span(), self.view_span * factor))
+        self._set_view(center - span / 2, center + span / 2)
+        self.update()
+
+    def zoom_in(self, factor=ZOOM_FACTOR, center=None):
+        self._zoom(1.0 / factor, center)
+
+    def zoom_out(self, factor=ZOOM_FACTOR, center=None):
+        self._zoom(factor, center)
+
+    def _focus_on(self, name):
+        if not self.track or not self.track.duration:
+            return
+        self._focus = name
+        span = self.view_span
+        if span >= self.track.duration * 0.999 or span <= 0:
+            span = min(self.track.duration, max(self._min_span(), self.FOCUS_SPAN))
+        cue = self._focus_time()
+        self._set_view(cue - span / 2, cue + span / 2)
+        self._describe()
+        self.update()
+
+    def focus_start(self):
+        self._focus_on("Start")
+
+    def focus_end(self):
+        self._focus_on("End")
 
     def cues(self):
         return self.preview if self.preview else (self.clip.cue_in, self.clip.cue_out)
@@ -1246,14 +1633,30 @@ class CueEditor(QWidget):
         return QRectF(0, self.RULER, self.width(), self.height() - self.RULER)
 
     def x_of(self, seconds):
-        return seconds / self.track.duration * self.width()
+        span = self.view_span
+        if not self.track or span <= 0 or self.width() <= 0:
+            return 0.0
+        return (seconds - self.view_start) / span * self.width()
 
     def time_at(self, x):
-        return min(self.track.duration, max(0.0, x / self.width() * self.track.duration))
+        if not self.track:
+            return 0.0
+        span = self.view_span
+        if span <= 0 or self.width() <= 0:
+            return min(self.track.duration, max(0.0, self.view_start))
+        return min(self.track.duration, max(0.0, self.view_start + x / self.width() * span))
 
     def snap(self, seconds, modifiers):
         if modifiers & Qt.KeyboardModifier.AltModifier or not self.track.bpm:
             return seconds
+        from studio_beat_grid import display_grid
+        analysis = display_grid(self.track)
+        points = analysis.get('beats' if modifiers & Qt.KeyboardModifier.ShiftModifier else 'downbeats', [])
+        if points:
+            nearest = min(points, key=lambda point: abs(point - seconds))
+            tolerance = (60 if modifiers & Qt.KeyboardModifier.ShiftModifier else 240) / self.track.bpm * .55
+            # Do not bridge unsupported passages with a fictitious grid.
+            return nearest if abs(nearest - seconds) <= tolerance else seconds
         step = 60 / self.track.bpm if modifiers & Qt.KeyboardModifier.ShiftModifier else 240 / self.track.bpm
         origin = self.track.cue_in
         return min(self.track.duration, max(0.0, origin + round((seconds - origin) / step) * step))
@@ -1265,36 +1668,69 @@ class CueEditor(QWidget):
         painter.fillRect(QRectF(0, 0, self.width(), self.RULER), QColor(T.RAISED))
         painter.fillRect(wave, QColor(T.FIELD))
         if not self.track:
+            _waveform_focus(painter, self)
             return
         base = T.clip_color(self.track.id)
-        columns = band_columns(self.bands.get(self.track.id), 0, self.track.duration * BINS_PER_SECOND,
-                               max(1, int(wave.width())))
+        span = self.view_span or self.track.duration
+        columns = band_columns(self.bands.get(self.track.id), self.view_start * BINS_PER_SECOND,
+                               self.view_end * BINS_PER_SECOND, max(1, int(wave.width())))
         if columns is not None:
             paint_bands(painter, wave.adjusted(0, 4, 0, -4), columns, T.clip_bands(base))
         else:
             paint_envelope(painter, wave.adjusted(0, 4, 0, -4),
-                           peak_columns(self.track.waveform, 0, 1, max(1, int(wave.width() / 2))), T.mix(base, T.LANE, .4))
+                           peak_columns(self.track.waveform, self.view_start / self.track.duration,
+                                        self.view_end / self.track.duration, max(1, int(wave.width() / 2))),
+                           T.mix(base, T.LANE, .4))
         cue_in, cue_out = self.cues()
         left, right = self.x_of(cue_in), self.x_of(cue_out)
         shade = T.color("#000000", .62)
-        painter.fillRect(QRectF(0, wave.top(), left, wave.height()), shade)
-        painter.fillRect(QRectF(right, wave.top(), self.width() - right, wave.height()), shade)
+        painter.fillRect(QRectF(0, wave.top(), max(0.0, left), wave.height()), shade)
+        edge = min(max(right, 0.0), self.width())
+        painter.fillRect(QRectF(edge, wave.top(), self.width() - edge, wave.height()), shade)
+        for moment in self.clip.protected_moments:
+            a, b = max(0., self.x_of(moment['start'])), min(float(self.width()), self.x_of(moment['end']))
+            if b <= a: continue
+            region = QRectF(a, wave.top(), b - a, wave.height())
+            painter.save(); painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.fillRect(region, T.color('#73C9E6', .10))
+            painter.setPen(QPen(QColor('#73C9E6'), 1)); painter.drawRect(region.adjusted(.5, .5, -.5, -.5))
+            painter.fillRect(QRectF(a, wave.bottom() - 18, b - a, 18), T.color('#183B46', .95))
+            painter.setFont(T.font(11)); painter.setPen(QColor('#B4EDFF'))
+            title = painter.fontMetrics().elidedText('Protected · ' + moment['label'], Qt.TextElideMode.ElideRight, max(0, int(b - a - 8)))
+            painter.drawText(QRectF(a + 4, wave.bottom() - 18, b - a - 8, 18), Qt.AlignmentFlag.AlignVCenter, title)
+            painter.restore()
         bar = 240 / self.track.bpm if self.track.bpm else 0
         for bars, at_start in ((self.blend_in, True), (self.blend_out, False)):
             if bars and bar:
-                extent = bars * bar / self.track.duration * self.width()
+                extent = bars * bar / span * self.width()
                 zone = QRectF(left, wave.top(), extent, wave.height()) if at_start else QRectF(right - extent, wave.top(), extent, wave.height())
                 painter.fillRect(zone, T.color("#FFFFFF", .08))
-        if bar:
-            pixels = bar / self.track.duration * self.width()
+        from studio_beat_grid import display_grid
+        analyzed_bars = display_grid(self.track).get('bars', [])
+        if analyzed_bars:
+            painter.setFont(T.font(10, tabular=True))
+            last_label = -100
+            for item in analyzed_bars:
+                x = self.x_of(item['start'])
+                if not 0 <= x <= self.width():
+                    continue
+                painter.fillRect(QRectF(x, self.RULER, 1, wave.height()), T.color(T.TEXT, .2))
+                painter.fillRect(QRectF(x, 3, 1, self.RULER - 4), QColor(T.ACCENT))
+                if x - last_label >= 34:
+                    painter.setPen(QColor(T.TEXT_2))
+                    painter.drawText(QRectF(x + 3, 0, 40, self.RULER), Qt.AlignmentFlag.AlignVCenter, str(item['number'] + 1))
+                    last_label = x
+        elif bar:
+            pixels = bar / span * self.width()
             every = 1
             while every * pixels < 34:
                 every *= 2
-            index = math.ceil(-self.track.cue_in / bar / every) * every
+            index = math.ceil((self.view_start - self.track.cue_in) / bar / every) * every
             painter.setFont(T.font(10, tabular=True))
+            last = min(self.view_end, self.track.duration)
             while True:
                 seconds = self.track.cue_in + index * bar
-                if seconds > self.track.duration:
+                if seconds > last:
                     break
                 x = self.x_of(seconds)
                 painter.fillRect(QRectF(x, 3, 1, self.RULER - 4), QColor(T.LINE_STRONG))
@@ -1302,8 +1738,11 @@ class CueEditor(QWidget):
                 painter.drawText(QRectF(x + 3, 0, 40, self.RULER), Qt.AlignmentFlag.AlignVCenter, str(index + 1))
                 index += every
         for name, x in (("Start", left), ("End", right)):
-            ink = QColor(T.ACCENT_HOVER if self.dragging == name else T.ACCENT)
-            painter.fillRect(QRectF(x - .5, 0, 1, self.height()), ink)
+            if x < -1 or x > self.width() + 1:
+                continue
+            active = self.hasFocus() and self._focus == name
+            ink = QColor(T.ACCENT_HOVER if self.dragging == name or active else T.ACCENT)
+            painter.fillRect(QRectF(x - (1 if active else .5), 0, 2 if active else 1, self.height()), ink)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(ink)
             if name == "Start":
@@ -1311,21 +1750,105 @@ class CueEditor(QWidget):
             else:
                 flag = QPolygonF([QPointF(x, 0), QPointF(x - 9, 0), QPointF(x - 9, 7), QPointF(x, 12)])
             painter.drawPolygon(flag)
+            if active:
+                painter.setFont(T.font(11, QFont.Weight.DemiBold))
+                painter.setPen(ink)
+                width = painter.fontMetrics().horizontalAdvance(name) + 8
+                label_x = min(self.width() - width, max(0, x + 10 if name == 'Start' else x - width - 10))
+                painter.drawText(QRectF(label_x, wave.bottom() - 18, width, 18), Qt.AlignmentFlag.AlignCenter, name)
+        _waveform_focus(painter, self)
+
+    def _keyboard_marker(self, direction, modifiers):
+        """Use the next nearby grid line, with a regular-sized step in unsupported audio."""
+        current = self._focus_time()
+        if modifiers & Qt.KeyboardModifier.AltModifier:
+            return current + direction * .01
+        beat = bool(modifiers & Qt.KeyboardModifier.ShiftModifier)
+        step = (60 if beat else 240) / self.track.bpm if self.track.bpm else 1.0
+        from studio_beat_grid import display_grid
+        points = display_grid(self.track).get('beats' if beat else 'downbeats', [])
+        if points:
+            index = bisect_right(points, current + 1e-7) if direction > 0 else bisect_left(points, current - 1e-7) - 1
+            if 0 <= index < len(points) and abs(points[index] - current) <= step * 1.55:
+                return points[index]
+            return current + direction * step
+        if not self.track.bpm:
+            return current + direction * step
+        origin = self.track.cue_in
+        grid = (current - origin) / step
+        index = math.floor(grid + 1e-7) + 1 if direction > 0 else math.ceil(grid - 1e-7) - 1
+        return origin + index * step
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape and self.dragging:
+            self.dragging = self.preview = self._pan_origin = None
+            self._describe()
+            self.update()
+            event.accept()
+            return
+        modifiers, key = event.modifiers(), event.key()
+        allowed = Qt.KeyboardModifier.ShiftModifier | Qt.KeyboardModifier.AltModifier
+        if not self.isEnabled() or not self.track or not self.clip or self.dragging or modifiers & ~allowed:
+            super().keyPressEvent(event)
+            return
+        if key in (Qt.Key.Key_Up, Qt.Key.Key_Down):
+            self._focus_on('Start' if key == Qt.Key.Key_Up else 'End')
+        elif key in (Qt.Key.Key_Left, Qt.Key.Key_Right):
+            target = self._keyboard_marker(-1 if key == Qt.Key.Key_Left else 1, modifiers)
+            cue_in, cue_out = self.clip.cue_in, self.clip.cue_out
+            minimum = min(240 / self.track.bpm if self.track.bpm else 1, cue_out - cue_in)
+            if self._focus == 'Start':
+                cue_in = max(0.0, min(target, cue_out - minimum))
+            else:
+                cue_out = min(self.track.duration, max(target, cue_in + minimum))
+            self.preview = None
+            if (cue_in, cue_out) != (self.clip.cue_in, self.clip.cue_out):
+                # The owner validates, applies, or rejects via the existing undoable edit path.
+                self.cuesChanged.emit(cue_in, cue_out)
+            current = self._focus_time()
+            if not self.view_start <= current <= self.view_end:
+                self._focus_on(self._focus)
+            self._describe()
+            self.update()
+        elif key in (Qt.Key.Key_Plus, Qt.Key.Key_Equal):
+            self.zoom_in()
+        elif key == Qt.Key.Key_Minus:
+            self.zoom_out()
+        elif key == Qt.Key.Key_0:
+            self.fit()
+        else:
+            super().keyPressEvent(event)
+            return
+        event.accept()
 
     def _handle_at(self, x):
         if not self.track:
             return None
         cue_in, cue_out = self.cues()
-        distances = {"Start": abs(x - self.x_of(cue_in)), "End": abs(x - self.x_of(cue_out))}
-        name = min(distances, key=distances.get)
-        return name if distances[name] <= 9 else None
+        positions = {"Start": self.x_of(cue_in), "End": self.x_of(cue_out)}
+        visible = {name: at for name, at in positions.items() if 0 <= at <= self.width()}
+        if not visible:
+            return None
+        name = min(visible, key=lambda key: abs(x - visible[key]))
+        return name if abs(x - visible[name]) <= self.GRAB else None
+
+    def _pan_by(self, seconds):
+        if not self.track or not self.view_span:
+            return
+        self._set_view(self.view_start + seconds, self.view_end + seconds)
+        self.update()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self.isEnabled() and self.track:
             self.dragging = self._handle_at(event.position().x())
             if self.dragging:
+                self._focus = self.dragging
                 self.preview = (self.clip.cue_in, self.clip.cue_out)
+                self._describe()
                 self.update()
+            elif event.position().y() < self.RULER and self.zoomed:
+                self.dragging = "pan"
+                self._pan_origin = (event.position().x(), self.view_start, self.view_span)
 
     def mouseMoveEvent(self, event):
         if not self.track:
@@ -1333,6 +1856,14 @@ class CueEditor(QWidget):
         x = event.position().x()
         if not self.dragging:
             self.setCursor(Qt.CursorShape.SizeHorCursor if self._handle_at(x) else Qt.CursorShape.ArrowCursor)
+            return
+        if self.dragging == "pan":
+            origin_x, origin_start, span = self._pan_origin
+            self._set_view(origin_start - (x - origin_x) / max(1, self.width()) * span,
+                           origin_start - (x - origin_x) / max(1, self.width()) * span + span)
+            self.update()
+            return
+        if not self.isEnabled():
             return
         seconds = self.snap(self.time_at(x), event.modifiers())
         minimum = 240 / self.track.bpm if self.track.bpm else 1
@@ -1345,6 +1876,13 @@ class CueEditor(QWidget):
         self.update()
 
     def mouseReleaseEvent(self, event):
+        if self.dragging == "pan":
+            self.dragging, self._pan_origin = None, None
+            return
+        if not self.isEnabled():
+            self.dragging = self.preview = None
+            self.update()
+            return
         if self.dragging and self.preview:
             cue_in, cue_out = self.preview
             changed = (cue_in, cue_out) != (self.clip.cue_in, self.clip.cue_out)
@@ -1354,6 +1892,38 @@ class CueEditor(QWidget):
             else:
                 self.preview = None
             self.update()
+
+    def wheelEvent(self, event):
+        if not self.track or not self.track.duration:
+            event.ignore()
+            return
+        zoom = bool(event.modifiers() & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.MetaModifier))
+        if zoom:
+            delta = event.angleDelta().y()
+            if not delta:
+                event.ignore()
+                return
+            factor = 2 ** (delta / 480)
+            anchor = self.time_at(event.position().x())
+            span = min(self.track.duration, max(self._min_span(), self.view_span / factor))
+            fraction = event.position().x() / max(1, self.width())
+            self._set_view(anchor - fraction * span, anchor + (1 - fraction) * span)
+            self.update()
+            event.accept()
+        elif self.zoomed:
+            pixel = event.pixelDelta()
+            if pixel is not None and not pixel.isNull():
+                steps = pixel.x() + pixel.y()
+            else:
+                angle = event.angleDelta()
+                steps = (angle.x() + angle.y()) / 8
+            if steps:
+                self._pan_by(-steps / max(1, self.width()) * self.view_span)
+                event.accept()
+            else:
+                event.ignore()
+        else:
+            event.ignore()
 
 
 # Browser ----------------------------------------------------------------------------------
@@ -1371,13 +1941,32 @@ class LibraryModel(QAbstractTableModel):
         self.context = None
         self.context_track = None
         self.arranged = {}
+        self.collection = ''
+        self.filter_kind = 'all'
 
     def rebuild(self):
         self.beginResetModel()
         tracks = list(self.session.tracks.values()) if self.session else []
+        arranged = {c.track_id for c in self.session.clips} if self.session else set()
+        if self.collection:
+            members = self.session.collections.get(self.collection, []) if self.session else []
+            tracks = [t for t in tracks if t.id in members]
+        if self.filter_kind == 'unused':
+            tracks = [t for t in tracks if t.id not in arranged]
+        elif self.filter_kind == 'used':
+            tracks = [t for t in tracks if t.id in arranged]
+        elif self.filter_kind == 'key':
+            tracks = [t for t in tracks if self.context and parsed_key(t.key) and
+                      djmix.relationship(self.context, parsed_key(t.key))]
+        elif self.filter_kind == 'tempo':
+            tracks = [t for t in tracks if t.bpm and abs(self.session.target_bpm / t.bpm - 1) <= .06]
+        elif self.filter_kind == 'analysis':
+            tracks = [t for t in tracks if not t.bpm or not t.key]
+        elif self.filter_kind == 'missing':
+            tracks = [t for t in tracks if not Path(t.path).is_file()]
         needle = self.query.casefold().strip()
         if needle:
-            tracks = [t for t in tracks if needle in t.name.casefold()]
+            tracks = [t for t in tracks if needle in f'{t.name} {t.key} {camelot(t.key)} {Path(t.path).name}'.casefold()]
         column, direction = self.order
 
         def key_order(track):
@@ -1434,6 +2023,8 @@ class LibraryModel(QAbstractTableModel):
             return clock(track.duration)
         if role == Qt.ItemDataRole.ToolTipRole:
             lines = [track.name, track.status]
+            from studio_key import guidance as key_guidance
+            lines.extend(key_guidance(track))
             if self.arranged.get(track.id):
                 lines.append("In the mix as song " + ", ".join(map(str, self.arranged[track.id])))
             relation = self.relation(track)
@@ -1454,12 +2045,15 @@ class LibraryModel(QAbstractTableModel):
         return base | Qt.ItemFlag.ItemIsDragEnabled if index.isValid() else base
 
     def mimeTypes(self):
-        return [TRACK_MIME]
+        return [TRACKS_MIME, TRACK_MIME]
 
     def mimeData(self, indexes):
         data = QMimeData()
         if indexes:
-            data.setData(TRACK_MIME, self.ids[indexes[0].row()].encode())
+            identities = [self.ids[row] for row in sorted({i.row() for i in indexes if i.isValid()})]
+            if identities:
+                data.setData(TRACKS_MIME, json.dumps(identities).encode())
+                data.setData(TRACK_MIME, identities[0].encode())
         return data
 
 
@@ -1514,6 +2108,7 @@ class LibraryDelegate(QStyledItemDelegate):
 
 class LibraryTable(QTableView):
     addRequested = Signal(str)
+    addManyRequested = Signal(list)
     filesDropped = Signal(list)
 
     def __init__(self, model: LibraryModel, parent=None):
@@ -1521,7 +2116,8 @@ class LibraryTable(QTableView):
         self.setModel(model)
         self.setItemDelegate(LibraryDelegate(self))
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.setTabKeyNavigation(False)
         self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.setShowGrid(False)
         self.setWordWrap(False)
@@ -1555,11 +2151,12 @@ class LibraryTable(QTableView):
         current, order = model.order
         order = (Qt.SortOrder.DescendingOrder if current == column and order == Qt.SortOrder.AscendingOrder
                  else Qt.SortOrder.AscendingOrder)
-        identity = self.current_id()
+        identity, selected = self.current_id(), self.selected_ids()
+        blocker = QSignalBlocker(self.selectionModel())
         model.sort(column, order)
         self.horizontalHeader().setSortIndicator(column, order)
-        if identity:
-            self.select_id(identity)
+        self.select_ids(selected, identity)
+        del blocker
 
     def current_id(self):
         index = self.currentIndex()
@@ -1570,9 +2167,26 @@ class LibraryTable(QTableView):
         if identity in model.ids:
             self.selectRow(model.ids.index(identity))
 
+    def selected_ids(self):
+        model = self.model()
+        return [model.ids[i.row()] for i in sorted(self.selectionModel().selectedRows(), key=lambda i: i.row())]
+
+    def select_ids(self, identities, current=None):
+        selection = self.selectionModel()
+        selection.clearSelection()
+        wanted = set(identities)
+        model = self.model()
+        for row, identity in enumerate(model.ids):
+            if identity in wanted:
+                selection.select(model.index(row, 0), QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
+        selected = self.selected_ids()
+        current = current if current in selected else next(iter(selected), None)
+        selection.setCurrentIndex(model.index(model.ids.index(current), 0) if current else QModelIndex(),
+                                  QItemSelectionModel.SelectionFlag.NoUpdate)
+
     def keyPressEvent(self, event):
-        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and self.current_id():
-            self.addRequested.emit(self.current_id())
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and self.selected_ids():
+            self.addManyRequested.emit(self.selected_ids())
             return
         super().keyPressEvent(event)
 
@@ -1581,7 +2195,7 @@ class LibraryTable(QTableView):
         if not index.isValid():
             return
         drag = QDrag(self)
-        drag.setMimeData(self.model().mimeData([index]))
+        drag.setMimeData(self.model().mimeData(self.selectionModel().selectedRows()))
         row = self.visualRect(index.siblingAtColumn(0)).united(self.visualRect(index.siblingAtColumn(3)))
         drag.setPixmap(self.viewport().grab(row))
         drag.exec(Qt.DropAction.CopyAction)
