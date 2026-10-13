@@ -42,7 +42,7 @@ class PortableDialog(QDialog):
         self.close_button = QPushButton('Cancel'); self.close_button.clicked.connect(self.reject); actions.addWidget(self.close_button)
         actions.addStretch()
         self.show_folder = QPushButton('Show portable folder'); self.show_folder.clicked.connect(self.reveal); self.show_folder.hide()
-        self.show_folder.setToolTip('Open the completed folder. Move the whole folder; open Mix.djmix in DJ Studio on the other computer.')
+        self.show_folder.setToolTip('Open the completed folder. Move the whole folder; open Mix.djmix in BeatStitch on the other computer.')
         self.create = QPushButton('Create portable copy'); self.create.clicked.connect(self.start); self.create.setEnabled(False)
         self.create.setToolTip('Copy all source audio and the editable mix into the new folder. Checks free space and verifies copied identities.')
         actions.addWidget(self.show_folder); actions.addWidget(self.create); box.addLayout(actions)
@@ -69,7 +69,7 @@ class PortableDialog(QDialog):
             if self.closed: return
             self.busy = False; self.result = result; self.create.hide(); self.show_folder.show()
             self.close_button.setText('Done')
-            self.status.setText('Portable copy ready. Open Mix.djmix in DJ Studio. Keep the media folder beside it. '
+            self.status.setText('Portable copy ready. Open Mix.djmix in BeatStitch. Keep the media folder beside it. '
                                 'Your current mix has not changed.')
         def failed(message):
             if self.closed: return

@@ -1,0 +1,189 @@
+Beatstitch free-release license review — 2026-10-13
+
+Outcome
+-------
+The original application code is now GPL-3.0-or-later, as authorized by the
+creator. Free access with voluntary Ko-fi support is compatible with GPL.
+This does not relicense third-party weights, artwork, fonts, or libraries.
+The Mac release is being staged locally with a matching source companion.
+MuQ donation-related interpretation remains a creator-accepted uncertainty.
+
+Evidence scope
+--------------
+Reviewed the installed Mac bundle, its 100-entry pre-change credits catalog,
+the pinned model manifests/downloaders, published licenses, publisher model
+metadata and licensing statements. The current production source catalog has 105 entries including BeatStitch;
+Demucs-only dependencies are removed and all listed entries have offline notices. Small public API responses are retained under
+outputs/license-review. The initial evidence review did not download weights;
+the subsequent Spleeter implementation downloaded the official licensed archive.
+This is a technical evidence review, not a warranty about third-party rights,
+patents, all possible uses, or every future Windows/Linux package.
+
+Application and donations
+-------------------------
+Owner: Marco van Hylckama Vlieg. LICENSE contains the unchanged GPL v3 text;
+LICENSE_NOTICE.txt identifies the original code as version 3 or later.
+Support: https://ko-fi.com/aianddesign . Access/features are not donation gated.
+GPL permits commercial use and redistribution of covered code as well as
+voluntary funding. We cannot add a noncommercial restriction to GPL code.
+Reference: https://www.gnu.org/licenses/gpl-faq.en.html#DoesTheGPLAllowMoney
+
+Models
+------
+MuQ: code MIT, weights CC BY-NC 4.0. The license explicitly permits
+noncommercial redistribution with attribution; it is not a redistribution ban.
+Under the creator's policy, the optional noncommercial full edition bundles
+these weights and retains their terms. Do not force a direct download merely
+because the license is noncommercial. Optional creator support is not a legal test
+of NonCommercial: the actual distribution and use determine that condition.
+The core/Spleeter edition can omit section weights for unrestricted model use.
+No publisher clarification approving our specific free-app/optional-support
+arrangement was found. On 2026-10-13 the creator explicitly chose to bundle MuQ
+and keep the optional coffee link, accepting this unresolved interpretation.
+The About button says: “If you like this tool, consider buying me a coffee.”
+This records the creator's release decision, not a grant from the publisher.
+MuQ's attribution and noncommercial terms remain in force. No clarification
+request was posted and no model download can expand use permissions.
+References: https://github.com/tencent-ailab/MuQ#license
+https://creativecommons.org/licenses/by-nc/4.0/legalcode.en
+
+MusicFM: the exact pretrained_msd.pt identity is resolved. Its publisher's
+MIT-labeled Hugging Face release, revision
+4513b38bc25ad1d227b1980819b9691ba97f4d87, has the same SHA-256 and size as our
+musicfm.pt: 218b483a0256ddef736267425fabb166fd97008983696bb9270def464b47bded,
+1,316,802,088 bytes. This establishes published model-license metadata and
+provenance. The author's reply explicitly does not confirm all third-party
+rights for a particular commercial use. Do not assert that training-data
+licenses automatically license or prohibit a model; retain the author's caveat.
+References: https://huggingface.co/minzwon/MusicFM/blob/main/README.md
+https://github.com/minzwon/musicfm/issues/6#issuecomment-4948654100
+
+HTDemucs: the exact pinned revision is
+cbc8a9b1a87023b7fd74e7b3412e6321c0eab003 and the 955717e8.safetensors hash is
+d9fa14133cfcc034a6758923bb3a8ca9f8dfd0b582134643bbf83f72c17576dd.
+That publisher commit deliberately removed 'license: mit' from the model card.
+The code is MIT; an author statement says pretrained weights are not covered
+by MIT and were supplied only for scientific purposes. The statement predates
+HTDemucs, but the exact later model release does not supply a broader grant.
+General DJ use/distribution is therefore not cleared. Merely making a user
+download the same weights does not establish permission for that use.
+Seek an explicit grant covering this exact checkpoint and ordinary DJ use,
+or use a replacement. Do not treat a third-party mirror's MIT label as a grant.
+References: https://github.com/facebookresearch/demucs/issues/327#issuecomment-1134828611
+https://huggingface.co/adefossez/HTDemucs/commit/cbc8a9b1a87023b7fd74e7b3412e6321c0eab003
+
+Spleeter production replacement: the original authors expressly license source
+code and pretrained models under MIT. The official four-stem v1.4.0 archive is
+pinned by SHA-256 3adb4a50ad4eb18c7c4d65fcf4cf2367a07d48408a5eb7d03cd20067429dfaa8.
+Numeric conversion produces spleeter-4stems.npz, 157,306,998 bytes, SHA-256
+a8b3fb520dc13f47c40e5b5d7df88c682a409da56c8bf03b048290e27543617c.
+All 296 numeric tensors match TensorFlow's checkpoint reader exactly. PyTorch
+U-Net outputs and complete waveform analysis/synthesis match the upstream
+TensorFlow reference within the recorded tolerances. The implementation uses
+the official supported 16 kHz setting and average high-frequency mask extension.
+It runs on the existing PyTorch runtime; TensorFlow/Demucs are excluded from
+production packaging. Build-time fetch/conversion is deterministic; public
+packages bundle the licensed converted weights without an end-user download.
+Focused integration/model-publication checks passed. A real current two-song
+blend preserves all layout positions and source project bytes. Level-matched
+private listening examples compare the old Demucs engine with Spleeter; these
+numerical checks do not establish equivalent perceptual quality.
+Evidence: outputs/spleeter-research/{reader-parity,torch-parity,waveform-parity,
+real-trial,blend-trial}.json and integration-tests.log / spleeter-tests.log.
+Reference: https://github.com/deezer/spleeter/blob/master/paper.md
+
+Core models: existing upstream notices identify Beat This final0 as MIT,
+OpenKeyScan's repository/checkpoint as MIT, PANNs CNN10 weights as CC BY 4.0
+with MIT inference code. Keep exact revisions, copyright/attribution, licenses
+and modification notices. This review did not independently audit training
+recording permissions for each model. Old madmom CC BY-NC-SA assets are not
+included in the installed app; do not accidentally include them in releases.
+
+Binary distribution requirements
+-------------------------------
+GPL/Open-source licensing solves the proprietary-code issue for our audio
+engines; it does not remove corresponding-source obligations.
+
+- FFmpeg/ffprobe in the Mac bundle: 9.0.2, --enable-gpl and --enable-version3,
+  linked to x264/x265. Keep GPL-compatible distribution and provide the exact
+  corresponding source, patches and build instructions for FFmpeg and covered
+  linked components. The separate companion source archive contains this
+  source set, original formulae and configure records. Do not replace the existing binary just for licensing
+  without rechecking audio/cache compatibility.
+- Rubber Band 4.0.0: GPL-2.0-or-later. A GPL-compatible application release can
+  use the open-source edition; a proprietary license purchase is not our
+  planned route. Package the exact source/build material and notices.
+- Qt/PySide6: original GPL/LGPL terms apply per component. The Mac Cocoa repair
+  already includes the matching qtbase source archive, patch and rebuild recipe
+  in Contents/Resources/qt-cocoa-fix. This covers that source package, not every
+  additional Qt module, Python binding or multimedia backend.
+- Qt playback FFmpeg is separate from command-line FFmpeg. Identify that build
+  and provide its required notices and corresponding sources separately.
+- Additional LGPL libraries include soxr and relevant native audio libraries;
+  the section edition also uses easydict and frozendict. Demucs-only lameenc is no longer a production dependency. Include their
+  required source/notice material. The formerly missing PySide6/Shiboken notices
+  are now included from their matching official source release.
+- Publish the matching original app source and scripts next to each binary
+  release. A link to a moving main branch or an About credits list alone does
+  not establish availability of the complete corresponding source.
+- Preserve users' rights to replace/rebuild covered libraries. Provide build
+  and installation/signing instructions; do not impose conflicting EULA terms.
+
+Compiler-runtime source gap resolved on 2026-10-13:
+The SciPy 1.18.1 macosx_14_0_arm64 wheel uses preinstalled Homebrew gfortran-13
+for its Accelerate build. The pinned GCC 12.1 installer in the setup script is
+for the different macosx_12_3 OpenBLAS variant and does not supply these binaries.
+Both installed runtime UUIDs AND every __TEXT section (code, constants, strings,
+unwind data) match the official GCC 13.4.0 arm64_sonoma Homebrew bottle exactly:
+  libquadmath UUID 13842585-89B5-3A2B-9482-99F7B4DDE5BD
+  libgfortran UUID 18BCCF8F-B816-387F-BAAB-97018C5046CB
+  bottle SHA-256 a28d7de1a36175bf4d18bd0a498593cfdd5303927ad9d805774e81459e7122a9
+The companion source set includes the GNU GCC 13.4.0 archive, original Darwin
+patch, exact embedded Homebrew formula, GPL/GCC exception and LGPL notices,
+provenance receipt and rebuild instructions. All archives/patches are verified
+against the original formula's checksums. No runtime replacement was needed.
+Evidence: outputs/release-sources/inputs/gcc13/provenance.json.
+Source recipe: Homebrew/homebrew-core revision
+740cfc3dd168b04c6145e770d9465340e5591bae, Formula/g/gcc@13.rb.
+
+Sources: https://ffmpeg.org/legal.html
+https://breakfastquay.com/rubberband/license.html
+https://www.qt.io/licensing/open-source-lgpl-obligations
+Local evidence: build_desktop.py, build_credits.py, macos_qt_patch.py,
+vendor/qt-cocoa/README.md and assets/about/catalog.json.
+
+Concrete release path and current work
+--------------------------------------
+1. GPL source declaration and optional Ko-fi link are prepared in this checkout.
+2. The production separator and packaging now use licensed Spleeter. Private
+   Demucs comparison code/outputs remain separate; its weights are not bundled.
+3. Models with permission for the planned distribution are bundled. The optional
+   MuQ pack is explicitly noncommercial; the core/Spleeter edition omits it.
+   Direct publisher downloads are reserved for cases where redistribution is
+   not permitted but the user's intended use is. No downloader is a workaround
+   for prohibited use. No end-user model manager is needed for the selected
+   replacement stack.
+4. Matching Mac source archives, original notices, Homebrew build formulae and
+   Qt/PySide versions are collected under outputs/release-sources. Missing
+   PySide/Shiboken and package notice texts are added to the offline catalog.
+   The Mac source candidate declares the collected source components and records every packaged
+   native binary hash. release_source_bundle.py verifies hashes, artifact types
+   and explicit component coverage before packaging. A coverage receipt is not legal
+   clearance or proof that every dependency/build step is covered.
+5. The accepted Spleeter candidate was staged under outputs/spleeter-research/package.
+   The creator accepted the listening comparison on 2026-10-13: “Spleeter
+   sounds just as good so we’re good there.” The tested candidate is now installed
+   at dist/DJ Studio.app with a reversible previous-app backup. The two-song
+   project, library, AirPods selection and existing raw/mastered render hashes
+   are preserved. Native separation preparation is available and idle.
+6. Provide the matching original app snapshot, all required library source and
+   build/installation recipes together with each public binary. This Mac source
+   work does not establish coverage for a Windows/Linux release. Confirm any
+   remaining publisher build-recipe gaps before declaring a public release.
+7. Supplied branding artwork is not relicensed by the GPL source declaration.
+8. The compiler-runtime source gap is resolved. The final Mac package passed 16 core checks, both frozen optional workers
+   and 23 package identity checks. The native BeatStitch menu and restored mix
+   were observed, and cached raw/mastered audio identities are unchanged. The
+   source companion records this build’s 398 native binary identities. Spleeter’s listening
+   comparison is accepted; this is not a claim of clean separation on every song. No publisher has been contacted, no
+   permission has been invented, and no public release has been made.

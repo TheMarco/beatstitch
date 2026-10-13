@@ -194,7 +194,7 @@ def publish_extension(result, directory, progress=lambda _: None):
     if destination.exists():
         found = fingerprint(destination, progress)
         if found['sha256'] != known['sha256']:
-            raise djmix.MixError('The stored extended copy was changed outside DJ Studio. Keep it and prepare a different extension; it will not be overwritten.')
+            raise djmix.MixError('The stored extended copy was changed outside BeatStitch. Keep it and prepare a different extension; it will not be overwritten.')
     else:
         require_space(root, source.stat().st_size, 'keep the extended source copy')
         # Exclusive creation never overwrites an original, previous copy or race.

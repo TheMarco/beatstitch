@@ -1,0 +1,5 @@
+Qt for Python (PySide6 and Shiboken6) 6.11.2
+The Qt Company Ltd and contributors. Original source notices retained.
+Source: https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-6.11.2-src/pyside-setup-everywhere-src-6.11.2.tar.xz
+SHA-256: cba47efbaad1bedd529725cbc14e21f156c7a19366f07b3edfbb076ffd7afdf8
+Bindings use their GPL/LGPL terms and exceptions; bundled modules retain individual terms.

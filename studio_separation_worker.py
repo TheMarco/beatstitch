@@ -2,7 +2,6 @@
 import json
 import os
 from pathlib import Path
-import random
 import sys
 
 
@@ -18,8 +17,8 @@ def infer(work):
     import soundfile as sf
     import torch
     from scipy.signal import resample_poly
-    from demucs.apply import apply_model
-    from studio_separation_model import load_model, normalization, MODEL_FILE, STEMS, RATE
+    from studio_spleeter_model import separate_waveform
+    from studio_separation_model import load_model, MODEL_FILE, STEMS, RATE
     request = json.loads((work / 'request.json').read_text())
     start, end = request['start'], request['end']
     if type(start) is not int or type(end) is not int or not 0 <= start < end or end - start > 240 * RATE:
@@ -32,21 +31,14 @@ def infer(work):
     if not np.isfinite(original).all(): raise ValueError('The passage contains invalid audio.')
     audio = resample_poly(original, 147, 160, axis=0)
     torch.set_num_threads(min(4, os.cpu_count() or 1))
-    torch.manual_seed(0); random.seed(0)
     publish(work / 'progress.json', 'Loading the local vocal/drum separator')
     model = load_model(Path(request['models']) / MODEL_FILE)
-    mean, scale = normalization(audio)
-    tensor = torch.from_numpy(((audio - mean) / scale).T.copy())[None]
-    def progress(state):
-        if state.get('state') == 'start':
-            publish(work / 'progress.json', f"Separating musical parts · {state.get('segment_offset', 0) / 44100:.0f} seconds")
-    with torch.inference_mode():
-        estimates = apply_model(model, tensor, device='cpu', shifts=1, split=True,
-                                overlap=.25, num_workers=0, callback=progress)[0].cpu().numpy() * scale + mean
-    if estimates.shape != (4, 2, len(audio)) or not np.isfinite(estimates).all():
+    estimates = separate_waveform(audio, model, lambda value: publish(work / 'progress.json', value))
+    if set(estimates) != set(STEMS) or any(a.shape != (len(audio), 2) or not np.isfinite(a).all()
+                                         for a in estimates.values()):
         raise ValueError('The separator returned invalid or misaligned audio.')
-    for i, name in enumerate(STEMS):
-        converted = resample_poly(estimates[i].T, 160, 147, axis=0)
+    for name in STEMS:
+        converted = resample_poly(estimates[name], 160, 147, axis=0)
         excerpt = converted[start - left:end - left]
         if excerpt.shape != (end - start, 2): raise ValueError('The separated passage is incomplete.')
         sf.write(work / (name + '.wav'), excerpt, RATE, subtype='FLOAT')

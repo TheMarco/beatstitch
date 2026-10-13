@@ -40,7 +40,7 @@ def read_project(path, progress=lambda message: None, *, verify_media=True):
     except (json.JSONDecodeError, UnicodeError) as error:
         raise djmix.MixError('This project file is incomplete or damaged. Try another recovery copy; this file has been kept.') from error
     if not isinstance(value, dict):
-        raise djmix.MixError('This file does not contain a DJ Studio project.')
+        raise djmix.MixError('This file does not contain a BeatStitch project.')
     from studio_media import resolve_portable
     resolved = resolve_portable(value, path, progress, verify=verify_media)
     return Session.from_dict(resolved), value

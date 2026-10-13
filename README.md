@@ -1,4 +1,4 @@
-# DJ Studio
+# BeatStitch
 
 A native **Qt / PySide6 desktop application** for arranging EDM mixes. No browser,
 webview, server, or online audio service is required. The code supports macOS,
@@ -6,7 +6,47 @@ Windows, and Linux. Native interaction has been exercised on macOS; packaged aud
 checks and both optional analysis workers also pass on Windows Server 2022 and
 Ubuntu 24.04 x86-64 runners.
 
+The original application code is **GPL-3.0-or-later**; see [LICENSE](LICENSE)
+and [the licensing notice](LICENSE_NOTICE.txt). The planned public edition is
+free, with entirely optional [Ko-fi support](https://ko-fi.com/aianddesign).
+GPL permits commercial reuse of the covered code under its terms. Third-party
+libraries, fonts, artwork, and model weights retain their own terms.
+
+The production separator uses MIT-licensed Spleeter code and weights. The full
+section-analysis edition also bundles MuQ weights under CC BY-NC 4.0; that
+restriction applies to those weights. The creator chose to retain the optional
+coffee link without publisher clarification of this particular arrangement.
+It says: “If you like this tool, consider buying me a coffee.” Donations are
+optional and do not unlock features. GPL/LGPL source materials accompany each
+Mac release separately; see [release instructions](RELEASE_MAC.md) and the
+licensing notice for scope and evidence.
+
+The Spleeter replacement has a private, level-matched comparison on this Mac:
+`Launch Separator Comparison.command`. Buttons 1–5 switch continuously between
+the original, former Demucs research reference, and Spleeter at 75% reduction.
+The prototype leaves the working mix and installed app unchanged. Its prepared
+user-song audio stays in ignored `outputs/`; no song excerpts belong in a release.
+
+`release_source_bundle.py` packages locally collected, hash-verified source
+archives, original notices, patches and rebuild recipes with an explicit coverage
+manifest. It rejects missing/changed artifacts and refuses to overwrite an
+existing bundle. Its receipt proves bytes/declared coverage, not legal clearance
+or completeness of an unreviewed platform's corresponding source. Each public
+binary needs its matching source materials. Direct end-user downloads are only
+for weights whose license bars our redistribution while permitting the user's
+intended use; licensed models in the selected edition are bundled.
+
 ## Desktop app
+
+Open **About** from the application menu on macOS or the Help menu on
+Windows/Linux. It shows the supplied PNG logo, credits creator Marco van Hylckama
+Vlieg, and provides searchable project credits and bundled license notices. The
+catalog is generated from the build's Python dependency graph, native audio tool
+libraries, and curated model/font credits; optional features and build tools are
+labeled separately. Original source/model notices are retained, including cases
+where checkpoint terms are not established. The app icon uses the same PNG
+emblem. `build_credits.py` refreshes the catalog during packaging; native icon
+files are maintained with `tools/build_beatstitch_icons.py`.
 
 The isolated **detector-confidence pilot** uses the 25 songs supplied in
 `~/Downloads/dataset`. Double-click `Launch Detector Pilot.command` for native
@@ -15,9 +55,9 @@ start hidden, answers are saved separately, and revealing results records exposu
 It changes no mix or installed detector settings. See [the pilot instructions](DETECTOR_PILOT.md).
 These development predictions do not establish accuracy or calibrated confidence.
 
-On this Mac, double-click `Launch DJ Studio.command` to open the app and restore
+On this Mac, double-click `Launch BeatStitch.command` to open the app and restore
 the current session from `outputs/studio`. A packaged app is built at
-`dist/DJ Studio.app`; its default project storage is the operating system's local
+`dist/BeatStitch.app`; its default project storage is the operating system's local
 application-data directory. Use **File > Open** to open an existing `.djmix` file.
 
 The current example arrangement is stored at `outputs/studio/autosave.djmix`.
@@ -38,7 +78,7 @@ Back and Forward restore your reading position within visited topics, including
 after a search with no results. These reading positions last for the guide window's
 lifetime; they are not saved course-completion marks.
 
-**Help > DJ Studio guide** opens the searchable
+**Help > BeatStitch guide** opens the searchable
 offline guide in a native Qt text window. It covers the first-mix workflow, every
 main control, BPM and key concepts, timing correction, troubleshooting and
 shortcuts. Press **F1** on a control for its topic, or use a section's **?** button.
@@ -659,14 +699,14 @@ You can repeat the check on another machine with the packaged executable:
 
 ```sh
 # macOS
-"DJ Studio.app/Contents/MacOS/DJ Studio" --check-package /absolute/path/new-check
+"BeatStitch.app/Contents/MacOS/BeatStitch" --check-package /absolute/path/new-check
 # Linux
-"./DJ Studio/DJ Studio" --check-package /absolute/path/new-check
+"./BeatStitch/BeatStitch" --check-package /absolute/path/new-check
 ```
 
 ```powershell
 # Windows PowerShell
-& '.\DJ Studio\DJ Studio.exe' --check-package 'C:\Users\Public\DJ-new-check'
+& '.\BeatStitch\BeatStitch.exe' --check-package 'C:\Users\Public\DJ-new-check'
 ```
 
 Use a new output directory each time; existing directories are refused. The
@@ -691,7 +731,7 @@ under that scope decision; automated results do not establish physical playback.
 ### Beginner tryout and listening validation
 
 This is a **session protocol, not a completed test**. Use a participant who has
-not used DJ Studio and has little or no DJ experience. Note the app build, OS,
+not used BeatStitch and has little or no DJ experience. Note the app build, OS,
 output device and their experience; use an anonymous participant code. Before
 starting, save any existing project. The included demo is a safe practice source;
 a second session should use songs the participant is allowed to use, including
@@ -893,7 +933,7 @@ or overlap edits do not move it. Undo before trying another treatment to avoid
 stacking reductions. Check the complete song and both neighboring blends before
 export. The F1 guide and tooltips explain these choices and limitations.
 
-Inference runs in an isolated, cancellable local worker using the pinned HTDemucs
+Inference runs in an isolated, cancellable local worker using the pinned Spleeter four-stem
 model. It processes the overlap with surrounding context, and reuses the same
 parts when only mode or reduction changes. Supported limits: 30-minute source
 songs and four-minute source overlaps. No audio is uploaded. Prepare is disabled
@@ -901,7 +941,7 @@ with an explanation when the optional model/runtime is absent.
 
 Build with `python build_desktop.py --with-separation` from a dedicated build
 environment containing `requirements-desktop.txt` and `requirements-separation.txt`.
-Run `download_separation_model.py` first. `--with-sections` can also be supplied
+Run `download_separation_model.py` first at build time; public packages bundle the licensed converted weights. No end-user download or TensorFlow installation is needed. `--with-sections` can also be supplied
 when `requirements-sections.txt` and its model pack are installed. The preparer
 and standalone listener below remain available for separate experiments.
 
@@ -925,15 +965,15 @@ for lost drum attacks, watery/hollow sound, and unwanted sounds in isolated part
 The standalone trial applies no tempo change or pitch shift and does not edit
 the DJ project. Use **Reduce competing parts…** for the in-app blend workflow.
 
-The optional preparer uses Demucs 4.1.0 with the official HTDemucs checkpoint,
+This historical private scientific comparison uses Demucs 4.1.0; its weights are excluded from the production app. The optional preparer uses Demucs 4.1.0 with the official HTDemucs checkpoint,
 pinned by revision and SHA-256. Inference is offline, uses an explicitly loaded
 safetensors architecture, and needs no uploaded music. Install the optional
 dependencies in a separate environment rather than changing the desktop's:
 
 ```sh
 python3 -m venv outputs/stem-separation-trial/.venv
-outputs/stem-separation-trial/.venv/bin/python -m pip install -r requirements.txt -r requirements-separation.txt
-outputs/stem-separation-trial/.venv/bin/python download_separation_model.py
+outputs/stem-separation-trial/.venv/bin/python -m pip install -r requirements.txt -r requirements-demucs-research.txt
+outputs/stem-separation-trial/.venv/bin/python download_demucs_research_model.py
 outputs/stem-separation-trial/.venv/bin/python prepare_separation_trial.py /path/to/song.mp3 --start 155 --duration 30
 .venv/bin/python prototype_separation.py outputs/stem-separation-trial/example-report.json
 ```
@@ -978,8 +1018,11 @@ other cue tools remain available for longer recordings or without this model pac
 
 The optional pack contains approximately 2.6 GiB of weights. **MuQ weights use
 CC BY-NC 4.0**, so this local experimental edition is not a commercial-distribution
-clearance. Source revisions, attribution, license texts and remaining MusicFM MSD
-weight questions are documented in [vendor/sections](vendor/sections/README.md).
+clearance, including an automatic clearance for a free app with optional creator support. The exact MusicFM
+MSD checkpoint matches the publisher's MIT-labeled model repository; its author
+does not confirm all third-party rights for a particular commercial use. Source
+revisions, attribution and license details are documented in
+[vendor/sections](vendor/sections/README.md).
 The default build remains separate from this optional pack.
 
 For a development environment, install `requirements-sections.txt`, then fetch
@@ -2096,8 +2139,8 @@ a ten-minute limit with process cleanup; existing report directories are refused
 
 ```sh
 python -m ci.check_optional_workers \
-  --executable 'dist/DJ Studio.app/Contents/MacOS/DJ Studio' \
-  --resources 'dist/DJ Studio.app/Contents/Frameworks' \
+  --executable 'dist/BeatStitch.app/Contents/MacOS/BeatStitch' \
+  --resources 'dist/BeatStitch.app/Contents/Frameworks' \
   --output outputs/optional-package-check --sections --separation
 ```
 

@@ -153,14 +153,14 @@ class ProjectsDialog(QDialog):
 
     def browse_file(self):
         start = self.studio.project_path.parent if self.studio.project_path else self.studio.data
-        path, _ = QFileDialog.getOpenFileName(self, 'Open a mix', str(start), 'DJ Studio project (*.djmix)')
+        path, _ = QFileDialog.getOpenFileName(self, 'Open a mix', str(start), 'BeatStitch project (*.djmix)')
         if path:
             self.open_path(Path(path))
 
     def save_current(self):
         path = self.studio.project_path
         if path is None:
-            value, _ = QFileDialog.getSaveFileName(self, 'Save mix', str(self.studio.data / f'{self.studio.session.name}.djmix'), 'DJ Studio project (*.djmix)')
+            value, _ = QFileDialog.getSaveFileName(self, 'Save mix', str(self.studio.data / f'{self.studio.session.name}.djmix'), 'BeatStitch project (*.djmix)')
             if not value: return
             path = Path(value)
         if self.studio.write_project(path): self.reload()

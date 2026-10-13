@@ -1,4 +1,4 @@
-"""Offline help content for DJ Studio.
+"""Offline help content for BeatStitch.
 
 TOPICS is a sequence of dictionaries with the exact keys ``id``, ``title``,
 ``keywords`` (space-delimited) and ``body`` (a Markdown string rendered with
@@ -119,7 +119,7 @@ REFERENCE_TOPICS = (
             'overlap length afterward does not move the treatment. Check the complete song and both neighboring '
             'blends before exporting. Use Undo before trying different treatment settings, so reductions do not stack.\n\n'
             '## Availability\n\n'
-            'The optional separation edition includes Demucs and its local HTDemucs model. An edition without '
+            'The optional separation edition includes Spleeter and its verified local four-stem model. Its code and pretrained weights are MIT licensed and bundled; no model download is needed during use. An edition without '
             'those files explains why preparation is unavailable; ordinary mixing still works. The current '
             'limit is a 30-minute source song and a four-minute source overlap. The standalone listening trial '
             'is a separate demonstration; it does not apply choices to a mix.'
@@ -132,7 +132,7 @@ REFERENCE_TOPICS = (
         'body': (
             '## Learn by switching between two sounds\n\n'
             'Open **Help → Listening examples…**, or use **Listening examples…** at the top of the main '
-            'DJ Studio guide. No imported songs are needed. Each example is 16 seconds of original synthesized '
+            'BeatStitch guide. No imported songs are needed. Each example is 16 seconds of original synthesized '
             'music with two versions. Nothing is inserted into your library or arrangement.\n\n'
             'Choose **Listen**, then click **A** or **B** while it plays. The music stays at the same position '
             'on one playback clock. Whole-example loudness is matched, so the louder option should not win '
@@ -413,7 +413,7 @@ REFERENCE_TOPICS = (
         "keywords": "workspace simple advanced beginner view mode hidden controls source pitch original key settings",
         "body": (
             "## Start with Simple controls\n\n"
-            "DJ Studio starts with **Advanced controls** switched off. Select a song in the arrangement: "
+            "BeatStitch starts with **Advanced controls** switched off. Select a song in the arrangement: "
             "the left summary shows its source tempo/key, the speed change in the mix, current pitch, "
             "tempo-correction state and kept audio range. The **real song waveform** remains beside it, "
             "with draggable Start/End markers and zoom controls. The arrangement also keeps its real waveforms.\n\n"
@@ -855,12 +855,12 @@ REFERENCE_TOPICS = (
             "does not automatically replace an existing clip's BPM. A grid that slowly pulls away may "
             "indicate a slightly wrong BPM; irregular wandering can require [stabilization](help:timing).\n"
             "\n"
-            "Correcting a BPM number never rewrites your audio file; it only changes how DJ Studio "
+            "Correcting a BPM number never rewrites your audio file; it only changes how BeatStitch "
             "stretches that song when rendering.\n"
             "\n"
             "## Bar maths\n"
             "\n"
-            "DJ Studio assumes 4/4. At a steady 128 BPM each beat is 0.469 seconds, "
+            "BeatStitch assumes 4/4. At a steady 128 BPM each beat is 0.469 seconds, "
             "so a 4-beat bar is 1.875 seconds and 8 bars are 15 seconds. "
             "With a [tempo curve](help:tempo-curve), bars get shorter as the mix speeds up and longer as it slows down. "
             "The overlap duration shown below the stepper follows that curve."
@@ -1261,12 +1261,12 @@ REFERENCE_TOPICS = (
             "all project sources, including library songs outside the arrangement, into a new folder. Original "
             "files and the current mix stay unchanged. Free space is checked first; cancellation cleans unfinished "
             "copies. Existing destination folders are never replaced.\n\n"
-            "Move the whole completed folder. Open **Mix.djmix** in DJ Studio, keeping **media/** beside it. "
+            "Move the whole completed folder. Open **Mix.djmix** in BeatStitch, keeping **media/** beside it. "
             "The project uses relative paths and verifies file contents when opened. Valid timing/grid analysis "
             "is connected to the verified copies. Missing files can be reconnected; changed bundled files must be "
             "restored from an unchanged copy. Saving beside the contained media keeps the project portable. "
             "**Save as…** elsewhere saves a linked project referencing that media; use Create portable project "
-            "to make another complete copy. Both computers need a compatible DJ Studio build.\n"
+            "to make another complete copy. Both computers need a compatible BeatStitch build.\n"
             "\n"
             "## The render cache\n"
             "\n"

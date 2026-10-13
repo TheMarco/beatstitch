@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 
 from studio_mastering_audio import MasteringTransport, load_mastering_folder, RATE
 
-TITLE = "DJ Studio — Mastering Lab"
+TITLE = "BeatStitch — Mastering Lab"
 
 
 def fmt_time(seconds: float) -> str:

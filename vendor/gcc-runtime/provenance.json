@@ -1,0 +1,75 @@
+{
+  "gcc_version": "13.4.0",
+  "homebrew_formula_revision": "740cfc3dd168b04c6145e770d9465340e5591bae",
+  "bottle_sha256": "a28d7de1a36175bf4d18bd0a498593cfdd5303927ad9d805774e81459e7122a9",
+  "bottle_url": "https://ghcr.io/v2/homebrew/core/gcc/13/blobs/sha256:a28d7de1a36175bf4d18bd0a498593cfdd5303927ad9d805774e81459e7122a9",
+  "quadmath_uuid": "13842585-89B5-3A2B-9482-99F7B4DDE5BD",
+  "gfortran_uuid": "18BCCF8F-B816-387F-BAAB-97018C5046CB",
+  "checks": [
+    {
+      "library": "libquadmath.0.dylib",
+      "identical_text_sections": true,
+      "sections": {
+        "__text": {
+          "bytes": 148072,
+          "sha256": "5eaeefe084fd430957da9a264e5676f25a3e8bf86b6990d5e37bbc4c3fd400ae"
+        },
+        "__stubs": {
+          "bytes": 324,
+          "sha256": "8c972b4ccfe58cfc4e31d4d97e2a6d0e0fb28d51247dc97b7ce7b0b69eb8c1c7"
+        },
+        "__const": {
+          "bytes": 81456,
+          "sha256": "8d9f3f212e8d58d8028760f5fe374c8dd136280bc23765ad8bf037d829196569"
+        },
+        "__cstring": {
+          "bytes": 54,
+          "sha256": "d8ab3a084c59a5e2f57446e959cf820b3757ca7039a86bebd65cff367182da85"
+        },
+        "__eh_frame": {
+          "bytes": 19320,
+          "sha256": "6feba9cac8f79232865e54a54ff5aa2286c2b81741ecba5afe2fd44019f0bfe8"
+        }
+      }
+    },
+    {
+      "library": "libgfortran.5.dylib",
+      "identical_text_sections": true,
+      "sections": {
+        "__text": {
+          "bytes": 1113448,
+          "sha256": "8ae6aa0fa1c4d36412d826c21f9027be78bba195d735b35ddf6a2da80963c808"
+        },
+        "__text_exit": {
+          "bytes": 44,
+          "sha256": "a48e64c36dafe70aced90c69b7c587b6df2a1f51b7391060321889d22545db56"
+        },
+        "__text_startup": {
+          "bytes": 132,
+          "sha256": "5c3de52a9058a1fed80769bf6636ef7b2982569cc17296e10c30f7f9974c36db"
+        },
+        "__stubs": {
+          "bytes": 2808,
+          "sha256": "65b2ee7f042a918e0096989b6fb030dcd83658fee5f66af3ff596cb640689182"
+        },
+        "__init_offsets": {
+          "bytes": 12,
+          "sha256": "b3b32ac2fcdc3388dcedb6a221833baa5e4d31d45af99e507e30894db2ab5ea9"
+        },
+        "__cstring": {
+          "bytes": 27671,
+          "sha256": "f61d5db70004643954aadfd817d7036afe47b03a11e91d3193844b0aec3712a2"
+        },
+        "__const": {
+          "bytes": 3569,
+          "sha256": "9d1f9496d4cf2a124cd68517ee3c2e474420b350db1a23329f45470e154bb789"
+        },
+        "__eh_frame": {
+          "bytes": 227912,
+          "sha256": "902780d967e39017f7424e1177ecfb7bcc9607f263f5b5ce7c538e9bee0c243f"
+        }
+      }
+    }
+  ],
+  "note": "The SciPy macosx_14_0_arm64 Accelerate wheel uses preinstalled gfortran-13, not the GCC 12 installer for its macosx_12_3 OpenBLAS variant. Both UUIDs and all __TEXT sections match this hash-pinned Homebrew bottle. Relocation/install names and signatures differ; compiled code is unchanged."
+}

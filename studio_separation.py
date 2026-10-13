@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import copy
-import importlib.util
 import json
 import math
 import os
@@ -32,16 +31,12 @@ MODES = {'instrumental': 'Reduce vocals', 'drums': 'Keep mostly drums'}
 def model_directory():
     packaged = ROOT / 'assets' / 'separation'
     if getattr(sys, 'frozen', False) or (packaged / MODEL_FILE).is_file(): return packaged
-    return ROOT / 'outputs/stem-separation-trial/models'
+    return ROOT / 'outputs/spleeter-research/models'
 
 
 def worker_command():
     if getattr(sys, 'frozen', False): return [sys.executable, '--separation-worker']
-    interpreter = sys.executable
-    if importlib.util.find_spec('demucs') is None:
-        environment = ROOT / 'outputs/stem-separation-trial/.venv'
-        interpreter = str(environment / ('Scripts/python.exe' if sys.platform == 'win32' else 'bin/python'))
-    return [interpreter, str(ROOT / 'studio_separation_worker.py')]
+    return [sys.executable, str(ROOT / 'studio_separation_worker.py')]
 
 
 def available():
@@ -240,7 +235,7 @@ def publish_separation(result, directory, progress=lambda _: None):
             except FileExistsError: pass
         found = fingerprint(target, progress)
         if found['sha256'] != known['sha256']:
-            raise djmix.MixError('The stored separated copy was changed outside DJ Studio. It will not be overwritten.')
+            raise djmix.MixError('The stored separated copy was changed outside BeatStitch. It will not be overwritten.')
     finally: pending.unlink(missing_ok=True)
     check_cancelled()
     if source_signature(source) != result['copy_signature']: raise djmix.MixError('The prepared audio changed during saving.')

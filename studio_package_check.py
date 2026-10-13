@@ -176,6 +176,18 @@ def run_checks(destination, *, allow_source=False):
             return {'beat_model': beat.name, 'content_model': content.name, 'key_model': key_model.name, 'lessons': len(LESSONS)}
         check('core model and lesson assets', assets)
 
+        def about_assets():
+            from studio_about import asset_directory, load_credits
+            from PySide6.QtGui import QImage
+            catalog = load_credits()
+            identities = {item['id'] for item in catalog['entries']}
+            require({'qt', 'python', 'rubber-band', 'ffmpeg', 'openkeyscan', 'barlow', 'beat-this', 'panns'} <= identities,
+                    'The bundled credits catalog is incomplete.')
+            for name in ('beatstitch.png', 'beatstitch-icon.png'):
+                require(not QImage(str(asset_directory() / name)).isNull(), f'The bundled {name} is invalid.')
+            return {'credits': len(identities), 'creator': catalog['creator'], 'logo_and_icon': 'valid PNG'}
+        check('About credits, logo, and app icon', about_assets)
+
         def pitch_tempo():
             t = np.arange(4 * djmix.SR) / djmix.SR
             tone = .1 * np.sin(2 * np.pi * 440 * t)

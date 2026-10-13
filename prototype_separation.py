@@ -74,29 +74,33 @@ class SeparationTrial(QDialog):
     def __init__(self, report, folder):
         super().__init__()
         self.report = report
-        self.setWindowTitle('DJ Studio · Separation listening trial')
+        self.setWindowTitle(report.get('window_title', 'DJ Studio · Separation listening trial'))
+        self.labels = tuple(report.get('variant_labels', LABELS))
+        self.explanations = tuple(report.get('variant_explanations', EXPLANATIONS))
+        if len(self.labels) != len(VARIANTS) or len(self.explanations) != len(VARIANTS):
+            raise ValueError('Every listening version needs a label and explanation.')
         self.resize(880, 610); self.setMinimumSize(760, 580)
         self.player = SeparationTransport(self)
         self.devices = QMediaDevices(self)
         box = QVBoxLayout(self); box.setContentsMargins(24, 22, 24, 22); box.setSpacing(14)
-        title = QLabel('Hear the musical parts'); title.setProperty('role', 'title'); box.addWidget(title)
+        title = QLabel(report.get('headline', 'Hear the musical parts')); title.setProperty('role', 'title'); box.addWidget(title)
         song = QLabel(f'{report["title"]} · {clock(report["start"])}–{clock(report["start"] + report["duration"])} in the original song')
         song.setTextFormat(Qt.TextFormat.PlainText); song.setWordWrap(True); box.addWidget(song)
-        note = QLabel('Separation estimates what belongs to each part. It can leave voices behind or remove some instruments. '
-                      'Switch while playing to judge the sound; quieter isolated parts are expected.')
+        note = QLabel(report.get('listening_note', 'Separation estimates what belongs to each part. It can leave voices behind or remove some instruments. '
+                      'Switch while playing to judge the sound; quieter isolated parts are expected.'))
         note.setWordWrap(True); box.addWidget(note)
         self.wave = SeparationWave(report); box.addWidget(self.wave, 1)
         self.buttons, self.group, self.shortcuts = [], QButtonGroup(self), []
         row = QHBoxLayout()
-        for i, (name, label, explanation) in enumerate(zip(VARIANTS, LABELS, EXPLANATIONS), 1):
+        for i, (name, label, explanation) in enumerate(zip(VARIANTS, self.labels, self.explanations), 1):
             button = QPushButton(f'{i} · {label}'); button.setCheckable(True)
-            button.setToolTip(explanation + f' Press {i} to select. Switching preserves the playback position and relative level.')
+            button.setToolTip(explanation + f' Press {i} to select. Switching preserves the playback position.')
             button.toggled.connect(lambda checked, n=name: self.select(n) if checked else None)
             self.group.addButton(button); self.buttons.append(button); row.addWidget(button)
             shortcut = QShortcut(QKeySequence(str(i)), self); shortcut.activated.connect(button.click)
             self.shortcuts.append(shortcut)
         box.addLayout(row)
-        self.explanation = QLabel(EXPLANATIONS[0]); self.explanation.setWordWrap(True)
+        self.explanation = QLabel(self.explanations[0]); self.explanation.setWordWrap(True)
         self.explanation.setMinimumHeight(44); box.addWidget(self.explanation)
         row = QHBoxLayout()
         self.play = QPushButton('Play'); self.play.clicked.connect(self.toggle)
@@ -123,7 +127,7 @@ class SeparationTrial(QDialog):
         self.volume.setToolTip('One listening volume for every version. The parts are not boosted individually.')
         self.volume.valueChanged.connect(lambda value: self.player.set_volume(value / 100))
         row.addWidget(QLabel('Volume')); row.addWidget(self.volume); box.addLayout(row)
-        self.status = QLabel('Prepared locally · Same timing and common gain · Original tempo and pitch')
+        self.status = QLabel(report.get('listening_status', 'Prepared locally · Same timing and common gain · Original tempo and pitch'))
         self.status.setTextFormat(Qt.TextFormat.PlainText); self.status.setWordWrap(True); box.addWidget(self.status)
         close = QPushButton('Close trial'); close.clicked.connect(self.close)
         close.setToolTip('Close this listening trial. No song, cue, or working mix is changed.')
@@ -149,7 +153,7 @@ class SeparationTrial(QDialog):
 
     def select(self, name):
         self.player.select(name); self.wave.variant = name; self.wave.update()
-        self.explanation.setText(EXPLANATIONS[VARIANTS.index(name)])
+        self.explanation.setText(self.explanations[VARIANTS.index(name)])
 
     def toggle(self):
         if self.player.playing: self.player.pause()

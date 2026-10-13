@@ -1,0 +1,13 @@
+GNU GCC 13.4.0 compiler runtimes in the macOS SciPy wheel
+Free Software Foundation, Inc. and GCC contributors.
+libgfortran and libgcc: GPL-3.0-or-later with GCC Runtime Library Exception 3.1.
+libquadmath: LGPL-2.1-or-later. These are dynamically linked libraries.
+
+The original SciPy-wheel binaries and packaged copies match the __TEXT sections
+of the official Homebrew GCC 13.4.0 arm64_sonoma bottle. Both library UUIDs match.
+Relocation paths and signatures are changed by wheel/application packaging.
+See provenance.json. Matching GNU source, original Darwin patch, exact embedded
+formula and rebuild instructions are in the separate Mac source companion.
+https://github.com/Homebrew/homebrew-core/blob/740cfc3dd168b04c6145e770d9465340e5591bae/Formula/g/gcc@13.rb
+https://gcc.gnu.org/onlinedocs/libquadmath/
+https://www.gnu.org/licenses/gcc-exception-3.1.html

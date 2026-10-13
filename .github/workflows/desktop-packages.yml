@@ -69,7 +69,7 @@ jobs:
           python download_section_models.py
           python download_separation_model.py --destination assets/separation
       - name: Check packaging, key-runtime compatibility, mix guide and offline help
-        run: python -m unittest tests.test_windows_audio_tools tests.test_package_check tests.test_key_detection tests.test_first_mix tests.test_help tests.test_optional_package_check tests.test_section_model_download -v
+        run: python -m unittest tests.test_windows_audio_tools tests.test_package_check tests.test_key_detection tests.test_first_mix tests.test_help tests.test_optional_package_check tests.test_section_model_download tests.test_spleeter tests.test_release_source_bundle tests.test_about -v
       - name: Check timing freshness, preview controls and listening guidance
         run: python -m unittest tests.test_timing_freshness tests.test_timing_comparison tests.test_preview_navigation tests.test_transition_audio tests.test_listening tests.test_recommendations tests.test_content tests.test_demo.DemoAssetsTests -v
       - name: Build and exercise the core package
@@ -80,10 +80,31 @@ jobs:
         run: python build_desktop.py --with-sections --with-separation --check
       - name: Exercise both packaged optional workers on Windows
         if: env.DJ_OPTIONAL_PACKS == 'true' && runner.os == 'Windows'
-        run: python -m ci.check_optional_workers --executable "dist/DJ Studio/DJ Studio.exe" --resources "dist/DJ Studio/_internal" --output dist/optional-package-check --sections --separation
+        run: python -m ci.check_optional_workers --executable "dist/BeatStitch/BeatStitch.exe" --resources "dist/BeatStitch/_internal" --output dist/optional-package-check --sections --separation
       - name: Exercise both packaged optional workers on Linux
         if: env.DJ_OPTIONAL_PACKS == 'true' && runner.os == 'Linux'
-        run: python -m ci.check_optional_workers --executable "dist/DJ Studio/DJ Studio" --resources "dist/DJ Studio/_internal" --output dist/optional-package-check --sections --separation
+        run: python -m ci.check_optional_workers --executable "dist/BeatStitch/BeatStitch" --resources "dist/BeatStitch/_internal" --output dist/optional-package-check --sections --separation
+      - name: Keep the tested Windows app
+        if: success() && runner.os == 'Windows'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: BeatStitch-windows-x64
+          path: dist/BeatStitch/
+          compression-level: 0
+          retention-days: 3
+          if-no-files-found: error
+      - name: Archive the tested Linux app with executable permissions
+        if: success() && runner.os == 'Linux'
+        run: tar -czf dist/BeatStitch-linux-x64.tar.gz -C dist BeatStitch
+      - name: Keep the tested Linux app
+        if: success() && runner.os == 'Linux'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: BeatStitch-linux-x64
+          path: dist/BeatStitch-linux-x64.tar.gz
+          compression-level: 0
+          retention-days: 3
+          if-no-files-found: error
       - name: Keep build reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -96,5 +117,5 @@ jobs:
             dist/optional-package-check/report.json
             dist/optional-package-check/*.log
             build/audio-tools/manifest.json
-            build/DJ Studio/warn-DJ Studio.txt
-            build/DJ Studio.spec
+            build/BeatStitch/warn-BeatStitch.txt
+            build/BeatStitch.spec

@@ -27,7 +27,7 @@ LESSONS = (
         'id': 'bass', 'title': '3 · Hear competing basslines',
         'a': 'A · Basslines overlap', 'b': 'B · Bass handed over', 'topic': 'transitions',
         'listen': 'Around the middle, A lets both bass patterns overlap. B keeps one low end in charge and passes it to the next song. This difference is easier to hear on headphones or speakers that reproduce bass.',
-        'change': 'Both versions use the same two synthesized songs and the same crossfade. B uses DJ Studio’s 180 Hz split and one-bar bass handoff at the blend midpoint. Whole-example listening levels are matched.',
+        'change': 'Both versions use the same two synthesized songs and the same crossfade. B uses BeatStitch’s 180 Hz split and one-bar bass handoff at the blend midpoint. Whole-example listening levels are matched.',
         'try': 'In your mix: select a numbered transition, open the blend editor, and compare Bass handoff on and off. Shorter overlaps or different cues may also help when two musical parts compete.',
     },
 )
@@ -58,4 +58,4 @@ def lesson_audio(identity, root=None):
         return {'folder': str(folder), 'frames': frames[0], 'duration': frames[0] / djmix.SR}
     except (OSError, ValueError, KeyError, TypeError, RuntimeError) as error:
         raise djmix.MixError('This listening example is missing or damaged. Reinstall a complete copy '
-                             'of DJ Studio to restore the included audio.') from error
+                             'of BeatStitch to restore the included audio.') from error

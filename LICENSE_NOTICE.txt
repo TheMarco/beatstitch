@@ -1,0 +1,43 @@
+Beatstitch (formerly DJ Studio)
+Copyright (C) 2026 Marco van Hylckama Vlieg
+
+The original application source code, tests, build scripts, and documentation
+in this project are licensed under the GNU General Public License as published
+by the Free Software Foundation, either version 3 of the License, or (at your
+option) any later version. See LICENSE for the full terms.
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+Third-party source, libraries, fonts, model weights, and supplied branding
+artwork are not relicensed by this notice. Retain their original licenses and
+copyright notices. See the bundled Credits & licenses catalog and individual
+vendor/asset notices. A license on inference code is not automatically a
+license on model weights or on training recordings.
+
+The project's funding policy is free access with optional support at
+https://ko-fi.com/aianddesign . Donations do not unlock features and are not
+required to use the application. GPL permissions include commercial use and
+redistribution of the covered code. Optional creator support does not add any
+restriction to those permissions.
+
+Production stem separation uses Spleeter's MIT-licensed code and pretrained
+weights, converted numerically without changing the trained parameters.
+The former HTDemucs weights are retained only in private scientific comparison
+outputs and are excluded from production packages and their source bundles.
+
+The optional full section-analysis pack contains MuQ weights under CC BY-NC 4.0.
+That license permits attribution-compliant noncommercial redistribution and use;
+it does not cover commercial use of those weights. Their license is separate
+from the GPL application code. Core mixing and Spleeter do not depend on MuQ.
+A build without --with-sections omits those weights. An optional support link
+does not establish NonCommercial compliance; the actual distribution and use
+determine that condition. The creator chose to retain the bundled weights and
+optional coffee link without publisher clarification of this arrangement.
+All models whose terms permit our distribution are bundled. A direct publisher
+download does not expand any model's use permissions and is not a substitute
+for replacing a model lacking permission for ordinary DJ use.
+
+Application source: https://github.com/TheMarco/dj-studio
+License details: https://www.gnu.org/licenses/gpl-3.0.html

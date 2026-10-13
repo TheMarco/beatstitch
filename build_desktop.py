@@ -58,7 +58,7 @@ def run_packager(options, root, destination, environment):
     if sys.platform == 'darwin':
         subprocess.run([sys.executable, '-m', 'PyInstaller.utils.cliutils.makespec', *options],
                        check=True, cwd=root, env=environment)
-        spec = root / 'build' / 'DJ Studio.spec'
+        spec = root / 'build' / 'BeatStitch.spec'
         macos_bundle_only_spec(spec)
         subprocess.run([sys.executable, '-m', 'PyInstaller', *build_options, str(spec)],
                        check=True, cwd=root, env=environment)
@@ -114,15 +114,26 @@ def main():
     from studio_key_model import (verify_model as verify_key_model, MODEL_FILE,
                                   LICENSE_FILE, NETWORK_SHA256, RUNTIME_PACKAGES)
     verify_key_model()
+    from build_credits import build_catalog
+    credits_directory = root / 'build' / 'about-credits'
+    build_catalog(credits_directory, with_sections=options.with_sections,
+                  with_separation=options.with_separation)
+    icon_name = ('beatstitch.icns' if sys.platform == 'darwin' else
+                 'beatstitch.ico' if sys.platform == 'win32' else 'beatstitch-icon.png')
+    if not (credits_directory / icon_name).is_file():
+        raise SystemExit('The platform app icon is missing from assets/about.')
     if hashlib.sha256((root/'vendor/openkeyscan/model.py').read_bytes()).hexdigest() != NETWORK_SHA256:
         raise SystemExit('OpenKeyScan network source differs from the verified official revision.')
-    args=['--windowed','--onedir', '--name','DJ Studio',
+    args=['--windowed','--onedir', '--name','BeatStitch', '--icon', str(credits_directory / icon_name),
           '--specpath',str(root/'build'),'--collect-all','librosa','--collect-data','scipy',
           '--exclude-module','PySide6.QtWebEngineCore','--exclude-module','PySide6.QtWebEngineWidgets',
           '--exclude-module','matplotlib','--exclude-module','tkinter',
+          '--exclude-module','demucs','--exclude-module','tensorflow',
           '--add-data',str(root/'README.md')+':.','--add-data',str(root/'assets'/'fonts')+':assets/fonts',
+          '--add-data',str(root/'LICENSE')+':.','--add-data',str(root/'LICENSE_NOTICE.txt')+':.',
           '--add-data',str(root/'assets'/'models')+':assets/models',
           '--add-data',str(root/'assets'/'demo')+':assets/demo',
+          '--add-data',str(credits_directory)+':assets/about',
           '--add-data',str(root/'assets'/'lessons')+':assets/lessons']
     for name in (MODEL_FILE, LICENSE_FILE):
         args += ['--add-data', str(root/'assets/key'/name)+':assets/key']
@@ -132,15 +143,12 @@ def main():
     if options.with_separation:
         from studio_separation import model_directory
         from studio_separation_model import MODEL_FILE, MODEL_BYTES, MODEL_SHA256, sha256
-        import importlib.metadata
-        if importlib.metadata.version('demucs') != '4.1.0':
-            raise SystemExit('Install requirements-separation.txt in the build environment.')
         model = model_directory() / MODEL_FILE
         if not model.is_file() or model.stat().st_size != MODEL_BYTES or sha256(model) != MODEL_SHA256:
             raise SystemExit('Run download_separation_model.py before packaging separation.')
-        args += ['--add-data', str(model)+':assets/separation', '--copy-metadata', 'demucs',
-                 '--hidden-import', 'demucs.htdemucs', '--hidden-import', 'demucs.apply',
-                 '--copy-metadata', 'safetensors']
+        args += ['--add-data', str(model)+':assets/separation',
+                 '--add-data', str(root/'vendor/spleeter')+':vendor/spleeter',
+                 '--hidden-import', 'studio_spleeter_model']
     if options.with_sections:
         from studio_song_sections import verify_models
         verify_models()
@@ -160,9 +168,17 @@ def main():
     environment=os.environ.copy()
     environment.setdefault('PYINSTALLER_CONFIG_DIR',str(root/'build'/'pyinstaller-cache'))
     run_packager(args, root, destination, environment)
+    from build_credits import add_packaged_credits
+    if sys.platform == 'darwin':
+        packaged_root = destination / 'BeatStitch.app/Contents/Resources'
+        packaged_executable = destination / 'BeatStitch.app/Contents/MacOS/BeatStitch'
+    else:
+        packaged_root = destination / 'BeatStitch/_internal'
+        packaged_executable = destination / 'BeatStitch' / ('BeatStitch.exe' if sys.platform == 'win32' else 'BeatStitch')
+    add_packaged_credits(packaged_root / 'assets/about', packaged_executable)
     if cocoa_plugin is not None:
         from macos_qt_patch import apply_patch
-        apply_patch(destination / 'DJ Studio.app', root, cocoa_plugin)
+        apply_patch(destination / 'BeatStitch.app', root, cocoa_plugin)
     if options.check:
         check_package(destination)
 
@@ -171,9 +187,9 @@ def check_package(destination):
     """Run from outside the checkout; all audio tools must come from the package."""
     destination = Path(destination).resolve()
     if sys.platform == 'darwin':
-        executable = destination / 'DJ Studio.app/Contents/MacOS/DJ Studio'
+        executable = destination / 'BeatStitch.app/Contents/MacOS/BeatStitch'
     else:
-        executable = destination / 'DJ Studio' / ('DJ Studio.exe' if sys.platform == 'win32' else 'DJ Studio')
+        executable = destination / 'BeatStitch' / ('BeatStitch.exe' if sys.platform == 'win32' else 'BeatStitch')
     report = destination / f'package-check-{uuid.uuid4().hex[:8]}'
     environment = os.environ.copy()
     for name in ('PYTHONPATH', 'PYTHONHOME', 'QT_PLUGIN_PATH', 'QT_QPA_PLATFORM_PLUGIN_PATH',

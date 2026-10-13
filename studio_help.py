@@ -41,7 +41,7 @@ class HelpTopicList(QListWidget):
 class HelpDialog(QDialog):
     def __init__(self, parent=None, listen_examples=None):
         super().__init__(parent)
-        self.setWindowTitle("DJ Studio guide")
+        self.setWindowTitle("BeatStitch guide")
         self.setModal(False)
         self.resize(920, 660)
         self.setMinimumSize(740, 470)
@@ -53,7 +53,7 @@ class HelpDialog(QDialog):
         column.setContentsMargins(18, 16, 18, 16)
         column.setSpacing(12)
         header = QHBoxLayout()
-        title = QLabel("DJ Studio guide")
+        title = QLabel("BeatStitch guide")
         title.setFont(T.font(22))
         header.addWidget(title)
         header.addStretch(1)
@@ -90,7 +90,7 @@ class HelpDialog(QDialog):
             navigation.addWidget(widget)
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search topics, controls, or questions…")
-        self.search.setAccessibleName("Search the DJ Studio guide")
+        self.search.setAccessibleName("Search the BeatStitch guide")
         self.search.setToolTip("Search all help text. Try stabilize, BPM, key, preview, AirPods, or export.")
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self.filter_topics)

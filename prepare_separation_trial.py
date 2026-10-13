@@ -23,7 +23,7 @@ from studio_cache import source_signature
 from studio_process import check_cancelled
 from studio_storage import require_space
 
-from studio_separation_model import (MODEL_REPOSITORY, MODEL_REVISION, MODEL_FILE, MODEL_SHA256,
+from research_demucs_model import (MODEL_REPOSITORY, MODEL_REVISION, MODEL_FILE, MODEL_SHA256,
                                      MODEL_BYTES, VERSION, RATE, STEMS, VARIANTS, sha256, normalization, load_model)
 
 

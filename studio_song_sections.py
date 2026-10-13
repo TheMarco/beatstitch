@@ -38,7 +38,7 @@ def verify_models(progress=lambda message: None):
     for index, (name, expected) in enumerate(MANIFEST.items(), 1):
         file = model_directory() / name
         if not file.is_file() or file.stat().st_size != expected['size']:
-            raise djmix.MixError('Build/drop analysis is not installed completely. Install the section-analysis edition of DJ Studio. Other cue tools are still available.')
+            raise djmix.MixError('Build/drop analysis is not installed completely. Install the section-analysis edition of BeatStitch. Other cue tools are still available.')
         progress(f'Checking section-analysis files ({index}/{len(MANIFEST)})')
         digest = hashlib.sha256()
         with file.open('rb') as handle:

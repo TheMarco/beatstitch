@@ -11,8 +11,8 @@ from studio_package_check import bundled_tool, run_checks
 class MacBundleBuildTests(unittest.TestCase):
     SPEC = '''
 exe = EXE('program', exclude_binaries=True, strip=False, upx=True)
-coll = COLLECT(exe, binaries, datas, strip=False, upx=True, upx_exclude=[], name='DJ Studio')
-app = BUNDLE(coll, name='DJ Studio.app', bundle_identifier='local.djstudio.app')
+coll = COLLECT(exe, binaries, datas, strip=False, upx=True, upx_exclude=[], name='BeatStitch')
+app = BUNDLE(coll, name='BeatStitch.app', bundle_identifier='local.djstudio.app')
 '''
 
     def test_app_receives_executable_and_all_resources_without_collecting_twice(self):
@@ -36,7 +36,7 @@ app = BUNDLE(coll, name='DJ Studio.app', bundle_identifier='local.djstudio.app')
     def test_unexpected_spec_is_rejected_without_changing_it(self):
         from build_desktop import macos_bundle_only_spec
         variants = (self.SPEC + '\nother = coll\n', self.SPEC.replace('BUNDLE(coll,', 'BUNDLE(exe,'),
-                    self.SPEC.replace("name='DJ Studio')", "name='DJ Studio', new_option=True)"))
+                    self.SPEC.replace("name='BeatStitch')", "name='BeatStitch', new_option=True)"))
         with tempfile.TemporaryDirectory() as folder:
             spec = Path(folder) / 'app.spec'
             for source in variants:
@@ -50,8 +50,8 @@ app = BUNDLE(coll, name='DJ Studio.app', bundle_identifier='local.djstudio.app')
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             (root / 'build').mkdir()
-            spec = root / 'build/DJ Studio.spec'
-            options = ['--windowed', '--onedir', '--name', 'DJ Studio', 'desktop_app.py']
+            spec = root / 'build/BeatStitch.spec'
+            options = ['--windowed', '--onedir', '--name', 'BeatStitch', 'desktop_app.py']
             for platform in ('darwin', 'win32', 'linux'):
                 spec.write_text(self.SPEC)
                 with patch('build_desktop.sys.platform', platform), patch('build_desktop.subprocess.run') as run:
@@ -152,7 +152,7 @@ class PackageCheckTests(unittest.TestCase):
             with patch('build_desktop.sys.platform', 'win32'):
                 check_package(Path(folder))
             args, kwargs = run.call_args
-            self.assertEqual(args[0][0], str(Path(folder).resolve() / 'DJ Studio/DJ Studio.exe'))
+            self.assertEqual(args[0][0], str(Path(folder).resolve() / 'BeatStitch/BeatStitch.exe'))
             self.assertEqual(args[0][1], '--check-package')
             self.assertEqual(kwargs['env']['PATH'], '')
             self.assertNotEqual(kwargs['cwd'], folder)

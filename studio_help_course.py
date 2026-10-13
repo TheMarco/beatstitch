@@ -236,7 +236,7 @@ LESSONS = (
 
     ## Source tempo and mix tempo are different
 
-    **Source BPM** tells DJ Studio how fast the recording originally plays.
+    **Source BPM** tells BeatStitch how fast the recording originally plays.
     **Project BPM** tells it how fast the mix should play. The app changes duration
     while preserving pitch unless you also enable transposition. Typing a different
     source BPM is a correction of the source description, not the same decision as
@@ -833,7 +833,7 @@ OVERVIEW = lesson('beginner-course', 'Beginner course · start here',
                   'beginner tutorial lessons learn walkthrough first mix getting started', '''
     ## From choosing songs to a mix you want to keep
 
-    DJ Studio helps you arrange songs, match their speed and prepare blends.
+    BeatStitch helps you arrange songs, match their speed and prepare blends.
     You choose the music, listen to the suggestions and decide what stays.
     A good mix has a clear pulse, a musical handover and a sense of direction.
     The longest overlap or the most processing is not automatically the best choice.

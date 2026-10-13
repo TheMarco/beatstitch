@@ -1,2 +1,2 @@
-# Optional listening prototype; keep outside the production desktop environment.
-demucs==4.1.0
+# Production Spleeter uses NumPy and PyTorch already pinned by requirements.txt.
+# No TensorFlow, Demucs, or additional inference runtime is needed.

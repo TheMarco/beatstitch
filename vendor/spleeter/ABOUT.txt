@@ -1,0 +1,25 @@
+Spleeter four-stem separation
+Copyright (c) 2019-present, Deezer SA. MIT license retained in LICENSE.
+
+Authors: Romain Hennequin, Anis Khlif, Felix Voituret, Manuel Moussallam.
+Source: Spleeter 2.4.2 official Python source distribution.
+Source archive SHA-256: e56d4832cfa001d937bac237349716b6e3579ca23862504a51c10c2393d9f3f0
+Model: official 4stems.tar.gz, release v1.4.0, 146,308,147 bytes.
+Archive SHA-256: 3adb4a50ad4eb18c7c4d65fcf4cf2367a07d48408a5eb7d03cd20067429dfaa8
+Model URL: https://github.com/deezer/spleeter/releases/download/v1.4.0/4stems.tar.gz
+
+The authors explicitly license source code and pretrained models under MIT in
+their paper: https://github.com/deezer/spleeter/blob/master/paper.md
+Paper: https://doi.org/10.21105/joss.02154
+
+Beatstitch adapts the unchanged trained U-Net weights to its existing PyTorch
+runtime. TensorFlow SAME padding, skip connections and normalization are
+preserved. The official supported 16 kHz frequency setting and average mask
+extension retain high frequencies. Numeric checkpoint conversion is deterministic
+and does not execute the saved TensorFlow graph or require TensorFlow at runtime.
+The network and complete audio frontend/synthesis were checked against upstream
+TensorFlow inference. These checks establish implementation accuracy, not that
+separation will be clean for every recording.
+
+TensorFlow is used only in the isolated development reference check; the app
+does not ship TensorFlow or the experimental third-party checkpoint reader.

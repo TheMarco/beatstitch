@@ -1,0 +1,251 @@
+[
+  {
+    "id": "beatstitch",
+    "name": "BeatStitch",
+    "category": "Application",
+    "credit": "Marco van Hylckama Vlieg — copyright 2026",
+    "purpose": "Original application code, build scripts, tests, and documentation. Free access with optional Ko-fi support. Third-party components and assets retain their own terms; experimental model packs require separate release review.",
+    "license": "GPL-3.0-or-later (original application code)",
+    "urls": [
+      "https://github.com/TheMarco/dj-studio",
+      "https://www.gnu.org/licenses/gpl-3.0.html"
+    ],
+    "notice_files": [
+      "LICENSE",
+      "LICENSE_NOTICE.txt"
+    ]
+  },
+  {
+    "id": "python",
+    "name": "Python",
+    "category": "Core projects",
+    "credit": "Python Software Foundation and Python contributors",
+    "purpose": "Application runtime and standard library.",
+    "license": "PSF License Agreement and included third-party notices",
+    "urls": [
+      "https://www.python.org/",
+      "https://docs.python.org/3/license.html"
+    ],
+    "notice_files": [
+      "vendor/python-LICENSE"
+    ]
+  },
+  {
+    "id": "qt",
+    "name": "Qt / Qt for Python",
+    "category": "Core projects",
+    "credit": "The Qt Company and Qt Project contributors",
+    "purpose": "Native interface, vector rendering, accessibility, and audio playback. Python bindings are provided by PySide6 and Shiboken. Individual Qt components include additional third-party notices. Original notices are retained from the matching Qt source distributions; some source components are omitted from this runtime.",
+    "license": "LGPL-3.0 / GPL-3.0 and component-specific notices",
+    "urls": [
+      "https://www.qt.io/",
+      "https://doc.qt.io/qt-6/licenses-used-in-qt.html"
+    ],
+    "notice_files": [
+      "vendor/qt-cocoa/LICENSES/*.txt",
+      "vendor/qt-runtime/qtbase/**/*",
+      "vendor/qt-runtime/qtdeclarative/**/*",
+      "vendor/qt-runtime/qtmultimedia/**/*",
+      "vendor/qt-runtime/qtsvg/**/*",
+      "vendor/qt-runtime/qtvirtualkeyboard/**/*",
+      "vendor/qt-runtime/qtwebengine/**/*"
+    ]
+  },
+  {
+    "id": "qt-cocoa",
+    "name": "Qt Cocoa accessibility repair",
+    "category": "Platform components",
+    "credit": "Qt Project contributors; Qt change 765434",
+    "purpose": "The macOS edition uses a locally built Qt 6.11.2 Cocoa plugin with the reviewed accessibility ownership fix. Source, patch, and rebuild instructions accompany the app. This is not an official Qt patch release.",
+    "license": "Qt LGPL/GPL terms and accompanying component notices",
+    "urls": [
+      "https://codereview.qt-project.org/c/qt/qtbase/+/765434"
+    ],
+    "notice_files": [
+      "vendor/qt-cocoa/README.md"
+    ]
+  },
+  {
+    "id": "ffmpeg",
+    "name": "FFmpeg / ffprobe",
+    "category": "Core projects",
+    "credit": "FFmpeg developers and contributors",
+    "purpose": "Audio decoding, probing, conversion, filtering, and export. The linked codec and support libraries are credited separately for this build.",
+    "license": "Build-dependent LGPL/GPL terms; see this build's native-library entry and notices",
+    "urls": [
+      "https://ffmpeg.org/",
+      "https://ffmpeg.org/legal.html"
+    ],
+    "notice_files": []
+  },
+  {
+    "id": "qt-ffmpeg",
+    "name": "FFmpeg in Qt Multimedia",
+    "category": "Platform components",
+    "credit": "FFmpeg developers and Qt Multimedia contributors",
+    "purpose": "The FFmpeg libraries supplied with Qt decode audio for native playback. These are separate from the command-line FFmpeg and ffprobe tools used for processing and export.",
+    "license": "LGPL-2.1-or-later in the installed Qt Multimedia build; see Qt's third-party notices",
+    "urls": [
+      "https://doc.qt.io/qt-6/qtmultimedia-attribution-ffmpeg.html",
+      "https://ffmpeg.org/"
+    ],
+    "notice_files": [
+      "vendor/qt-runtime/qt-ffmpeg/*"
+    ]
+  },
+  {
+    "id": "rubber-band",
+    "name": "Rubber Band",
+    "category": "Core projects",
+    "credit": "Breakfast Quay, Chris Cannam, and Rubber Band contributors",
+    "purpose": "Independent tempo changes and pitch transposition, including formant preservation.",
+    "license": "GPL-2.0-or-later for the bundled open-source edition; see distribution notices",
+    "urls": [
+      "https://breakfastquay.com/rubberband/"
+    ],
+    "notice_files": []
+  },
+  {
+    "id": "barlow",
+    "name": "Barlow",
+    "category": "Typography",
+    "credit": "The Barlow Project Authors — copyright 2017",
+    "purpose": "Interface typeface: Regular, Medium, SemiBold, and Bold. The logo wordmark is outlined artwork.",
+    "license": "SIL Open Font License 1.1",
+    "urls": [
+      "https://github.com/jpt/barlow"
+    ],
+    "notice_files": [
+      "assets/fonts/OFL.txt"
+    ]
+  },
+  {
+    "id": "openkeyscan",
+    "name": "OpenKeyScan",
+    "category": "Audio research and models",
+    "credit": "rekordcloud / OpenKeyScan contributors; Alexander Sommer (MusicalKeyCNN)",
+    "purpose": "Source-key detection using the pinned OpenKeyScan 3 checkpoint and network code. Based on MusicalKeyCNN and key-classification research by Filip Korzeniowski and Gerhard Widmer. Original source license is preserved; the app adapts inference and preprocessing.",
+    "license": "MIT (upstream repository license)",
+    "urls": [
+      "https://github.com/rekordcloud/openkeyscan-analyzer",
+      "https://github.com/a1ex90/MusicalKeyCNN"
+    ],
+    "notice_files": [
+      "vendor/openkeyscan/LICENSE"
+    ]
+  },
+  {
+    "id": "beat-this",
+    "name": "Beat This!",
+    "category": "Audio research and models",
+    "credit": "Institute of Computational Perception, JKU Linz, Austria / CPJKU — copyright 2024",
+    "purpose": "Beat and downbeat observations using the final0 model. Estimates support alignment, timing analysis, and tempo stabilization.",
+    "license": "MIT (code and model)",
+    "urls": [
+      "https://github.com/CPJKU/beat_this"
+    ],
+    "notice_files": [
+      "assets/models/Beat-This-LICENSE.txt"
+    ]
+  },
+  {
+    "id": "panns",
+    "name": "PANNs CNN10",
+    "category": "Audio research and models",
+    "credit": "Qiuqiang Kong, Yin Cao, Turab Iqbal, Yuxuan Wang, Wenwu Wang, and Mark D. Plumbley",
+    "purpose": "Passage observations for voices, instruments, and percussion. Adapted inference uses an equivalent FFT frontend; weights are unchanged apart from their local filename. See the attribution notice for the paper, revision, and modifications.",
+    "license": "Weights: CC BY 4.0; inference code: MIT",
+    "urls": [
+      "https://github.com/qiuqiangkong/audioset_tagging_cnn",
+      "https://doi.org/10.5281/zenodo.3987831",
+      "https://creativecommons.org/licenses/by/4.0/"
+    ],
+    "notice_files": [
+      "assets/models/PANNS-ABOUT.txt",
+      "assets/models/PANNS-LICENSE.MIT"
+    ]
+  },
+  {
+    "id": "edmformer",
+    "name": "EDMFormer / EDM-98",
+    "category": "Optional: section analysis",
+    "credit": "25ohms and EDM-98 contributors",
+    "purpose": "Experimental intro, build, drop, and breakdown analysis. Vendored inference source and local checkpoint are pinned; remote loading is replaced by verified local assets.",
+    "license": "CC BY 4.0",
+    "urls": [
+      "https://github.com/25ohms/EDM-98"
+    ],
+    "notice_files": [
+      "vendor/sections/EDM98-LICENSE",
+      "vendor/sections/README.md"
+    ]
+  },
+  {
+    "id": "musicfm",
+    "name": "MusicFM",
+    "category": "Optional: section analysis",
+    "credit": "Minz Won and collaborators; ByteDance Inc. — copyright 2023",
+    "purpose": "Music representations used by optional section analysis. The flash-attention implementation is omitted. The exact MSD checkpoint matches the author's MIT-labeled model repository. The author does not confirm all third-party rights for a particular commercial use; the model label does not clear the underlying training recordings.",
+    "license": "Included code: MIT; weights: publisher MIT model label; third-party commercial rights not confirmed",
+    "urls": [
+      "https://github.com/minzwon/musicfm",
+      "https://huggingface.co/minzwon/MusicFM/blob/main/README.md",
+      "https://github.com/minzwon/musicfm/issues/6#issuecomment-4948654100"
+    ],
+    "notice_files": [
+      "vendor/sections/MusicFM-LICENSE",
+      "vendor/sections/README.md"
+    ]
+  },
+  {
+    "id": "muq",
+    "name": "MuQ",
+    "category": "Optional: section analysis",
+    "credit": "Tencent AI Lab and MuQ contributors",
+    "purpose": "Music representations for optional section analysis. The inference subset omits MuLan, training, and flash attention, and loads verified local weights. The separate CC BY-NC model license permits noncommercial redistribution and use; it does not permit commercial model use. This restriction applies to the weights, not BeatStitch’s GPL code.",
+    "license": "Code: MIT; weights: CC BY-NC 4.0",
+    "urls": [
+      "https://github.com/tencent-ailab/MuQ"
+    ],
+    "notice_files": [
+      "vendor/sections/MuQ-LICENSE",
+      "vendor/sections/MuQ-LICENSE-weights",
+      "vendor/sections/README.md"
+    ]
+  },
+  {
+    "id": "spleeter",
+    "name": "Spleeter",
+    "category": "Optional: source separation",
+    "credit": "Romain Hennequin, Anis Khlif, Felix Voituret, Manuel Moussallam; Deezer SA",
+    "purpose": "Local vocal, drum, bass and accompaniment separation. The official four-stem weights are converted numerically to the existing PyTorch runtime. Architecture, padding and waveform synthesis were checked against upstream TensorFlow inference; separation quality is still recording-dependent.",
+    "license": "Code and pretrained models: MIT",
+    "urls": [
+      "https://github.com/deezer/spleeter",
+      "https://doi.org/10.21105/joss.02154"
+    ],
+    "notice_files": [
+      "vendor/spleeter/LICENSE",
+      "vendor/spleeter/ABOUT.txt"
+    ]
+  },
+  {
+    "id": "gcc-runtime",
+    "name": "GNU GCC runtimes (Mac build)",
+    "platforms": [
+      "darwin"
+    ],
+    "version": "13.4.0",
+    "category": "Native audio and runtime libraries",
+    "credit": "Free Software Foundation, Inc. and GCC contributors",
+    "purpose": "libgfortran, libgcc and libquadmath support SciPy numerical analysis. Matching source, the Darwin patch and rebuild recipe accompany the Mac release. Packaging changes relocation paths and signatures, not compiled code.",
+    "license": "libquadmath: LGPL-2.1-or-later; libgfortran/libgcc: GPL-3.0-or-later with GCC Runtime Library Exception 3.1",
+    "urls": [
+      "https://gcc.gnu.org/",
+      "https://www.gnu.org/licenses/gcc-exception-3.1.html"
+    ],
+    "notice_files": [
+      "vendor/gcc-runtime/*.txt"
+    ]
+  }
+]

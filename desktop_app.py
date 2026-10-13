@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""DJ Studio: a native Qt desktop arrangement editor. No browser or web server."""
+"""BeatStitch: a native Qt desktop arrangement editor. No browser or web server."""
 from __future__ import annotations
 
 import argparse
@@ -30,7 +30,7 @@ if __name__ == '__main__' and sys.argv[1:2] == ['--key-worker']:
     raise SystemExit(key_worker_main(sys.argv[2:]))
 
 from PySide6.QtCore import QEvent, QObject, QRunnable, QSignalBlocker, QSize, QStandardPaths, QThreadPool, QTimer, QUrl, Qt, Signal
-from PySide6.QtGui import QAction, QActionGroup, QDesktopServices, QFont, QKeySequence
+from PySide6.QtGui import QAction, QActionGroup, QDesktopServices, QFont, QIcon, QKeySequence
 from PySide6.QtMultimedia import QAudioOutput, QMediaDevices, QMediaPlayer
 from PySide6.QtWidgets import (QAbstractButton, QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QInputDialog, QLabel,
                                QLineEdit, QMainWindow, QMenu, QProgressBar, QPushButton, QSlider, QSplitter,
@@ -192,13 +192,15 @@ class Studio(QMainWindow):
         self.guide_dialog = None
         self.cue_review = None
         self.help_window = None
+        self.about_window = None
         self.key_suggestion = None
         self.prefs = self.read_prefs()
         self.advanced_mode = bool(self.prefs.get('advanced_controls', False))
         from studio_storage import StorageManager
         self.storage = StorageManager(self.data)
         self.output_preference = self.prefs.get("audio_output", "system")
-        self.setWindowTitle("DJ Studio")
+        self.setWindowTitle("BeatStitch")
+        self.setWindowIcon(QIcon(str(ROOT / 'assets/about/beatstitch-icon.png')))
         self.resize(1520, 940)
         self.setMinimumSize(1200, 760)
         self.pool = QThreadPool(self)
@@ -395,7 +397,7 @@ class Studio(QMainWindow):
         signature = label("4 / 4", "lcd")
         self.time_signature = signature
         signature.setFont(T.font(15, QFont.Weight.Medium, tabular=True))
-        signature.setToolTip("DJ Studio assumes 4/4 time")
+        signature.setToolTip("BeatStitch assumes 4/4 time")
         row.addWidget(signature)
         row.addStretch(1)
         self.rewind_btn = self.transport_button("rewind", "Back to the start (Home)", self.rewind)
@@ -1004,7 +1006,7 @@ class Studio(QMainWindow):
         self.projects_btn.setAccessibleDescription(self.projects_btn.toolTip())
         self.projects_btn.setProperty('helpTopic', 'projects')
         row.addWidget(self.projects_btn)
-        guide = self.help_button("beginner-course", "DJ Studio guide")
+        guide = self.help_button("beginner-course", "BeatStitch guide")
         guide.setText("Help")
         guide.setFixedWidth(42)
         row.addWidget(guide)
@@ -1033,6 +1035,14 @@ class Studio(QMainWindow):
         self.help_window.show()
         self.help_window.raise_()
         self.help_window.activateWindow()
+
+    def show_about(self):
+        from studio_about import AboutDialog
+        if self.about_window is None:
+            self.about_window = AboutDialog(self)
+        self.about_window.show()
+        self.about_window.raise_()
+        self.about_window.activateWindow()
 
     def build_menus(self):
         bar = self.menuBar()
@@ -1106,10 +1116,13 @@ class Studio(QMainWindow):
         help_menu = bar.addMenu("Help")
         add(help_menu, "Help for this control", self.show_help, "F1")
         add(help_menu, "Beginner course…", lambda: self.show_help("beginner-course"))
-        add(help_menu, "DJ Studio guide", lambda: self.show_help("quick-start"))
+        add(help_menu, "BeatStitch guide", lambda: self.show_help("quick-start"))
         self.act_lessons = add(help_menu, 'Listening examples…', self.show_lessons)
         add(help_menu, "Understanding tempo correction", lambda: self.show_help("timing"))
         add(help_menu, "Keyboard and mouse shortcuts", lambda: self.show_help("shortcuts"))
+        help_menu.addSeparator()
+        self.act_about = add(help_menu, "About BeatStitch…", self.show_about)
+        self.act_about.setMenuRole(QAction.MenuRole.AboutRole)
 
     def install_guidance(self):
         """Short explanations at the control, with F1 leading to the full topic."""
@@ -1986,7 +1999,7 @@ class Studio(QMainWindow):
     def import_paths(self, paths, *, finished_callback=None, failed_callback=None,
                      progress_callback=None, cancellable=False):
         if not paths:
-            self.notify("No audio files found there. DJ Studio reads WAV, AIFF, FLAC, MP3, M4A, AAC and OGG.", "error")
+            self.notify("No audio files found there. BeatStitch reads WAV, AIFF, FLAC, MP3, M4A, AAC and OGG.", "error")
             return
         if self.importing or self.rendering:
             self.say("Wait for the current import or render to finish.")
@@ -2929,7 +2942,7 @@ class Studio(QMainWindow):
         if self.jobs:
             return
         start = str(self.project_path.parent if self.project_path else self.data)
-        path, _ = QFileDialog.getOpenFileName(self, "Open a mix", start, "DJ Studio project (*.djmix)")
+        path, _ = QFileDialog.getOpenFileName(self, "Open a mix", start, "BeatStitch project (*.djmix)")
         if not path:
             return
         self.open_project_async(Path(path))
@@ -3023,7 +3036,7 @@ class Studio(QMainWindow):
 
     def save_project_as(self):
         start = self.project_path or (self.data / f"{self.session.name}.djmix")
-        path, _ = QFileDialog.getSaveFileName(self, "Save mix", str(start), "DJ Studio project (*.djmix)")
+        path, _ = QFileDialog.getSaveFileName(self, "Save mix", str(start), "BeatStitch project (*.djmix)")
         if path:
             self.write_project(Path(path))
 
@@ -3656,6 +3669,16 @@ class Studio(QMainWindow):
             event.accept()
 
 
+def configure_application_identity(app):
+    """Return the existing data folder while applying the current visible name."""
+    app.setApplicationName("DJ Studio")
+    app.setOrganizationName("DJ Studio")
+    data = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppLocalDataLocation))
+    app.setApplicationName("BeatStitch")
+    app.setApplicationDisplayName("BeatStitch")
+    return data
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--library", type=Path)
@@ -3663,8 +3686,10 @@ def main():
     parser.add_argument("--data-dir", type=Path)
     args = parser.parse_args()
     app = QApplication(sys.argv[:1])
-    app.setApplicationName("DJ Studio")
-    app.setOrganizationName("DJ Studio")
+    # Resolve the established data location before changing the visible identity.
+    # Retain it on every platform; a rebrand must not create an empty new library.
+    legacy_data = configure_application_identity(app)
+    app.setWindowIcon(QIcon(str(ROOT / 'assets/about/beatstitch-icon.png')))
     app.setStyle("Fusion")
     try:
         app.styleHints().setColorScheme(Qt.ColorScheme.Dark)
@@ -3676,7 +3701,7 @@ def main():
     if args.data_dir:
         data = args.data_dir
     else:
-        data = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppLocalDataLocation))
+        data = legacy_data
     window = Studio(data, args.project)
     window.show()
     if args.library:

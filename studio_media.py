@@ -114,7 +114,7 @@ def create_portable_copy(session, destination, progress=lambda message: None):
             track.path, track.fingerprint = relative, copy.deepcopy(found)
         value = draft.to_dict(); value['_portable_paths'] = 1
         (stage / 'Mix.djmix').write_text(json.dumps(value, indent=2, allow_nan=False), encoding='utf-8')
-        (stage / 'OPEN ME.txt').write_text('Open Mix.djmix in DJ Studio. Keep the media folder next to it.\n'
+        (stage / 'OPEN ME.txt').write_text('Open Mix.djmix in BeatStitch. Keep the media folder next to it.\n'
                                           'This folder contains the editable mix and copies of all its source songs.\n', encoding='utf-8')
         progress('Publishing the portable project')
         destination.mkdir()  # Exclusive creation closes the check/publish race.

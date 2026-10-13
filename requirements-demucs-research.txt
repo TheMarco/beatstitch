@@ -1,0 +1,2 @@
+# Private scientific comparison only; not used by the desktop build.
+demucs==4.1.0

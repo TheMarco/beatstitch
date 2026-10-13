@@ -9,3 +9,4 @@ assets/models/*.pth
 assets/sections/
 assets/key/*.pt
 assets/qt/*.tar.gz
+assets/separation/*.npz

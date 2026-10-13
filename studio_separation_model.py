@@ -1,17 +1,11 @@
-"""Pinned local music separation shared by the trial and isolated app worker."""
-from fractions import Fraction
+"""Redistributable, pinned Spleeter model for the isolated app worker."""
 import hashlib
-import json
 from pathlib import Path
 
-import numpy as np
-
-MODEL_REPOSITORY = 'adefossez/HTDemucs'
-MODEL_REVISION = 'cbc8a9b1a87023b7fd74e7b3412e6321c0eab003'
-MODEL_FILE = '955717e8.safetensors'
-MODEL_SHA256 = 'd9fa14133cfcc034a6758923bb3a8ca9f8dfd0b582134643bbf83f72c17576dd'
-MODEL_BYTES = 84025440
-VERSION = 1
+MODEL_FILE = 'spleeter-4stems.npz'
+MODEL_SHA256 = 'a8b3fb520dc13f47c40e5b5d7df88c682a409da56c8bf03b048290e27543617c'
+MODEL_BYTES = 157306998
+VERSION = 2
 RATE = 48000
 STEMS = ('drums', 'bass', 'other', 'vocals')
 VARIANTS = ('original', 'instrumental', 'drums', 'vocals', 'recombined')
@@ -22,33 +16,9 @@ def sha256(path):
         return hashlib.file_digest(handle, 'sha256').hexdigest()
 
 
-def normalization(audio):
-    """Demucs normalization, bounded for silence and phase-opposed stereo."""
-    ref = audio.mean(axis=1)
-    mean = float(ref.mean())
-    scale = max(float(ref.std()), float(audio.std()) * .1, 1e-8)
-    return mean, scale
-
 def load_model(path):
-    if path.stat().st_size != MODEL_BYTES or sha256(path) != MODEL_SHA256:
+    path = Path(path)
+    if path.is_symlink() or path.stat().st_size != MODEL_BYTES or sha256(path) != MODEL_SHA256:
         raise ValueError('The local separation model does not match the verified version.')
-    from demucs.htdemucs import HTDemucs
-    from safetensors import safe_open
-
-    def fraction(value):
-        if value.get('_type') == 'fraction':
-            return Fraction(value['numerator'], value['denominator'])
-        return value
-
-    with safe_open(path, framework='pt', device='cpu') as handle:
-        metadata = handle.metadata()
-        if metadata.get('klass') != 'demucs.htdemucs.HTDemucs' or 'structure' in metadata:
-            raise ValueError('Unsupported separation checkpoint format.')
-        # Explicit known class; no imports or pickled objects from metadata.
-        model = HTDemucs(*json.loads(metadata['args']),
-                         **json.loads(metadata['kwargs'], object_hook=fraction))
-        model.load_state_dict({key: handle.get_tensor(key) for key in handle.keys()}, strict=True)
-    if tuple(model.sources) != STEMS or model.samplerate != 44100 or model.audio_channels != 2:
-        raise ValueError('The model does not produce the expected stereo sources.')
-    return model.eval()
-
+    from studio_spleeter_model import load_models
+    return load_models(path)
