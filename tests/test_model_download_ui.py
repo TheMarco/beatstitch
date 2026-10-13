@@ -6,7 +6,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from PySide6.QtCore import QThreadPool
+from PySide6.QtCore import QCoreApplication, QEvent, QThreadPool
 from PySide6.QtWidgets import QApplication, QWidget
 
 from studio_downloads import DownloadsDialog
@@ -36,7 +36,10 @@ class DownloadsUITests(unittest.TestCase):
         if self.dialog.busy:
             self.dialog.request_cancel(); self.pump(lambda: not self.dialog.busy)
         self.host.pool.waitForDone(2000)
-        self.dialog.deleteLater(); self.host.deleteLater(); self.app.processEvents()
+        self.dialog.hide(); self.host.hide()
+        self.dialog.deleteLater(); self.host.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        self.app.processEvents()
 
     def pump(self, done):
         end = time.monotonic()+3

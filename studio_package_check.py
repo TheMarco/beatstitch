@@ -55,7 +55,7 @@ def find_bundled_weights(root):
     if assets.is_dir():
         for path in sorted(assets.rglob('*')):
             if path.is_file() and path.suffix.lower() in WEIGHT_SUFFIXES:
-                found.append(str(path.relative_to(root)))
+                found.append(path.relative_to(root).as_posix())
     return found
 
 

@@ -243,9 +243,6 @@ class Studio(QMainWindow):
         self.load_bands()
         self.update_storage_pins()
         self.storage.prune()
-        from studio_model_store import available
-        if not self.prefs.get('downloads_intro_seen') and not any(available(p) for p in ('beats', 'key', 'content')):
-            QTimer.singleShot(600, self.show_downloads)
 
     def eventFilter(self, watched, event):
         # Destructive arrangement shortcuts must not act on a different focused panel.
@@ -617,6 +614,10 @@ class Studio(QMainWindow):
         self.demo_btn.setToolTip('Open an editable three-song mix with included demo music. No downloads or imports needed. Unsaved work is kept in Projects → Recovery copies.')
         self.demo_btn.setProperty('helpTopic', 'demo')
         empty_column.addWidget(self.demo_btn, 0, Qt.AlignmentFlag.AlignCenter)
+        self.downloads_btn = button('Optional feature downloads · 125 MB recommended', self.show_downloads)
+        self.downloads_btn.setToolTip('Choose beat, key and voice/drum detectors, or skip them and use manual controls. Vocal removal and the large advanced detector are separate optional choices. No download starts until you choose it.')
+        self.downloads_btn.setProperty('helpTopic', 'downloads')
+        empty_column.addWidget(self.downloads_btn, 0, Qt.AlignmentFlag.AlignCenter)
         empty_column.addStretch(1)
         self.clip_stack.addWidget(empty)
         self.clip_editor = QWidget()

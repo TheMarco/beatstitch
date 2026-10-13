@@ -133,8 +133,13 @@ class StoreTests(unittest.TestCase):
             store.install('test')
 
     def test_modified_file_is_repairable_and_does_not_keep_ready_label(self):
-        folder = self.install(); (folder/'model.pt').write_bytes(b'x'*len(self.data))
-        self.assertEqual(store.status('test'), 'verify')
+        folder = self.install(); target=folder/'model.pt'; original=target.stat()
+        target.write_bytes(b'x'*len(self.data))
+        real_stat=Path.stat
+        def same_timestamp(path, *args, **kwargs):
+            return original if path == target else real_stat(path, *args, **kwargs)
+        with patch.object(Path, 'stat', same_timestamp):
+            self.assertEqual(store.status('test'), 'verify')
         self.install(); self.assertEqual(store.status('test'), 'ready')
 
     def test_remove_only_owned_model_pack_and_saved_bytes(self):

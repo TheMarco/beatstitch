@@ -135,7 +135,15 @@ def available(pack):
 
 def _identity(path):
     s = path.stat()
-    return [s.st_size, s.st_mtime_ns, s.st_ctime_ns, s.st_ino, s.st_dev]
+    # Windows can give two fast same-size writes identical timestamps. Keep a
+    # small content fingerprint as well, without hashing gigabytes on the UI
+    # thread. The inference engines still verify the complete pinned SHA-256.
+    import hashlib
+    sample = hashlib.sha256()
+    with path.open('rb') as source:
+        for offset in (0, max(0, s.st_size//2-32768), max(0, s.st_size-65536)):
+            source.seek(offset); sample.update(source.read(65536))
+    return [s.st_size, s.st_mtime_ns, s.st_ctime_ns, s.st_ino, s.st_dev, sample.hexdigest()]
 
 
 def status(pack):
@@ -219,9 +227,9 @@ def install(pack, progress=lambda event: None):
             staged.unlink(missing_ok=True)
             completed += incoming['size']
         receipt = {'schema': 1, 'files': {f['name']: {'sha256': f['sha256'], 'identity': _identity(folder/f['name'])} for f in spec['files']}}
-        pending = folder/'installed.pending'
+        pending = _owned(folder, 'installed.pending')
         pending.write_text(json.dumps(receipt, indent=2)+'\n', encoding='utf-8')
-        check_cancelled(); os.replace(pending, folder/'installed.json')
+        check_cancelled(); os.replace(pending, _owned(folder, 'installed.json'))
         progress(dict(pack=pack, phase='Ready', received=spec['download_bytes'], total=spec['download_bytes'],
                       pack_received=spec['download_bytes'], pack_total=spec['download_bytes'], message=spec['title']+' is ready.'))
     return folder

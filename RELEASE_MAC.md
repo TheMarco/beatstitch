@@ -19,7 +19,7 @@ permission for commercial model use. Spleeter code and weights are MIT licensed.
 Extract the application archive and move BeatStitch.app to a folder of your choice,
 usually Applications. Developer ID signing and Apple notarization are tracked in
 [MAC_SIGNING.md](MAC_SIGNING.md). The default installer contains no model weights.
-The first-run **Downloads & features** window offers the three recommended small
+The starter screen and File → **Downloads & features** offer the three recommended small
 detectors (125 MB total), separate vocal removal (146 MB), and optional advanced
 build/drop detection (3.07 GB download). Users may skip all downloads and mix with
 manual controls. Downloads show progress, cancellation and retry; installed models
