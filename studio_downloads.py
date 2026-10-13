@@ -4,6 +4,7 @@ from __future__ import annotations
 import threading
 
 from PySide6.QtCore import QObject, QRunnable, QSignalBlocker, Qt, Signal
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (QCheckBox, QDialog, QFrame, QHBoxLayout, QLabel, QMessageBox,
                               QProgressBar, QPushButton, QScrollArea, QVBoxLayout, QWidget)
 
@@ -69,6 +70,7 @@ class DownloadsDialog(QDialog):
         self.on_ready = None
         self.banner = ''
         self.setWindowTitle('Downloads & features')
+        self.setProperty('helpTopic', 'downloads')
         self.resize(840, 750)
         self.setMinimumSize(660, 560)
         box = QVBoxLayout(self)
@@ -129,6 +131,10 @@ class DownloadsDialog(QDialog):
         self.stop.clicked.connect(self.request_cancel); buttons.addWidget(self.stop); self.stop.hide()
         buttons.addStretch()
         self.credits_window = None
+        self.help_window = None
+        help_button = QPushButton('Help'); help_button.setToolTip('Explain downloads, sizes, offline use, retry, removal and each optional feature. F1 opens the same guide.')
+        help_button.clicked.connect(self.show_help); buttons.addWidget(help_button)
+        self.help_shortcut = QShortcut(QKeySequence('F1'), self); self.help_shortcut.activated.connect(self.show_help)
         credits = QPushButton('Credits & licenses'); credits.clicked.connect(self.show_credits); buttons.addWidget(credits)
         self.close_button = QPushButton('Keep working without downloads')
         self.close_button.setToolTip('Close this window. A running download continues in the background and its progress remains visible in the main window.')
@@ -155,7 +161,8 @@ class DownloadsDialog(QDialog):
             chosen.setEnabled(not self.busy and state not in ('ready', 'included', 'unsupported'))
             if state in ('ready', 'included', 'unsupported'):
                 with QSignalBlocker(chosen): chosen.setChecked(state != 'unsupported')
-            action.setText('Installed' if state in ('ready', 'included') else 'Verify files' if state == 'verify' else 'Retry' if state == 'partial' else 'Download')
+            action.setText('Installed' if state in ('ready', 'included') else 'Verify files' if state == 'verify' else
+                           ('Retry ' if state == 'partial' else 'Download ')+size_text(spec['download_bytes']))
             action.setEnabled(not self.busy and state not in ('ready', 'included', 'unsupported'))
             delete.setEnabled(not self.busy and state in ('ready', 'partial', 'verify') and not self.host.jobs)
         self.selection_changed()
@@ -247,6 +254,13 @@ class DownloadsDialog(QDialog):
         if self.credits_window is None:
             self.credits_window = AboutDialog(self)
         self.credits_window.show(); self.credits_window.raise_(); self.credits_window.activateWindow()
+
+    def show_help(self):
+        from studio_help import HelpDialog
+        if self.help_window is None:
+            self.help_window = HelpDialog(self, listen_examples=self.host.show_lessons if hasattr(self.host, 'show_lessons') else None)
+        self.help_window.open_topic('downloads')
+        self.help_window.show(); self.help_window.raise_(); self.help_window.activateWindow()
 
     def reject(self):
         # Escape/Close hides a background download, rather than abandoning an
