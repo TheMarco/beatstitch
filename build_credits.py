@@ -115,7 +115,7 @@ def add_packaged_credits(destination, executable):
     roots = {name.split('.')[0] for name in archive.toc}
     mapping = metadata.packages_distributions()
     distributions = {name for root in roots for name in mapping.get(root, [])}
-    catalog = json.loads((destination / 'catalog.json').read_text())
+    catalog = json.loads((destination / 'catalog.json').read_text(encoding='utf-8'))
     seen = {entry['id'].removeprefix('python:') for entry in catalog['entries']
             if entry['id'].startswith('python:')}
     # These local research packages are already credited with their vendored
@@ -126,7 +126,7 @@ def add_packaged_credits(destination, executable):
             catalog['entries'].append(package_entry(metadata.distribution(name), 'Bundled support libraries'))
             seen.add(canonicalize_name(name))
     catalog['entries'].sort(key=lambda entry: (entry['category'], entry['name'].casefold()))
-    (destination / 'catalog.json').write_text(json.dumps(catalog, indent=2, ensure_ascii=False) + '\n')
+    (destination / 'catalog.json').write_text(json.dumps(catalog, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
     return catalog
 
 
@@ -190,7 +190,7 @@ def native_entries():
 def build_catalog(destination, *, with_sections=False, with_separation=False):
     destination = Path(destination)
     destination.mkdir(parents=True, exist_ok=True)
-    curated = json.loads((ROOT / 'assets/about/projects.json').read_text())
+    curated = json.loads((ROOT / 'assets/about/projects.json').read_text(encoding='utf-8'))
     entries = []
     for item in curated:
         item = dict(item)
@@ -227,7 +227,7 @@ def build_catalog(destination, *, with_sections=False, with_separation=False):
                'scope': 'Runtime dependencies for this build; optional feature projects and build tools are labeled separately. '
                         'Bundled notices also credit upstream components inside these libraries.',
                'entries': sorted(entries, key=lambda e: (e['category'], e['name'].casefold()))}
-    (destination / 'catalog.json').write_text(json.dumps(catalog, indent=2, ensure_ascii=False) + '\n')
+    (destination / 'catalog.json').write_text(json.dumps(catalog, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
     for name in ('beatstitch.png', 'beatstitch-icon.png', 'beatstitch.icns', 'beatstitch.ico'):
         source = ROOT / 'assets/about' / name
         if source.is_file() and source.resolve() != (destination / name).resolve():

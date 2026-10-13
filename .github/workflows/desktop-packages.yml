@@ -41,6 +41,13 @@ jobs:
       MKL_NUM_THREADS: '1'
       DJ_OPTIONAL_PACKS: ${{ github.event_name == 'push' || inputs.optional_packs }}
     steps:
+      - name: Reserve Linux disk space for offline model packs
+        if: runner.os == 'Linux'
+        run: |
+          # This is a disposable hosted runner. These preinstalled SDKs are not
+          # used by the Python/Qt build; keep room for models and the frozen app.
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup
+          df -h .
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false

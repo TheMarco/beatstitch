@@ -1,5 +1,6 @@
 """About remains offline, opens from the app menu, and preserves the mix."""
 import copy
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -102,6 +103,16 @@ class AboutTests(unittest.TestCase):
             self.assertTrue(entry['license'])
         for identity in ('beatstitch', 'barlow', 'openkeyscan', 'beat-this', 'panns', 'qt', 'spleeter', 'python:pyside6', 'python:shiboken6'):
             self.assertTrue(next(e for e in entries if e['id'] == identity)['notices'])
+
+    def test_build_credits_preserves_unicode_with_a_windows_default_encoding(self):
+        from build_credits import build_catalog
+        original = Path.write_text
+        def windows_write(path, data, encoding=None, errors=None, newline=None):
+            return original(path, data, encoding=encoding or 'cp1252', errors=errors, newline=newline)
+        with tempfile.TemporaryDirectory() as folder, patch.object(Path, 'write_text', windows_write), \
+                patch('build_credits.python_entries', return_value=[]), patch('build_credits.native_entries', return_value=[]):
+            catalog = build_catalog(Path(folder))
+            self.assertEqual(json.loads((Path(folder)/'catalog.json').read_text(encoding='utf-8')), catalog)
 
 
 if __name__ == '__main__':
