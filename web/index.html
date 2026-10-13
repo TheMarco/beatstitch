@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BeatStitch: beat-matched mixes on your desktop</title>
+  <meta name="description" content="BeatStitch matches tempo without changing key, lines up the beats and hands the bass from one song to the next. A free desktop app for EDM mixes on Mac, Windows and Linux that runs entirely on your computer.">
+  <meta name="theme-color" content="#0b0b0e">
+  <meta property="og:title" content="BeatStitch">
+  <meta property="og:description" content="Stitch your songs into one continuous mix. Free for Mac, Windows and Linux, and it all runs on your computer.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="img/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="img/favicon.png" type="image/png">
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+  <link rel="preload" href="fonts/Barlow-SemiBold.ttf" as="font" type="font/ttf" crossorigin>
+  <link rel="preload" href="fonts/Barlow-Regular.ttf" as="font" type="font/ttf" crossorigin>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <symbol id="i-play" viewBox="0 0 16 16"><path d="M4.5 2.6v10.8c0 .5.5.8.9.5l8.2-5.4a.6.6 0 0 0 0-1L5.4 2.1c-.4-.3-.9 0-.9.5Z" fill="currentColor"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 16 16"><rect x="3.5" y="2.5" width="3" height="11" rx=".8" fill="currentColor"/><rect x="9.5" y="2.5" width="3" height="11" rx=".8" fill="currentColor"/></symbol>
+    <symbol id="i-restart" viewBox="0 0 16 16"><rect x="2.5" y="3" width="2" height="10" rx=".7" fill="currentColor"/><path d="M13.5 3.6v8.8c0 .5-.5.8-.9.5L6 8.5a.6.6 0 0 1 0-1l6.6-4.4c.4-.3.9 0 .9.5Z" fill="currentColor"/></symbol>
+    <symbol id="i-download" viewBox="0 0 16 16"><path d="M8 2v8m0 0L4.8 6.8M8 10l3.2-3.2M2.5 13.5h11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  </svg>
+
+  <header class="nav" id="nav">
+    <div class="wrap nav-inner">
+      <a class="nav-logo" href="#top" aria-label="BeatStitch home"><img src="img/beatstitch-logo.webp" alt="BeatStitch" width="140" height="40"></a>
+      <ul class="nav-links">
+        <li><a href="#listen">Listen</a></li>
+        <li><a href="#how">How it works</a></li>
+        <li><a href="#ears">Ear training</a></li>
+        <li><a href="#learn">Learn</a></li>
+      </ul>
+      <a class="btn btn-primary" href="https://github.com/TheMarco/dj-studio/releases/latest" data-download>Download</a>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="top" aria-labelledby="hero-title">
+      <div class="wrap">
+        <div class="hero-grid">
+          <div class="hero-copy">
+            <h1 id="hero-title">Stitch your songs into one continuous mix.</h1>
+            <p class="lede">BeatStitch matches tempo without changing key, lines up the beats and hands the bass from one song to the next. You hear every change before you keep it. Free for Mac, Windows and Linux, and it all runs on your computer.</p>
+            <div class="cta">
+              <a class="btn btn-primary" href="https://github.com/TheMarco/dj-studio/releases/latest" data-download><svg aria-hidden="true"><use href="#i-download"/></svg><span data-download-label>Download for Mac</span></a>
+              <button class="btn" type="button" id="hero-play" data-playing="false">
+                <svg class="icon-play" aria-hidden="true"><use href="#i-play"/></svg><svg class="icon-pause" aria-hidden="true"><use href="#i-pause"/></svg>
+                <span>Play the demo mix</span>
+              </button>
+            </div>
+            <p class="fine">macOS 14 or newer on Apple Silicon, Windows and Linux on x64. Mixing works right away; the analysis models are optional downloads.</p>
+          </div>
+
+          <div class="deck" id="deck">
+            <div class="deck-glow" aria-hidden="true"></div>
+            <div class="deck-disc" id="deck-disc" aria-hidden="true">
+              <img class="disc-half disc-purple" src="img/emblem-purple.webp" alt="" width="718" height="718" decoding="async" fetchpriority="high">
+              <img class="disc-half disc-amber" src="img/emblem-amber.webp" alt="" width="718" height="718" decoding="async" fetchpriority="high">
+              <img class="disc-stitches" src="img/emblem-stitches.webp" alt="" width="718" height="718" decoding="async" fetchpriority="high">
+            </div>
+            <button class="deck-play" type="button" id="deck-play" aria-label="Play the demo mix" data-playing="false">
+              <svg class="ring" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="48.5" pathLength="100" stroke-dasharray="0 100"/></svg>
+              <svg class="icon icon-play" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-play"/></svg>
+              <svg class="icon icon-pause" viewBox="0 0 16 16" aria-hidden="true"><use href="#i-pause"/></svg>
+            </button>
+            <p class="deck-hint" id="deck-hint" aria-live="polite">Press the record</p>
+          </div>
+        </div>
+
+        <div class="player" id="listen" role="region" aria-label="Demo mix player">
+          <div class="player-bar">
+            <div class="transport">
+              <button class="icon-btn" type="button" id="mix-restart" aria-label="Back to the start"><svg aria-hidden="true"><use href="#i-restart"/></svg></button>
+              <button class="icon-btn is-primary" type="button" id="mix-play" aria-label="Play" data-playing="false">
+                <svg class="icon-play" aria-hidden="true"><use href="#i-play"/></svg><svg class="icon-pause" aria-hidden="true"><use href="#i-pause"/></svg>
+              </button>
+            </div>
+            <div class="readout num" aria-live="off"><span id="mix-time">0:00.0</span> <small id="mix-total">/ 2:32</small></div>
+            <div class="meta num hide-sm">Bar <b id="mix-bar">1.1</b></div>
+            <div class="meta num hide-sm"><b>126</b> BPM</div>
+            <div class="player-title"><strong>First mix · Demo</strong><span>3 songs, 2:32</span></div>
+            <div class="segmented" role="group" aria-label="Version">
+              <button type="button" data-version="beatstitch" aria-pressed="true">BeatStitch <kbd>1</kbd></button>
+              <button type="button" data-version="without" aria-pressed="false">Without <kbd>2</kbd></button>
+            </div>
+          </div>
+          <div class="scope" id="scope" aria-hidden="true"><canvas id="scope-canvas"></canvas></div>
+          <div class="timeline" id="timeline" tabindex="0" role="slider" aria-label="Playback position" aria-valuemin="0" aria-valuemax="152" aria-valuenow="0" aria-valuetext="0 seconds">
+            <canvas id="timeline-canvas"></canvas>
+          </div>
+          <div class="blend-bar">
+            <div class="blend-now" aria-live="polite">
+              <strong id="blend-title">Ready</strong>
+              <span id="blend-detail">Night Drive, Signal Bloom and First Light at 126 BPM with 8-bar blends.</span>
+            </div>
+            <div class="phase idle" id="phase">
+              <span class="phase-label">Kicks apart</span>
+              <div class="phase-track" aria-hidden="true"><span class="phase-dot phase-out" id="phase-out"></span><span class="phase-dot phase-in" id="phase-in"></span></div>
+              <span class="phase-value num" id="phase-value">Between blends</span>
+            </div>
+          </div>
+          <p class="player-error" id="mix-error" hidden></p>
+        </div>
+        <p class="player-note">Three original songs made for the app, mixed by the BeatStitch engine with the demo project's default settings. Without uses the same songs and overlaps at their original tempos, with each blend's first downbeat lined up by hand and a plain crossfade. Both versions play at matched loudness. Press 1 or 2 to switch while the music plays.</p>
+      </div>
+    </section>
+
+    <section class="section" id="how" aria-labelledby="how-title">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="how-title">What happens inside a blend</h2>
+          <p>A blend is the stretch where two songs play at once. Three things decide whether it sounds like one mix or two records fighting: speed, key and bass.</p>
+        </div>
+
+        <div class="feature">
+          <div class="feature-text">
+            <h3>Speed changes, pitch stays</h3>
+            <p>Rubber Band R3 time-stretches every song to the mix tempo and keeps its key. In the demo, Night Drive speeds up 1.6% and First Light slows down 1.6%. Both stay in A minor.</p>
+            <p>Beat grids then put the kicks in the same place. Skip the tempo match and two songs only 2 BPM apart drift half a beat apart within eight bars.</p>
+            <table class="tempo-table num" id="tempo-table">
+              <thead><tr><th scope="col">Song</th><th scope="col">Source</th><th scope="col">In the mix</th><th scope="col">Change</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <figure class="figure">
+            <div class="figure-controls">
+              <label class="toggle"><input type="checkbox" id="grid-match" checked> Match tempo</label>
+              <div class="chart-stat num"><b id="grid-stat">0 ms</b><span>apart after 8 bars</span></div>
+            </div>
+            <svg id="grid-figure" viewBox="0 0 640 200" role="img" aria-labelledby="grid-caption"></svg>
+            <figcaption class="figure-caption" id="grid-caption">Every mark is a kick drum in the demo's first 8-bar blend. Taller marks start a bar. Switch the tempo match off to see where Night Drive's kicks fall at its original 124 BPM.</figcaption>
+          </figure>
+        </div>
+
+        <div class="feature">
+          <div class="feature-text">
+            <h3>Keys that agree</h3>
+            <p>BeatStitch detects each song's key on your computer and shows it in Camelot notation, the wheel DJs use to find songs that blend. Neighbors usually work. Night Drive (8A) into Signal Bloom (9A) is one step around the wheel.</p>
+            <p>When a blend clashes, BeatStitch can suggest a pitch change of up to two semitones. Nothing changes until you listen and choose it.</p>
+          </div>
+          <figure class="figure">
+            <div class="camelot-layout">
+              <svg id="camelot" viewBox="0 0 400 400" role="group" aria-label="Camelot key wheel. Choose a key to see the keys that blend with it."></svg>
+              <div class="wheel-info" id="wheel-info" aria-live="polite"></div>
+            </div>
+          </figure>
+        </div>
+
+        <div class="feature">
+          <div class="feature-text">
+            <h3>One bass line at a time</h3>
+            <p>Two bass lines at once turn the low end to mud. During each blend, BeatStitch splits both songs at 180 Hz. Everything above crossfades over the whole overlap, and the bass changes hands in a single bar at the midpoint.</p>
+            <p>Choose 4, 8, 16 or 32 bars per blend, or switch the handoff off when a plain crossfade suits the music better.</p>
+          </div>
+          <figure class="figure">
+            <div class="figure-controls">
+              <div class="seg-label"><span id="handoff-bars-label">Overlap</span>
+                <div class="segmented" role="group" aria-labelledby="handoff-bars-label" id="handoff-bars">
+                  <button type="button" data-bars="4" aria-pressed="false" aria-label="4 bars">4</button>
+                  <button type="button" data-bars="8" aria-pressed="true" aria-label="8 bars">8</button>
+                  <button type="button" data-bars="16" aria-pressed="false" aria-label="16 bars">16</button>
+                  <button type="button" data-bars="32" aria-pressed="false" aria-label="32 bars">32</button>
+                </div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="handoff-on" checked> Bass handoff</label>
+            </div>
+            <svg id="handoff-figure" viewBox="0 0 640 240" role="img" aria-labelledby="handoff-caption"></svg>
+            <ul class="chart-legend" aria-hidden="true">
+              <li style="color:var(--song-1)"><i></i>Outgoing, above 180 Hz</li>
+              <li style="color:var(--song-1)"><i class="dashed"></i>Outgoing bass</li>
+              <li style="color:var(--song-2)"><i></i>Incoming, above 180 Hz</li>
+              <li style="color:var(--song-2)"><i class="dashed"></i>Incoming bass</li>
+            </ul>
+            <div class="chart-stat num" style="margin-top:1rem"><b id="handoff-stat">0.3 bars</b><span id="handoff-stat-label">with both bass lines loud</span></div>
+            <figcaption class="figure-caption" id="handoff-caption">Volume of each song across the blend, using the curves from the BeatStitch engine. The shaded area is where both bass lines play above a quarter of full volume.</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="ears" aria-labelledby="ears-title">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="ears-title">Train your ears</h2>
+          <p>BeatStitch includes three short listening examples, and here they are. Play one, then switch between A and B while the music keeps going. Headphones help with the bass.</p>
+        </div>
+        <div class="lesson" id="lesson">
+          <div class="tabs" role="tablist" aria-label="Listening examples" id="lesson-tabs"></div>
+          <div class="lesson-body" role="tabpanel" id="lesson-panel">
+            <p class="lesson-listen" id="lesson-listen"></p>
+            <div class="ab" role="group" aria-label="Version" id="lesson-ab"></div>
+            <div class="lesson-wave" id="lesson-wave" tabindex="0" role="slider" aria-label="Example position" aria-valuemin="0" aria-valuemax="16" aria-valuenow="0"><canvas id="lesson-canvas"></canvas></div>
+            <div class="lesson-transport">
+              <button class="btn" type="button" id="lesson-play" data-playing="false"><svg class="icon-play" aria-hidden="true"><use href="#i-play"/></svg><svg class="icon-pause" aria-hidden="true"><use href="#i-pause"/></svg><span>Listen</span></button>
+              <button class="btn btn-quiet" type="button" id="lesson-restart">Start again</button>
+              <label class="toggle"><input type="checkbox" id="lesson-repeat" checked> Repeat</label>
+              <span class="time num" id="lesson-time">0:00 / 0:16</span>
+            </div>
+            <p class="player-error" id="lesson-error" hidden style="padding:0.75rem 0 0;border:0"></p>
+            <p class="lesson-change" id="lesson-change"></p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="app" aria-labelledby="app-title">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="app-title">Your whole mix on one screen</h2>
+          <p>Songs, arrangement and the selected blend stay in view together. This is the same demo mix, opened in the app.</p>
+        </div>
+        <figure class="screen">
+          <img src="img/app-arrangement.webp" width="2880" height="1800" loading="lazy" decoding="async" alt="The BeatStitch window with the demo mix open: a library of three songs with BPM and Camelot keys on the left, the arrangement with colored waveforms and fade curves in the middle, and transition controls for blend 1 to 2 on the right.">
+        </figure>
+        <div class="screen-notes">
+          <div><h3>Library</h3><p>Add a folder and BPM and key analysis runs in the background. Sort by tempo, Camelot key or length.</p></div>
+          <div><h3>Arrangement</h3><p>Real waveforms with fade curves for every blend. Suggest order proposes a running order from key, tempo and energy.</p></div>
+          <div><h3>Transition</h3><p>Overlap length, bass handoff and presets for the selected blend. Listen to blend plays just that passage.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="editor-title">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="editor-title">Open any blend and fine-tune it</h2>
+          <p>The blend editor zooms in on one transition, with both songs on a shared bar grid and the bass handoff marked where it happens.</p>
+        </div>
+        <figure class="screen">
+          <img src="img/app-blend-editor.webp" width="2600" height="1222" loading="lazy" decoding="async" alt="The BeatStitch blend editor for blend 1 to 2: Night Drive and Signal Bloom kick drums on a shared bar grid with the bass handoff marked at bar 5, followed by beat alignment, voice and crowding checks, alternatives and the overlap length.">
+        </figure>
+        <div class="screen-notes four">
+          <div><h3>Align beats</h3><p>Same BPM can still leave the kicks apart. Align beats suggests a timing correction for the incoming song.</p></div>
+          <div><h3>Check voices</h3><p>Flags passages where two vocals may overlap, then offers nearby entrances with less collision.</p></div>
+          <div><h3>Check crowding</h3><p>Looks for two melodies competing in the overlap and can offer a shorter overlap to compare.</p></div>
+          <div><h3>Compare, then apply</h3><p>Hear either song or the blend, and switch between your mix and a draft on one clock. Applying is one Undo step.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="analysis" aria-labelledby="analysis-title">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="analysis-title">Analysis that stays on your computer</h2>
+          <p>Choose the models you want in File → Downloads &amp; features. Beat, key and voice detection take about 125 MB. Once installed they run offline, songs are never uploaded and there's no account. Every result is a suggestion you can listen to and override.</p>
+        </div>
+        <dl class="specs">
+          <div><dt>Tempo and beats</dt><dd>Beat This! finds beats and downbeats. Every BPM stays editable.</dd></div>
+          <div><dt>Key</dt><dd>OpenKeyScan detects each song's key and BeatStitch shows it in Camelot notation.</dd></div>
+          <div><dt>Tempo drift</dt><dd>Analyze checks whether a song's tempo wanders. Stabilize can straighten confidently detected passages, and you compare before you keep it.</dd></div>
+          <div><dt>Possible vocals</dt><dd>PANNs marks voice-like passages so you can protect them or keep two vocals apart. <span>Treat the marks as prompts to listen.</span></dd></div>
+          <div><dt>Builds and drops</dt><dd>Experimental section analysis with EDMFormer and MuQ suggests intros, builds, drops and breakdowns. <span>Optional 3.07 GB download.</span></dd></div>
+          <div><dt>Vocal and drum reduction</dt><dd>Spleeter can turn down one song's vocals or drums during a blend, so two parts stop competing. <span>Separate 146 MB download.</span></dd></div>
+          <div><dt>Extend drums</dt><dd>Repeat a clean 1, 2, 4 or 8-bar drum passage to lengthen an intro or outro, then compare it with the original.</dd></div>
+          <div><dt>Mastering</dt><dd>An optional final pass: gentle compression, peak control and a restrained loudness increase. Compare at matched volume before you apply it.</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section class="section" id="learn" aria-labelledby="learn-title">
+      <div class="wrap split reverse">
+        <div>
+          <h2 id="learn-title">Learn while you mix</h2>
+          <p style="margin-top:1.25rem">A 14-lesson beginner course is built into the app. Each lesson has an aim, steps to try and a listening checkpoint, and reading it never changes your mix.</p>
+          <p>Press F1 on any control for its help topic. The guide has 41 searchable topics and can stay open beside your mix.</p>
+          <ol class="course">
+            <li>Hear what a mix does</li>
+            <li>Know what each control changes</li>
+            <li>Choose and import your songs</li>
+            <li>Build your first arrangement</li>
+            <li>Check tempo and the beat grid</li>
+            <li>Choose musical starts and endings</li>
+            <li>Make a blend longer or shorter</li>
+            <li>Make musical parts fit together</li>
+            <li>Improve a transition by listening</li>
+            <li>Deal with wandering tempo</li>
+            <li>Fix the problem you actually hear</li>
+            <li>Finish, save and export</li>
+            <li>Know when advanced tools help</li>
+            <li>Develop your own mixing routine</li>
+          </ol>
+        </div>
+        <figure class="screen">
+          <img src="img/app-course.webp" width="2200" height="1520" loading="lazy" decoding="async" alt="The BeatStitch guide window open at the beginner course, with the list of lessons on the left and the course introduction on the right.">
+        </figure>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="safe-title">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="safe-title">Built for trying things</h2>
+          <p>Mixing is trial and error. BeatStitch keeps every experiment reversible.</p>
+        </div>
+        <div class="safe">
+          <div><h3>Undo every change</h3><p>Each applied edit is one Undo step, and review windows let you discard a draft.</p></div>
+          <div><h3>Recovery copies</h3><p>Autosave keeps recovery copies. Opening one never overwrites your project.</p></div>
+          <div><h3>Your files stay put</h3><p>Projects point to your original audio and never modify it. A portable project moves a mix and its songs together.</p></div>
+          <div><h3>Export when it's right</h3><p>Save the finished mix as WAV, FLAC or MP3, with an optional tracklist of song start times.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section download" id="download" aria-labelledby="download-title">
+      <div class="wrap">
+        <img class="download-mark" src="img/emblem-full.webp" alt="" width="140" height="140" loading="lazy" decoding="async">
+        <h2 id="download-title">BeatStitch is free.</h2>
+        <p class="lede">Every feature, no account and no trial. The app's code is open source under GPL-3.0-or-later.</p>
+        <div class="platforms" id="platforms">
+          <a class="platform is-recommended" data-os="mac" href="https://github.com/TheMarco/dj-studio/releases/latest" data-download><strong><svg aria-hidden="true"><use href="#i-download"/></svg>macOS</strong><span>Apple Silicon, macOS 14 or newer</span></a>
+          <a class="platform" data-os="windows" href="https://github.com/TheMarco/dj-studio/releases/latest" data-download><strong><svg aria-hidden="true"><use href="#i-download"/></svg>Windows</strong><span>64-bit (x64)</span></a>
+          <a class="platform" data-os="linux" href="https://github.com/TheMarco/dj-studio/releases/latest" data-download><strong><svg aria-hidden="true"><use href="#i-download"/></svg>Linux</strong><span>x64, tar.gz archive</span></a>
+        </div>
+        <p class="fine">The demo, listening examples and every mixing tool work before you download any models. <a href="https://github.com/TheMarco/dj-studio">View the source code</a></p>
+        <div class="download-details">
+          <div><h3>Offline after setup</h3><p>Analysis models install from File → Downloads &amp; features and survive app updates. After that, nothing needs a connection.</p></div>
+          <div><h3>Licenses</h3><p>Libraries, fonts and models keep their own terms. The MuQ weights in the optional build and drop download are CC BY-NC 4.0. Full notices are in the app under About.</p></div>
+          <div><h3>Support</h3><p>Donations are optional and unlock nothing. If you like this tool, consider <a href="https://ko-fi.com/aianddesign">buying me a coffee</a>.</p></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap footer-inner">
+      <img src="img/beatstitch-logo.webp" alt="BeatStitch" width="112" height="32">
+      <div>
+        <p>BeatStitch by Marco van Hylckama Vlieg.</p>
+        <p>Built on Rubber Band, FFmpeg, Qt, Beat This!, OpenKeyScan, PANNs, EDMFormer, MusicFM, MuQ and Spleeter. The demo songs and listening examples are original synthesized audio made for BeatStitch. Barlow is used under the SIL Open Font License.</p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="data/media.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
