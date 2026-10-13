@@ -43,6 +43,40 @@ def verify_patch(root, *, runtime=None, version=None, architecture=None):
     return folder / 'libqcocoa.dylib'
 
 
+SOURCE_COMPANION_NOTE = (
+    'Matching Qt source\n'
+    '==================\n\n'
+    'The matching Qt 6.11.2 source archive (qtbase-v6.11.2.tar.gz) is not\n'
+    'included in this application bundle. It is delivered in the separate\n'
+    'BeatStitch source companion for this release. The patch, licenses,\n'
+    'manifest, and rebuild instructions in this folder are unchanged.\n'
+    'Build-time verification of the matching source archive is unchanged:\n'
+    'packaging still verifies it in the checkout before building. To rebuild,\n'
+    'use rebuild_qt_cocoa.py with the source companion archive available.\n')
+
+
+def copied_readme(text):
+    """Adjust only the copied notice so it does not claim bundled source."""
+    return (text
+            .replace('includes this\nnotice, licenses and source, then signs',
+                     'includes this\nnotice, licenses, patch and rebuild instructions, then signs')
+            .replace('includes this notice, licenses and source, then signs',
+                     'includes this notice, licenses, patch and rebuild instructions, then signs')
+            .replace('From the bundled `Contents/Resources/qt-cocoa-fix` source package, run its\n'
+                     '`rebuild_qt_cocoa.py` using a Python environment with that same PySide6 runtime,\n'
+                     'passing `--work-dir` for a writable build directory. The bundled source archive\n'
+                     'is used without downloading.',
+                     'From `Contents/Resources/qt-cocoa-fix`, run its `rebuild_qt_cocoa.py`\n'
+                     'using a Python environment with that same PySide6 runtime, passing\n'
+                     '`--work-dir` for a writable build directory, with the matching source\n'
+                     'archive from the separate source companion for this release.')
+            .replace('The original Qt sources are supplied as `qtbase-v6.11.2.tar.gz` in the app\'s\n'
+                     'source package; the checkout keeps that verified download under `assets/qt/`.',
+                     'The original Qt sources are supplied as `qtbase-v6.11.2.tar.gz` in the\n'
+                     'separate source companion for this release; the checkout keeps that\n'
+                     'verified download under `assets/qt/` and packaging verifies it there.'))
+
+
 def apply_patch(app, root, plugin):
     """Change a completed staging bundle, then verify its new ad-hoc signature."""
     app, root, plugin = Path(app).resolve(), Path(root).resolve(), Path(plugin).resolve()
@@ -55,13 +89,14 @@ def apply_patch(app, root, plugin):
         raise RuntimeError('Refusing an unverified Cocoa plugin path.')
     shutil.copyfile(plugin, destination)
     notice = app / 'Contents/Resources/qt-cocoa-fix'
-    notice.mkdir(exist_ok=True)
+    notice.mkdir(parents=True, exist_ok=True)
     folder = root / 'vendor/qt-cocoa'
-    for name in ('README.md', 'manifest.json', 'upstream.patch', 'CMakeLists.txt'):
+    for name in ('manifest.json', 'upstream.patch', 'CMakeLists.txt'):
         shutil.copyfile(folder / name, notice / name)
+    (notice / 'README.md').write_text(
+        copied_readme((folder / 'README.md').read_text(encoding='utf-8')), encoding='utf-8')
     shutil.copytree(folder / 'LICENSES', notice / 'LICENSES', dirs_exist_ok=True)
     shutil.copyfile(root / 'rebuild_qt_cocoa.py', notice / 'rebuild_qt_cocoa.py')
-    manifest = json.loads((folder / 'manifest.json').read_text())
-    shutil.copyfile(root / manifest['source_archive'], notice / 'qtbase-v6.11.2.tar.gz')
+    (notice / 'SOURCE-COMPANION.txt').write_text(SOURCE_COMPANION_NOTE, encoding='utf-8')
     subprocess.run(['codesign', '--force', '--deep', '--sign', '-', str(app)], check=True)
     subprocess.run(['codesign', '--verify', '--deep', '--strict', str(app)], check=True)

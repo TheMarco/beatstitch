@@ -18,9 +18,10 @@ def sha(path):
 def artifact(path,kind):
  return {'path':str(Path(path).relative_to(out)),'kind':kind,'sha256':sha(path)}
 
-# Capture the reviewed working tree, including new/uncommitted implementation.
+# Capture the tracked working tree. Commit reviewed new files before staging;
+# unrelated untracked files must never enter a public source companion.
 # Audio previews, user's songs, caches, weights and private configuration are excluded.
-files=subprocess.run(['git','ls-files','-co','--exclude-standard','-z'],capture_output=True,check=True,cwd=ROOT).stdout.decode().split('\0')
+files=subprocess.run(['git','ls-files','-z'],capture_output=True,check=True,cwd=ROOT).stdout.decode().split('\0')
 files=sorted(set(n for n in files if n and not n.startswith(('assets/branding/','.codex/','.agents/'))))
 files=[n for n in files if (ROOT/n).is_file() and not (ROOT/n).is_symlink()]
 files=[n for n in files if not (n.startswith(('assets/demo/','assets/lessons/')) and n.endswith(('.wav','.mp3','.flac')))]

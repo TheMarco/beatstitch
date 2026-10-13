@@ -113,19 +113,22 @@ class SeparationDialog(QDialog):
             self.details.setText(f'Changes only {clock(self.plan["start"] / djmix.SR)}–{clock(self.plan["end"] / djmix.SR)} in this source song, '
                                  f'with smooth edges. Cues, tempo, pitch and song positions stay as set. The original remains in the library.')
             self.status.setText('Prepare and listen for leftover voice, missing melody, softened drums or a watery sound.' if available() else
-                                'Local separation is not installed in this edition. The offline guide explains the optional separation build.')
+                                'Optional vocal-removal download: 146 MB. Download it here to reduce vocals or keep mostly drums. Ordinary mixing does not need it.')
         except (djmix.MixError, OSError) as error: self.details.setText(str(error)); self.status.setText('Choose another blend or adjust its settings first.')
         self.update_controls()
 
     def update_controls(self):
         self.settings.setEnabled(not self.busy)
-        self.prepare.setEnabled(not self.busy and self.plan is not None and available())
+        self.prepare.setEnabled(not self.busy and self.plan is not None)
+        self.prepare.setText('Prepare blend comparison' if available() else 'Download vocal removal…')
         ready = self.report is not None and not self.busy
         self.apply.setEnabled(ready); self.play.setEnabled(ready and self.player.sink is not None); self.seek.setEnabled(ready)
         for button in self.choices.buttons(): button.setEnabled(ready)
 
     def prepare_audio(self):
         if self.busy or self.plan is None: return
+        from studio_downloads import ensure_models
+        if not ensure_models(self, ['separation'], self.prepare_audio): return
         plan = copy.deepcopy(self.plan); self.busy = True; self.player.pause(); self.update_controls()
         def work(progress, emit):
             result = prepare_separation(self.baseline, self.index, plan['side'], plan['mode'], plan['amount'], self.studio.data / 'audio-cache', progress)

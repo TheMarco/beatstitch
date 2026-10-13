@@ -27,25 +27,29 @@ MAX_DURATION = 1800
 
 
 def model_directory():
-    return ROOT / 'assets' / 'sections'
+    from studio_model_store import directory
+    return directory('sections')
 
 
 def model_available():
-    return all((model_directory() / name).is_file() for name in MANIFEST)
+    from studio_model_store import available
+    return available('sections')
 
 
 def verify_models(progress=lambda message: None):
     for index, (name, expected) in enumerate(MANIFEST.items(), 1):
         file = model_directory() / name
         if not file.is_file() or file.stat().st_size != expected['size']:
-            raise djmix.MixError('Build/drop analysis is not installed completely. Install the section-analysis edition of BeatStitch. Other cue tools are still available.')
+            from studio_model_store import missing_message
+            raise djmix.MixError(missing_message('sections'))
         progress(f'Checking section-analysis files ({index}/{len(MANIFEST)})')
         digest = hashlib.sha256()
         with file.open('rb') as handle:
             while chunk := handle.read(4 * 1024 * 1024):
                 check_cancelled(); digest.update(chunk)
         if digest.hexdigest() != expected['sha256']:
-            raise djmix.MixError('A section-analysis model failed verification. Reinstall the section-analysis edition before trying again.')
+            from studio_model_store import missing_message
+            raise djmix.MixError(missing_message('sections'))
 
 
 def normalize_regions(sections, duration):

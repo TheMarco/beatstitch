@@ -31,16 +31,19 @@ def verify_runtime():
 
 
 def model_directory():
-    return Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent)) / 'assets' / 'key'
+    from studio_model_store import directory
+    return directory('key')
 
 
 def verify_model():
     path = model_directory() / MODEL_FILE
     if (not path.is_file() or path.stat().st_size != MODEL_BYTES
             or hashlib.sha256(path.read_bytes()).hexdigest() != MODEL_SHA256):
-        raise djmix.MixError('Key detection files are missing or damaged. Reinstall BeatStitch; you can still set the key yourself.')
+        from studio_model_store import missing_message
+        raise djmix.MixError(missing_message('key'))
     license_path = model_directory() / LICENSE_FILE
     if not license_path.is_file() or hashlib.sha256(license_path.read_bytes()).hexdigest() != LICENSE_SHA256:
-        raise djmix.MixError('The key model installation is incomplete. Reinstall BeatStitch.')
+        from studio_model_store import missing_message
+        raise djmix.MixError(missing_message('key'))
     verify_runtime()
     return path

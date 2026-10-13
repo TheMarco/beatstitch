@@ -31,11 +31,12 @@ The optional full section-analysis pack contains MuQ weights under CC BY-NC 4.0.
 That license permits attribution-compliant noncommercial redistribution and use;
 it does not cover commercial use of those weights. Their license is separate
 from the GPL application code. Core mixing and Spleeter do not depend on MuQ.
-A build without --with-sections omits those weights. An optional support link
+The default installer contains no model weights; users may choose this separate
+download in File → Downloads & features. An optional support link
 does not establish NonCommercial compliance; the actual distribution and use
-determine that condition. The creator chose to retain the bundled weights and
+determine that condition. The creator chose to retain the optional model feature and
 optional coffee link without publisher clarification of this arrangement.
-All models whose terms permit our distribution are bundled. A direct publisher
+Model downloads are optional to keep the installer small. A direct publisher
 download does not expand any model's use permissions and is not a substitute
 for replacing a model lacking permission for ordinary DJ use.
 

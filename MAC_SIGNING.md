@@ -17,18 +17,22 @@ change, not just a different icon or archive name.
 codesign --verify --deep --strict '/path/to/BeatStitch.app'
 ```
 
-## One-time notarization credentials
+## Existing notarization credentials
 
 Signing and notarization are separate. Apple notarization needs an Apple Account
 app-specific password or an App Store Connect API credential. A signing certificate
-alone cannot authenticate the submission. No saved notarization profile was found
-in this Mac's login, synchronized/Local Items or system Keychain during preparation.
+alone cannot authenticate the submission. This Mac already has the Keychain
+profile `AC_PASSWORD`, used for the Liminal and Microverse releases. Its Apple
+authentication was verified while preparing BeatStitch. Reuse that profile;
+there is no need to create another app-specific password for this release.
+
+On another build Mac without a saved profile, store credentials once:
 
 Create an app-specific password in your own Apple Account at
 https://account.apple.com/ (Sign-In and Security → App-Specific Passwords), then run:
 
 ```sh
-xcrun notarytool store-credentials BeatStitch --team-id 3ML6V62AF5
+xcrun notarytool store-credentials AC_PASSWORD --team-id 3ML6V62AF5
 ```
 
 Enter the Apple Account and app-specific password in the local prompts, not in chat,
@@ -42,11 +46,11 @@ Make a ZIP from the signed app with ditto. Submit that ZIP using the stored prof
 
 ```sh
 xcrun notarytool submit '/path/to/BeatStitch-mac-arm64.zip' \
-  --keychain-profile BeatStitch --wait --output-format json
+  --keychain-profile AC_PASSWORD --wait --output-format json
 ```
 
 Only an `Accepted` result confirms notarization. For a rejection, obtain the log
-with `xcrun notarytool log REQUEST_ID --keychain-profile BeatStitch` and fix the
+with `xcrun notarytool log REQUEST_ID --keychain-profile AC_PASSWORD` and fix the
 reported issue. Do not describe a submitted/pending/rejected build as notarized.
 
 After acceptance, staple the original signed app and validate it:

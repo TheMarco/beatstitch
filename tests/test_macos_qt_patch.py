@@ -63,6 +63,34 @@ class CocoaPatchTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'source archive is missing or changed'):
             self.verify()
 
+    def test_app_bundle_keeps_notices_but_not_the_source_tarball(self):
+        from unittest.mock import patch
+        folder = self.folder
+        (folder / 'README.md').write_text(
+            'includes this\nnotice, licenses and source, then signs\n'
+            'The original Qt sources are supplied as `qtbase-v6.11.2.tar.gz` in the app\'s\n'
+            'source package; the checkout keeps that verified download under `assets/qt/`.\n')
+        (folder / 'upstream.patch').write_text('patch')
+        (folder / 'CMakeLists.txt').write_text('cmake')
+        (folder / 'LICENSES').mkdir()
+        (folder / 'LICENSES/Qt-LICENSE.txt').write_text('upstream license text')
+        (self.root / 'rebuild_qt_cocoa.py').write_text('# rebuild')
+        (self.root / 'assets/qt').mkdir(parents=True)
+        app = self.root / 'staging.app'
+        target = app / 'Contents/Frameworks/PySide6/Qt/plugins/platforms/libqcocoa.dylib'
+        target.parent.mkdir(parents=True)
+        target.write_bytes(b'staging plugin')
+        with patch('macos_qt_patch.verify_patch', return_value=folder / 'libqcocoa.dylib'), \
+                patch('macos_qt_patch.subprocess.run'):
+            apply_patch(app, self.root, folder / 'libqcocoa.dylib')
+        notice = app / 'Contents/Resources/qt-cocoa-fix'
+        self.assertFalse((notice / 'qtbase-v6.11.2.tar.gz').exists())
+        self.assertIn('source companion', (notice / 'SOURCE-COMPANION.txt').read_text())
+        self.assertIn('source companion', (notice / 'README.md').read_text())
+        self.assertEqual((notice / 'LICENSES/Qt-LICENSE.txt').read_text(), 'upstream license text')
+        for name in ('manifest.json', 'upstream.patch', 'CMakeLists.txt', 'rebuild_qt_cocoa.py'):
+            self.assertTrue((notice / name).is_file(), name)
+
     def test_a_plugin_symlink_outside_staging_is_not_modified(self):
         app = self.root / 'staging.app'
         target = app / 'Contents/Frameworks/PySide6/Qt/plugins/platforms/libqcocoa.dylib'

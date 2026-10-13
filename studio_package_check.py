@@ -11,9 +11,52 @@ import sys
 import time
 
 
+WEIGHT_SUFFIXES = {'.ckpt', '.pth', '.pt', '.pkl', '.safetensors', '.npz', '.onnx', '.tflite', '.pb'}
+INFERENCE_NOT_TESTED = [
+    'Beat-model inference (model pack not bundled; download in the app to enable)',
+    'Passage/content-model inference (model pack not bundled)',
+    'Source-key model inference (model pack not bundled)',
+    'Section-analysis model inference (model pack not bundled)',
+    'Separation model inference (model pack not bundled)']
+
+
 def require(condition, message):
     if not condition:
         raise RuntimeError(message)
+
+
+def load_model_packs(root):
+    """Return the packaged model-packs marker, or None for legacy packages."""
+    path = Path(root) / 'model-packs.json'
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError) as error:
+        raise RuntimeError(f'The model-packs marker is unreadable: {error}') from error
+    require(isinstance(data, dict) and data.get('schema') == 1 and isinstance(data.get('features'), dict),
+            'The model-packs marker has an unsupported schema.')
+    require(type(data.get('bundled_models')) is bool and
+            all(type(data['features'].get(name)) is bool for name in ('sections', 'separation')),
+            'The model-packs marker has invalid feature flags.')
+    return data
+
+
+def is_lightweight(root):
+    packs = load_model_packs(root)
+    return packs is not None and packs.get('bundled_models') is False
+
+
+def find_bundled_weights(root):
+    """Weights anywhere under packaged assets; only the package is scanned."""
+    root = Path(root)
+    found = []
+    assets = root / 'assets'
+    if assets.is_dir():
+        for path in sorted(assets.rglob('*')):
+            if path.is_file() and path.suffix.lower() in WEIGHT_SUFFIXES:
+                found.append(str(path.relative_to(root)))
+    return found
 
 
 def bundled_tool(name, root, frozen):
@@ -111,14 +154,24 @@ def run_checks(destination, *, allow_source=False):
     if frozen:
         os.environ['NUMBA_CACHE_DIR'] = str(destination / 'numba-cache')
         os.chdir(root)
-    report = {'version': 1, 'status': 'running', 'frozen': frozen,
-              'platform': sys.platform, 'os': platform.platform(), 'architecture': platform.machine(),
-              'checks': [], 'not_tested': [
-                  'Physical audio output and device switching',
+    try:
+        packs = load_model_packs(root)
+    except RuntimeError:
+        packs = 'invalid'
+    lightweight = packs not in (None, 'invalid') and packs.get('bundled_models') is False
+    not_tested = ['Physical audio output and device switching',
                   'Native window layout, keyboard operation and user workflows',
                   'Musical quality and analysis accuracy',
-                  'Other model inference and optional section/separation packs',
-                  'Other operating systems and architectures']}
+                  'Other operating systems and architectures']
+    if lightweight:
+        not_tested += INFERENCE_NOT_TESTED
+    elif packs is None:
+        not_tested.append('Other model inference and optional section/separation packs')
+    report = {'version': 1, 'status': 'running', 'frozen': frozen,
+              'platform': sys.platform, 'os': platform.platform(), 'architecture': platform.machine(),
+              'model_packs': packs if packs != 'invalid' else None,
+              'bundled_models': (packs.get('bundled_models') if isinstance(packs, dict) else None),
+              'checks': [], 'not_tested': not_tested}
     report_path = destination / 'report.json'
 
     def save():
@@ -147,6 +200,11 @@ def run_checks(destination, *, allow_source=False):
             require(frozen or allow_source, 'Run this command from the packaged application; use --allow-source only for development.')
             return {'executable': sys.executable, 'resources': str(root), 'source_mode': not frozen}
         check('distribution', distribution)
+        if packs is not None:
+            def packs_marker():
+                require(packs != 'invalid', 'The model-packs marker is invalid.')
+                return packs
+            check('model packs marker', packs_marker)
         import djmix
         import numpy as np
         import soundfile as sf
@@ -174,7 +232,21 @@ def run_checks(destination, *, allow_source=False):
             for lesson in LESSONS:
                 lesson_audio(lesson['id'])
             return {'beat_model': beat.name, 'content_model': content.name, 'key_model': key_model.name, 'lessons': len(LESSONS)}
-        check('core model and lesson assets', assets)
+        if lightweight:
+            def lightweight_assets():
+                require(isinstance(packs, dict) and packs.get('schema') == 1,
+                        'The lightweight package has no valid model-packs marker.')
+                weights = find_bundled_weights(root)
+                require(not weights, f'Unexpected bundled model weights in lightweight package: {weights}')
+                from studio_lessons import LESSONS, lesson_audio
+                for lesson in LESSONS:
+                    lesson_audio(lesson['id'])
+                return {'bundled_models': False, 'features': packs.get('features'),
+                        'weights_found': weights, 'lessons': len(LESSONS),
+                        'note': 'No model inference is exercised; weights download in the app.'}
+            check('lightweight package contains no bundled model weights', lightweight_assets)
+        else:
+            check('core model and lesson assets', assets)
 
         def about_assets():
             from studio_about import asset_directory, load_credits
@@ -223,7 +295,8 @@ def run_checks(destination, *, allow_source=False):
             return {'key': result['candidates'][0]['key'], 'model_id': result['model_id'],
                     'frames': result['frames'], 'scores': len(result['candidates']),
                     'note': 'Tests offline inference and cache reuse, not musical accuracy.'}
-        check('offline source-key worker and cache reuse', source_key)
+        if not lightweight:
+            check('offline source-key worker and cache reuse', source_key)
         def cancelling_stereo():
             from studio_analysis_audio import mono_samples
             from studio_structure_features import decoded_audio, RATE
@@ -245,8 +318,9 @@ def run_checks(destination, *, allow_source=False):
             return {'sample_clock_preserved':True, 'source_unchanged':True,
                     'analysis_channel':details['analysis_channel']}
         check('cancelling stereo remains audible to analysis', cancelling_stereo)
-        check('offline beat-based BPM import and saved alternatives', lambda: check_tempo_import(
-            session.tracks[session.clips[0].track_id], destination / 'tempo-import'))
+        if not lightweight:
+            check('offline beat-based BPM import and saved alternatives', lambda: check_tempo_import(
+                session.tracks[session.clips[0].track_id], destination / 'tempo-import'))
         region = preview_range(session, 1)
         # Exercise both Rubber Band engines, the musical clock and the real mixer.
         session.tempo_enabled = True

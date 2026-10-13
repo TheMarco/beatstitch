@@ -51,6 +51,66 @@ def macos_bundle_only_spec(path):
                     + ast.unparse(tree) + '\n', encoding='utf-8')
 
 
+WEIGHT_SUFFIXES = {'.ckpt', '.pth', '.pt', '.pkl', '.safetensors', '.npz', '.onnx', '.tflite', '.pb'}
+
+
+def is_weight_file(path):
+    return Path(path).suffix.lower() in WEIGHT_SUFFIXES
+
+
+def model_packs_manifest(*, bundle_models=False, sections=True, separation=True):
+    return {'schema': 1, 'bundled_models': bool(bundle_models),
+            'features': {'sections': bool(sections), 'separation': bool(separation)}}
+
+
+def write_model_packs_manifest(root, *, bundle_models=False, sections=True, separation=True):
+    path = Path(root) / 'model-packs.json'
+    path.write_text(json.dumps(model_packs_manifest(
+        bundle_models=bundle_models, sections=sections, separation=separation), indent=2) + '\n',
+        encoding='utf-8')
+    return path
+
+
+def resolve_packaging_options(options):
+    """Sections/separation runtimes are included unless explicitly omitted."""
+    sections = not getattr(options, 'without_sections', False)
+    separation = not getattr(options, 'without_separation', False)
+    return sections, separation, bool(getattr(options, 'bundle_models', False))
+
+
+def small_files(directory):
+    directory = Path(directory)
+    if not directory.is_dir():
+        return []
+    return [path for path in sorted(directory.iterdir()) if path.is_file() and not is_weight_file(path)]
+
+
+def bundled_data_options(root, *, bundle_models=False, sections=True, separation=True):
+    """Per-file data options: licenses/provenance always, weights only offline."""
+    root = Path(root)
+    args = []
+    for path in small_files(root / 'assets/models'):
+        args += ['--add-data', f'{path}:assets/models']
+    for path in small_files(root / 'assets/key'):
+        if path.name.startswith(('LICENSE', 'ABOUT')) or path.suffix.lower() in ('.txt', '.md'):
+            args += ['--add-data', f'{path}:assets/key']
+    if bundle_models:
+        from studio_content import model_path as content_model_path
+        from studio_structure import model_path as beat_model_path
+        from studio_key_model import MODEL_FILE as KEY_MODEL_FILE, model_directory as key_model_directory
+        args += ['--add-data', f'{beat_model_path()}:assets/models',
+                 '--add-data', f'{content_model_path()}:assets/models',
+                 '--add-data', f'{key_model_directory() / KEY_MODEL_FILE}:assets/key']
+        if sections:
+            from studio_song_sections import model_directory as section_model_directory
+            args += ['--add-data', f'{section_model_directory()}:assets/sections']
+        if separation:
+            from studio_separation_model import MODEL_FILE as SEPARATION_MODEL_FILE
+            from studio_separation import model_directory
+            args += ['--add-data', f'{model_directory() / SEPARATION_MODEL_FILE}:assets/separation']
+    return args
+
+
 def run_packager(options, root, destination, environment):
     # A previous incremental PYZ retained old dependency bytecode despite a
     # changed source module. Release artifacts must contain the reviewed code.
@@ -87,20 +147,29 @@ def main():
     root=Path(__file__).resolve().parent
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--dist-dir',type=Path,default=root/'dist')
-    parser.add_argument('--with-sections', action='store_true', help='Include experimental local build/drop analysis and its noncommercial model pack.')
-    parser.add_argument('--with-separation', action='store_true', help='Include optional offline vocal/drum separation.')
+    parser.add_argument('--with-sections', action='store_true', help='Accepted for compatibility; section runtime is included by default.')
+    parser.add_argument('--with-separation', action='store_true', help='Accepted for compatibility; separation runtime is included by default.')
+    parser.add_argument('--without-sections', action='store_true', help='Omit the section-analysis runtime.')
+    parser.add_argument('--without-separation', action='store_true', help='Omit the separation runtime.')
+    parser.add_argument('--bundle-models', action='store_true', help='Developer offline edition: require and bundle verified model weights.')
     parser.add_argument('--check', action='store_true', help='Run the finished package without developer PATH tools and write an audio/Qt check report.')
     options=parser.parse_args()
+    sections, separation, bundle_models = resolve_packaging_options(options)
     destination=options.dist_dir.resolve()
     cocoa_plugin = None
     if sys.platform == 'darwin':
         from macos_qt_patch import verify_patch
         cocoa_plugin = verify_patch(root)
     djmix.require_tools()
-    from studio_structure import MODEL_SHA256, model_path
-    checkpoint = model_path()
-    if not checkpoint.is_file() or hashlib.sha256(checkpoint.read_bytes()).hexdigest() != MODEL_SHA256:
-        raise SystemExit('Run download_structure_model.py to install the verified beat-analysis model before packaging.')
+    if bundle_models:
+        from studio_structure import MODEL_SHA256, model_path
+        checkpoint = model_path()
+        if not checkpoint.is_file() or hashlib.sha256(checkpoint.read_bytes()).hexdigest() != MODEL_SHA256:
+            raise SystemExit('Run download_structure_model.py to install the verified beat-analysis model before packaging.')
+        from studio_content import verify_model
+        verify_model()
+        from studio_key_model import verify_model as verify_key_model
+        verify_key_model()
     from studio_demo import bundled_project
     from studio_projects import read_project
     demo, _ = read_project(bundled_project())
@@ -109,15 +178,10 @@ def main():
     from studio_lessons import LESSONS, lesson_audio
     for lesson in LESSONS:
         lesson_audio(lesson['id'])
-    from studio_content import verify_model
-    verify_model()
-    from studio_key_model import (verify_model as verify_key_model, MODEL_FILE,
-                                  LICENSE_FILE, NETWORK_SHA256, RUNTIME_PACKAGES)
-    verify_key_model()
+    from studio_key_model import NETWORK_SHA256, RUNTIME_PACKAGES
     from build_credits import build_catalog
     credits_directory = root / 'build' / 'about-credits'
-    build_catalog(credits_directory, with_sections=options.with_sections,
-                  with_separation=options.with_separation)
+    build_catalog(credits_directory, with_sections=sections, with_separation=separation)
     icon_name = ('beatstitch.icns' if sys.platform == 'darwin' else
                  'beatstitch.ico' if sys.platform == 'win32' else 'beatstitch-icon.png')
     if not (credits_directory / icon_name).is_file():
@@ -125,35 +189,36 @@ def main():
     if hashlib.sha256((root/'vendor/openkeyscan/model.py').read_bytes()).hexdigest() != NETWORK_SHA256:
         raise SystemExit('OpenKeyScan network source differs from the verified official revision.')
     args=['--windowed','--onedir', '--name','BeatStitch', '--icon', str(credits_directory / icon_name),
-          '--specpath',str(root/'build'),'--collect-all','librosa','--collect-data','scipy',
+          '--specpath',str(root/'build'),'--collect-all','librosa','--collect-data','scipy','--collect-data','certifi',
           '--exclude-module','PySide6.QtWebEngineCore','--exclude-module','PySide6.QtWebEngineWidgets',
           '--exclude-module','matplotlib','--exclude-module','tkinter',
           '--exclude-module','demucs','--exclude-module','tensorflow',
           '--add-data',str(root/'README.md')+':.','--add-data',str(root/'assets'/'fonts')+':assets/fonts',
           '--add-data',str(root/'LICENSE')+':.','--add-data',str(root/'LICENSE_NOTICE.txt')+':.',
-          '--add-data',str(root/'assets'/'models')+':assets/models',
           '--add-data',str(root/'assets'/'demo')+':assets/demo',
           '--add-data',str(credits_directory)+':assets/about',
           '--add-data',str(root/'assets'/'lessons')+':assets/lessons']
-    for name in (MODEL_FILE, LICENSE_FILE):
-        args += ['--add-data', str(root/'assets/key'/name)+':assets/key']
+    args += bundled_data_options(root, bundle_models=bundle_models, sections=sections, separation=separation)
     for name in RUNTIME_PACKAGES:
         args += ['--copy-metadata', name]
-    args += ['--add-data', str(root/'section-model-manifest.json')+':.']
-    if options.with_separation:
-        from studio_separation import model_directory
-        from studio_separation_model import MODEL_FILE, MODEL_BYTES, MODEL_SHA256, sha256
-        model = model_directory() / MODEL_FILE
-        if not model.is_file() or model.stat().st_size != MODEL_BYTES or sha256(model) != MODEL_SHA256:
-            raise SystemExit('Run download_separation_model.py before packaging separation.')
-        args += ['--add-data', str(model)+':assets/separation',
-                 '--add-data', str(root/'vendor/spleeter')+':vendor/spleeter',
+    packs_path = write_model_packs_manifest(root / 'build', bundle_models=bundle_models,
+                                            sections=sections, separation=separation)
+    args += ['--add-data', str(root/'section-model-manifest.json')+':.',
+             '--add-data', str(packs_path)+':.']
+    if separation:
+        if bundle_models:
+            from studio_separation import model_directory
+            from studio_separation_model import MODEL_FILE, MODEL_BYTES, MODEL_SHA256, sha256
+            model = model_directory() / MODEL_FILE
+            if not model.is_file() or model.stat().st_size != MODEL_BYTES or sha256(model) != MODEL_SHA256:
+                raise SystemExit('Run download_separation_model.py before packaging separation.')
+        args += ['--add-data', str(root/'vendor/spleeter')+':vendor/spleeter',
                  '--hidden-import', 'studio_spleeter_model']
-    if options.with_sections:
-        from studio_song_sections import verify_models
-        verify_models()
+    if sections:
+        if bundle_models:
+            from studio_song_sections import verify_models
+            verify_models()
         args += ['--paths', str(root/'vendor/sections'),
-                 '--add-data', str(root/'assets/sections')+':assets/sections',
                  '--add-data', str(root/'vendor/sections')+':vendor/sections',
                  '--collect-data', 'transformers', '--collect-all', 'x_transformers',
                  '--copy-metadata', 'transformers', '--copy-metadata', 'safetensors',
@@ -196,6 +261,7 @@ def check_package(destination):
                  'LD_LIBRARY_PATH', 'DYLD_LIBRARY_PATH'):
         environment.pop(name, None)
     environment['PATH'] = ''
+    environment['BEATSTITCH_MODEL_DIR'] = str(report / 'isolated-models')
     with tempfile.TemporaryDirectory(prefix='dj-package-check-') as cwd:
         result = subprocess.run([str(executable), '--check-package', str(report)],
                                 cwd=cwd, env=environment, timeout=300)

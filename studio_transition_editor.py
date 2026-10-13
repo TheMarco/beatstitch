@@ -422,7 +422,13 @@ class TransitionEditor(QDialog):
                     raise
                 report['harmony_error'] = str(error)
             try:
-                report['voice_content'] = analyze_pair_voices(snapshot, self.index, self.cache_dir.parent / 'structure-cache', progress)
+                from studio_model_store import available
+                from studio_content import current_content
+                pair = snapshot.clips[self.index-1:self.index+1]
+                if available('content') or all(current_content(snapshot.tracks[c.track_id]) for c in pair):
+                    report['voice_content'] = analyze_pair_voices(snapshot, self.index, self.cache_dir.parent / 'structure-cache', progress)
+                else:
+                    report['voice_download_needed'] = True
             except Exception as error:
                 if str(error) == 'Operation cancelled.':
                     raise
@@ -436,6 +442,8 @@ class TransitionEditor(QDialog):
                 return
             try:
                 self.receive_voice_content(report.get('voice_content', {}))
+                if report.get('voice_download_needed'):
+                    self.voices.summary.setText('Optional voice and drum detector: 25 MB. Choose Check voices to download it, or solo each side and listen. The blend is ready without it.')
                 if report.get('voice_error'):
                     self.voices.summary.setText('Voices could not be fully checked. ' + report['voice_error'] + ' Solo each side and listen.')
                 self.level_advice.setText(level_report_text(report.get('level_balance', []), self.index,
@@ -473,6 +481,8 @@ class TransitionEditor(QDialog):
     def check_voices(self):
         if self.busy:
             return
+        from studio_downloads import ensure_models
+        if not ensure_models(self, ['content'], self.check_voices): return
         snapshot = copy.deepcopy(self.session)
         self.player.pause(); self.set_busy(True)
         self.status.setText('Checking both songs for possible overlapping voices…')

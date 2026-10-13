@@ -16,6 +16,10 @@ if __name__ == '__main__' and sys.argv[1:2] == ['--check-package']:
     from studio_package_check import main as package_check_main
     raise SystemExit(package_check_main(sys.argv[2:]))
 
+if __name__ == '__main__' and sys.argv[1:2] == ['--check-model-download']:
+    from studio_model_check import main as model_check_main
+    raise SystemExit(model_check_main(sys.argv[2:]))
+
 # Enter the analysis worker before loading Qt or creating another window.
 if __name__ == '__main__' and sys.argv[1:2] == ['--section-worker']:
     from studio_section_worker import main as section_worker_main
@@ -152,6 +156,8 @@ class Studio(QMainWindow):
         super().__init__()
         self.data = data_dir
         self.data.mkdir(parents=True, exist_ok=True)
+        from studio_model_store import configure
+        configure(self.data / 'models')
         self.session = Session()
         self.project_path = None
         self.selected_id = ""
@@ -193,6 +199,7 @@ class Studio(QMainWindow):
         self.cue_review = None
         self.help_window = None
         self.about_window = None
+        self.downloads_window = None
         self.key_suggestion = None
         self.prefs = self.read_prefs()
         self.advanced_mode = bool(self.prefs.get('advanced_controls', False))
@@ -236,6 +243,9 @@ class Studio(QMainWindow):
         self.load_bands()
         self.update_storage_pins()
         self.storage.prune()
+        from studio_model_store import available
+        if not self.prefs.get('downloads_intro_seen') and not any(available(p) for p in ('beats', 'key', 'content')):
+            QTimer.singleShot(600, self.show_downloads)
 
     def eventFilter(self, watched, event):
         # Destructive arrangement shortcuts must not act on a different focused panel.
@@ -1044,6 +1054,41 @@ class Studio(QMainWindow):
         self.about_window.raise_()
         self.about_window.activateWindow()
 
+    def show_downloads(self, required=None, on_ready=None, requester=None):
+        from studio_downloads import DownloadsDialog
+        self.write_prefs(downloads_intro_seen=True)
+        if self.downloads_window is None:
+            self.downloads_window = DownloadsDialog(self)
+            self.downloads_window.stateChanged.connect(self.download_state_changed)
+        if required:
+            if not self.downloads_window.busy:
+                self.downloads_window.setParent(requester or self, self.downloads_window.windowFlags())
+            self.downloads_window.request(required, on_ready)
+        else:
+            if not self.downloads_window.busy:
+                self.downloads_window.setParent(self, self.downloads_window.windowFlags())
+                self.downloads_window.on_ready = None
+                self.downloads_window.request_note.hide()
+            self.downloads_window.refresh()
+            self.downloads_window.show()
+            self.downloads_window.raise_()
+            self.downloads_window.activateWindow()
+
+    def require_models(self, packs, on_ready=None, requester=None):
+        from studio_model_store import available
+        if all(available(p) for p in packs):
+            return True
+        def continue_if_open():
+            if on_ready and (requester is None or requester.isVisible()):
+                on_ready()
+        self.show_downloads(packs, continue_if_open if on_ready else None, requester)
+        return False
+
+    def download_state_changed(self):
+        self.update_job_flags()
+        if not self.downloads_window.busy:
+            self.refresh()
+
     def build_menus(self):
         bar = self.menuBar()
         standard = QKeySequence.StandardKey
@@ -1070,6 +1115,8 @@ class Studio(QMainWindow):
         file.addSeparator()
         self.act_import = add(file, "Import folder…", self.import_folder, "Ctrl+I")
         self.act_files = add(file, "Add files…", self.import_files, "Ctrl+Shift+I")
+        self.act_downloads = add(file, 'Downloads && features…', self.show_downloads)
+        self.act_downloads.setToolTip('Choose optional local detectors and vocal removal. See download sizes, progress, retry and removal. Mixing and export work without them.')
         file.addSeparator()
         self.act_export = add(file, "Export mix…", self.export_mix, "Ctrl+E")
         add(file, 'Storage and cache…', self.show_storage)
@@ -1877,8 +1924,9 @@ class Studio(QMainWindow):
         jobs = list(self.jobs.values())
         self.importing = any(j[1] for j in jobs)
         self.rendering = any(j[2] for j in jobs)
-        self.job_area.setVisible(bool(jobs or self.band_workers))
-        self.cancel_btn.setVisible(any(j[3] for j in jobs))
+        downloading = bool(self.downloads_window and self.downloads_window.busy)
+        self.job_area.setVisible(bool(jobs or self.band_workers or downloading))
+        self.cancel_btn.setVisible(any(j[3] for j in jobs) or downloading)
         self.update_job_banner()
 
     def job_progress(self, worker, message):
@@ -1899,11 +1947,18 @@ class Studio(QMainWindow):
             self.job_title.setText('Loading waveforms')
             self.job_reason.hide()
             self.job_text.set_text(f'Preparing visual waveforms for {len(self.band_pending)} song(s). Mix audio is unchanged.')
+        elif self.downloads_window and self.downloads_window.busy:
+            self.job_title.setText('Downloading optional features')
+            self.job_reason.setText('Mix audio is unchanged. File → Downloads & features shows details.')
+            self.job_reason.show()
+            self.job_text.set_text(self.downloads_window.banner)
 
     def cancel_job(self):
         for cancel, _, _, cancellable in self.jobs.values():
             if cancellable:
                 cancel.set()
+        if self.downloads_window and self.downloads_window.busy:
+            self.downloads_window.request_cancel()
         self.update_job_banner()
 
     def load_bands(self):
@@ -2298,6 +2353,8 @@ class Studio(QMainWindow):
         if not isinstance(identity, str):
             identity = clip.track_id if clip else self.library.current_id()
         if self.jobs or identity not in self.session.tracks:
+            return
+        if not self.require_models(['key'], lambda: self.check_selected_key(identity)):
             return
         track = copy.deepcopy(self.session.tracks[identity])
 
@@ -2712,6 +2769,7 @@ class Studio(QMainWindow):
 
     def show_separation(self):
         if self.jobs or self.selected_index() < 0 or len(self.session.clips) < 2: return
+        if not self.require_models(['separation'], self.show_separation): return
         if self.separation_dialog is not None:
             self.separation_dialog.raise_(); return
         from studio_separation_ui import SeparationDialog
@@ -3658,7 +3716,10 @@ class Studio(QMainWindow):
         self.autosave()
         self.write_prefs(volume=self.volume.value())
         self.band_cancel.set()
-        if self.jobs or self.band_workers:
+        downloading = bool(self.downloads_window and self.downloads_window.busy)
+        if self.jobs or self.band_workers or downloading:
+            if downloading:
+                self.downloads_window.request_cancel()
             for cancel, *_ in self.jobs.values():
                 cancel.set()
             self.closing = True

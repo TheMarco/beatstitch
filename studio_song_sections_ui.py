@@ -62,10 +62,11 @@ class SongSections(QWidget):
         selected = self.group.checkedId()
         self.regions = result.get('regions', [])
         installed = model_available()
-        self.find.setEnabled(installed)
+        self.find.setEnabled(True)
+        self.find.setText('Find builds and drops' if installed else 'Download build/drop detector…')
         self.summary.setText(f'{len(self.regions)} suggested sections · Experimental labels and approximate boundaries, not an accuracy score.' if result else
                              'Not checked yet. Finding sections leaves your mix unchanged.' if installed else
-                             'Build/drop model is not installed in this edition. Other cue and protection tools remain available.')
+                             'Optional download: about 3 GB. Beat-based cues, manual cues and protection do not need this advanced detector.')
         table_regions = tuple((v['label'], v['start'], v['end']) for v in self.regions)
         # Native radio choices avoid macOS's populated-table accessibility crash.
         # Keep their objects and selection stable during cue/output updates.

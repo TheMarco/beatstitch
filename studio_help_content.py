@@ -12,6 +12,48 @@ from studio_help_course import COURSE_TOPICS
 
 REFERENCE_TOPICS = (
     {
+        'id': 'downloads', 'title': 'Choose optional features and downloads',
+        'keywords': 'download models optional features install size storage internet offline cancel retry remove missing detector key beat voices drums vocal removal build drop',
+        'body': (
+            '## Start small\n\n'
+            'The installer contains the mixing tools, original practice music and listening lessons. '
+            'You can edit the timeline, enter BPM and source keys, change tempo and pitch, prepare blends, '
+            'master and export without downloading models. Basic opening-passage tempo estimates also work without a model.\n\n'
+            'Open **File → Downloads & features** to choose extra help. Checkboxes select files for **Download selected**. '
+            'An installed pack is marked **Ready** and stays available until you remove it. Nothing downloads just because you check a box.\n\n'
+            '## What each pack adds\n\n'
+            '- **Beat detection — 81 MB:** detected beats and bar starts, whole-song BPM estimates and beat-based cue suggestions. '
+            'You can still use manual cues and basic tempo estimates without it.\n'
+            '- **Key detection — 19 MB:** estimated source keys and suggestions based on those estimates. '
+            'Manual key labels, key compatibility advice and pitch transposition still work without it.\n'
+            '- **Voice and drum detection — 25 MB:** possible voices, drum-led passages and overlapping-voice warnings. '
+            'These are listening prompts, not guarantees. Ordinary mixing works without it.\n'
+            '- **Vocal removal and musical parts — 146 MB download, 157 MB installed:** reduce competing vocals or keep mostly drums in a blend. '
+            'This is separate from voice detection and automatic mastering.\n'
+            '- **Advanced build/drop detection — about 3.07 GB download, 2.76 GB installed:** experimental labels for builds, drops, '
+            'breakdowns, intros and outros. It is unchecked by default. Beat-based cue suggestions do not require this large pack.\n\n'
+            'The three small detectors total about **125 MB** and are recommended for a first mix. You can select fewer, '
+            'close the window and keep working, or add another feature later. A feature button can offer the particular pack it needs.\n\n'
+            '## During a download\n\n'
+            'Progress shows the feature, stage and transferred bytes. You may hide the window and keep editing or listening; '
+            'a banner in the main window keeps the download visible. **Cancel download** stops safely. '
+            '**Retry** reuses complete verified files and resumes partial bytes when the server supports it. '
+            'If verification fails, the bad partial file is discarded and Retry gets a fresh copy. '
+            'An internet connection and extra temporary disk space are needed for installation. The app explains low-space errors.\n\n'
+            '## After installation\n\n'
+            'Models are stored in the app’s user-data folder, separately from the application and disposable audio caches. '
+            'App updates keep them. Analysis is local and works offline after installation; your songs are not uploaded. '
+            'Downloading a detector does not replace existing BPM labels, key choices, cues or listening judgments. '
+            'Analyze a song again when you want the new detector to check it.\n\n'
+            '**Remove** deletes only the chosen downloaded model and its saved partial bytes. Songs, projects, prepared audio and saved observations stay intact. '
+            'A model cannot be removed while audio analysis is using the data folder. You can download it again later.\n\n'
+            '## Licenses\n\n'
+            'Separate downloads retain their original licenses. The large advanced pack includes MuQ weights licensed for noncommercial use '
+            'under CC BY-NC 4.0. **Credits & licenses** shows the original notices; a separate download does not change the license terms.\n\n'
+            'Continue with [the beginner course](help:beginner-course) or [the first-mix guide](help:quick-start).'
+        ),
+    },
+    {
         'id': 'beat-alignment', 'title': 'Line up the beats in a blend',
         'keywords': 'beat alignment kicks double hits offset earlier later same BPM sync downbeat bar phase drag nudge auto',
         'body': (
@@ -119,7 +161,8 @@ REFERENCE_TOPICS = (
             'overlap length afterward does not move the treatment. Check the complete song and both neighboring '
             'blends before exporting. Use Undo before trying different treatment settings, so reductions do not stack.\n\n'
             '## Availability\n\n'
-            'The optional separation edition includes Spleeter and its verified local four-stem model. Its code and pretrained weights are MIT licensed and bundled; no model download is needed during use. An edition without '
+            'Vocal removal uses Spleeter and its verified local four-stem model. Its code and pretrained weights are MIT licensed. '
+            'Install its optional 146 MB download in File → Downloads & features; afterward it works offline. An installation without '
             'those files explains why preparation is unavailable; ordinary mixing still works. The current '
             'limit is a 30-minute source song and a four-minute source overlap. The standalone listening trial '
             'is a separate demonstration; it does not apply choices to a mix.'

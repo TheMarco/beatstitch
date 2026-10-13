@@ -25,7 +25,7 @@ def sha256(path):
         return hashlib.file_digest(handle, 'sha256').hexdigest()
 
 
-def isolated_environment(work):
+def isolated_environment(work, model_dir=None):
     environment = os.environ.copy()
     for name in ('PYTHONPATH', 'PYTHONHOME', 'QT_PLUGIN_PATH', 'QT_QPA_PLATFORM_PLUGIN_PATH',
                  'LD_LIBRARY_PATH', 'DYLD_LIBRARY_PATH'):
@@ -33,6 +33,9 @@ def isolated_environment(work):
     environment.update(PATH='', HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1',
                        HF_HOME=str(work/'hf'), TORCH_HOME=str(work/'torch'),
                        XDG_CACHE_HOME=str(work/'cache'), QT_QPA_PLATFORM='offscreen')
+    environment['BEATSTITCH_MODEL_DIR'] = str(model_dir or work/'models')
+    if model_dir is not None:
+        environment['BEATSTITCH_NO_BUNDLED_MODELS'] = '1'
     return environment
 
 
@@ -65,11 +68,11 @@ def stop_worker(process):
         process.wait()
 
 
-def run_worker(executable, arguments, work, log, timeout=600):
+def run_worker(executable, arguments, work, log, timeout=600, model_dir=None):
     options = ({'creationflags': subprocess.CREATE_NO_WINDOW} if sys.platform == 'win32'
                else {'start_new_session': True})
     with log.open('wb') as diagnostics, subprocess.Popen(
-            [str(executable), *map(str, arguments)], cwd=work, env=isolated_environment(work),
+            [str(executable), *map(str, arguments)], cwd=work, env=isolated_environment(work, model_dir),
             stdout=diagnostics, stderr=subprocess.STDOUT, **options) as process:
         try:
             code = process.wait(timeout=timeout)
@@ -125,10 +128,11 @@ def make_source(path):
     sf.write(path, np.column_stack((left, right)), RATE, subtype='FLOAT')
 
 
-def check_package(executable, resources, output, *, sections=False, separation=False):
+def check_package(executable, resources, output, *, sections=False, separation=False, model_dir=None):
     if not (sections or separation):
         raise ValueError('Select at least one optional worker to check.')
     executable, resources, output = (Path(p).resolve() for p in (executable, resources, output))
+    model_dir = Path(model_dir).resolve() if model_dir is not None else None
     if not executable.is_file() or not resources.is_dir():
         raise ValueError('Choose an existing packaged executable and its resource directory.')
     expected_resources = (executable.parent.parent/'Frameworks'
@@ -168,18 +172,20 @@ def check_package(executable, resources, output, *, sections=False, separation=F
                     if name == 'sections':
                         manifest = json.loads((resources/'section-model-manifest.json').read_text())
                         for relative, expected in manifest.items():
-                            path = resources/'assets/sections'/relative
+                            path = (model_dir/'sections' if model_dir else resources/'assets/sections')/relative
                             if path.stat().st_size != expected['size'] or sha256(path) != expected['sha256']:
                                 raise ValueError('Invalid bundled section model: ' + relative)
-                        result = run_worker(executable, ['--section-worker', source, work], work, output/(name+'.log'))
+                        result = run_worker(executable, ['--section-worker', source, work], work, output/(name+'.log'),
+                                            **({'model_dir':model_dir} if model_dir else {}))
                         item['details'] = validate_sections(result)
                     else:
                         import shutil
                         shutil.copyfile(source, work/'decoded.wav')
                         start, end = 4 * RATE, 8 * RATE
                         (work/'request.json').write_text(json.dumps({'start': start, 'end': end,
-                            'models': str(resources/'assets/separation')}), encoding='utf-8')
-                        result = run_worker(executable, ['--separation-worker', work], work, output/(name+'.log'))
+                            'models': str(model_dir/'separation' if model_dir else resources/'assets/separation')}), encoding='utf-8')
+                        result = run_worker(executable, ['--separation-worker', work], work, output/(name+'.log'),
+                                            **({'model_dir':model_dir} if model_dir else {}))
                         item['details'] = validate_stems(result, work, end - start)
                     if sha256(source) != before:
                         raise ValueError('The original generated source was modified.')
@@ -202,6 +208,7 @@ def main():
         parser.add_argument('--'+name, type=Path, required=True)
     parser.add_argument('--sections', action='store_true')
     parser.add_argument('--separation', action='store_true')
+    parser.add_argument('--model-dir', type=Path, help='External model root containing sections/ and separation/; tests a model-free app after downloads.')
     args = parser.parse_args()
     report = check_package(**vars(args))
     print(f'{report["status"]}: {args.output / "report.json"}')

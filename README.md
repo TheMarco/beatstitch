@@ -12,8 +12,8 @@ free, with entirely optional [Ko-fi support](https://ko-fi.com/aianddesign).
 GPL permits commercial reuse of the covered code under its terms. Third-party
 libraries, fonts, artwork, and model weights retain their own terms.
 
-The production separator uses MIT-licensed Spleeter code and weights. The full
-section-analysis edition also bundles MuQ weights under CC BY-NC 4.0; that
+The production separator uses MIT-licensed Spleeter code and weights. The optional
+advanced section-analysis download includes MuQ weights under CC BY-NC 4.0; that
 restriction applies to those weights. The creator chose to retain the optional
 coffee link without publisher clarification of this particular arrangement.
 It says: “If you like this tool, consider buying me a coffee.” Donations are
@@ -32,9 +32,18 @@ archives, original notices, patches and rebuild recipes with an explicit coverag
 manifest. It rejects missing/changed artifacts and refuses to overwrite an
 existing bundle. Its receipt proves bytes/declared coverage, not legal clearance
 or completeness of an unreviewed platform's corresponding source. Each public
-binary needs its matching source materials. Direct end-user downloads are only
-for weights whose license bars our redistribution while permitting the user's
-intended use; licensed models in the selected edition are bundled.
+binary needs its matching source materials. The default installer contains no model
+weights. File → Downloads & features installs optional, pinned models in writable
+user storage, with progress, cancellation, resume/retry and repair. Separate
+downloads retain their licenses and do not expand their permitted uses.
+
+The recommended beat, key and voice/drum detectors total approximately 125 MB.
+Vocal removal is a separate 146 MB download. Advanced build/drop detection is a
+large optional 3.07 GB download (2.76 GB installed), unchecked by default. Timeline
+editing, manual BPM/keys, pitch/tempo processing, blends, mastering, export, the
+original demo and listening lessons work without these downloads. Installed models
+survive app updates and run offline; songs are not uploaded. The offline guide
+explains each choice under **Choose optional features and downloads**.
 
 ## Desktop app
 
@@ -436,7 +445,7 @@ The desktop dependency set includes `beat-this==1.1.0` and matching PyTorch /
 torchaudio 2.11.0. Before packaging from source, run
 `python download_structure_model.py` and `python download_content_model.py`
 to fetch and verify the pinned models.
-The app bundles that model and performs musical analysis offline; songs are
+The app offers that model as an optional download and performs musical analysis offline after installation; songs are
 never uploaded. The model and its code are MIT licensed by the
 [Beat This authors](https://github.com/CPJKU/beat_this); the bundled model license
 is in `assets/models/Beat-This-LICENSE.txt`. On Linux/Windows CPU-only builds,

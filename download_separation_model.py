@@ -1,6 +1,6 @@
-"""Build-time fetch/conversion of the redistributable official Spleeter weights.
+"""Fetch/conversion of the redistributable official Spleeter weights.
 
-Public packages bundle the converted model. End users do not download it.
+Used by the in-app optional download and by source/offline builds.
 The pinned TensorBundle contains numeric arrays; no saved graph is executed.
 """
 from __future__ import annotations
@@ -11,6 +11,7 @@ import shutil
 import tarfile
 import tempfile
 import urllib.request
+from studio_process import check_cancelled
 
 from studio_separation_model import MODEL_BYTES, MODEL_FILE, MODEL_SHA256, sha256
 from studio_spleeter_checkpoint import FILES, convert_checkpoint
@@ -31,6 +32,7 @@ def extract_numeric(archive, destination):
     found = set()
     with tarfile.open(archive, 'r:gz') as package:
         for member in package:
+            check_cancelled()
             name = PurePosixPath(member.name)
             if name.is_absolute() or '..' in name.parts or '\\' in member.name or member.issym() or member.islnk():
                 raise ValueError('Unsafe path in the model archive.')
@@ -44,7 +46,8 @@ def extract_numeric(archive, destination):
             if stream is None:
                 raise ValueError('Missing numeric checkpoint data.')
             with stream, (destination/member.name).open('xb') as output:
-                shutil.copyfileobj(stream, output, 1024*1024)
+                while chunk := stream.read(1024*1024):
+                    check_cancelled(); output.write(chunk)
             if not verified(destination/member.name, size, digest):
                 raise ValueError('The numeric checkpoint failed verification.')
     if found != set(FILES):
@@ -58,18 +61,19 @@ def fetch_model(destination, *, archive=None, progress=print):
     if target.is_symlink():
         raise ValueError('The model destination cannot be a symbolic link.')
     if verified(target, MODEL_BYTES, MODEL_SHA256):
-        progress('Verified bundled separation model is already available.')
+        progress('Verified vocal-removal model is already available.')
         return target
     with tempfile.TemporaryDirectory(prefix='.spleeter-', dir=destination) as temporary:
         stage = Path(temporary)
         if archive is None:
             archive = stage/'official.tar.gz'
-            progress('Downloading official Spleeter weights for the app build (140 MiB)')
+            progress('Downloading official Spleeter weights (146 MB)')
             with urllib.request.urlopen(ARCHIVE_URL, timeout=60) as response, archive.open('xb') as output:
                 if not response.geturl().startswith('https://'):
                     raise ValueError('The publisher redirected to an insecure download.')
                 total = 0
                 while chunk := response.read(1024*1024):
+                    check_cancelled()
                     total += len(chunk)
                     if total > ARCHIVE_BYTES:
                         raise ValueError('Unexpected model archive size.')
@@ -81,10 +85,11 @@ def fetch_model(destination, *, archive=None, progress=print):
         progress('Converting verified numeric weights without TensorFlow')
         converted = stage/MODEL_FILE
         convert_checkpoint(stage, converted)
+        check_cancelled()
         if not verified(converted, MODEL_BYTES, MODEL_SHA256):
             raise ValueError('The converted separation model failed verification.')
         converted.replace(target)
-    progress('Verified Spleeter model is ready to bundle. Inference is offline.')
+    progress('Vocal-removal model is ready. Inference is offline.')
     return target
 
 

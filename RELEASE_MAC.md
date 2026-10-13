@@ -9,7 +9,7 @@ moving Git branch is not a substitute. Nothing here publishes a release by itsel
 The app is free and all features are available without a donation. About includes
 an entirely optional link: “If you like this tool, consider buying me a coffee.”
 The original app code is GPL-3.0-or-later. Model/asset licenses remain separate.
-The full edition includes MuQ weights under CC BY-NC 4.0. The creator accepted the
+The optional advanced download includes MuQ weights under CC BY-NC 4.0. The creator accepted the
 uncertainty about this specific optional-support arrangement without obtaining
 publisher clarification. This decision does not change MuQ's license or grant
 permission for commercial model use. Spleeter code and weights are MIT licensed.
@@ -17,11 +17,14 @@ permission for commercial model use. Spleeter code and weights are MIT licensed.
 ## Run the app
 
 Extract the application archive and move BeatStitch.app to a folder of your choice,
-usually Applications. The release copy is Developer ID signed; Apple notarization is tracked separately
-in [MAC_SIGNING.md](MAC_SIGNING.md). If macOS
-blocks first launch, use its Open/Privacy & Security controls for a download you
-trust. The app uses local models and does not require a server, an account, or an
-end-user model download. About → Credits & licenses works offline.
+usually Applications. Developer ID signing and Apple notarization are tracked in
+[MAC_SIGNING.md](MAC_SIGNING.md). The default installer contains no model weights.
+The first-run **Downloads & features** window offers the three recommended small
+detectors (125 MB total), separate vocal removal (146 MB), and optional advanced
+build/drop detection (3.07 GB download). Users may skip all downloads and mix with
+manual controls. Downloads show progress, cancellation and retry; installed models
+are stored separately in user data and survive updates. Analysis runs locally and
+offline after installation. About → Credits & licenses works offline.
 
 An existing installation continues using the established DJ Studio data folder.
 The visible name is BeatStitch; projects, preferences, library and prepared audio
@@ -39,29 +42,28 @@ All application and model preparers are in that snapshot:
 ```sh
 python3.13 -m venv .venv
 .venv/bin/python -m pip install -r requirements-release-macos.txt
-.venv/bin/python download_structure_model.py
-.venv/bin/python download_content_model.py
-.venv/bin/python download_key_model.py
-.venv/bin/python download_section_models.py
-.venv/bin/python download_separation_model.py --destination assets/separation
 .venv/bin/python build_demo_assets.py
 .venv/bin/python build_listening_lessons.py
 .venv/bin/python rebuild_qt_cocoa.py
-.venv/bin/python build_desktop.py --with-sections --with-separation --check
+.venv/bin/python build_desktop.py --check
 ```
 
 Provide FFmpeg, ffprobe and Rubber Band on the build PATH. The audio-tool sources
 and original formulae are included separately in the companion, with exact
 versions and configure/build records. The model preparers verify pinned identities;
-Spleeter conversion needs NumPy, not TensorFlow. For an edition without MuQ, omit
-`download_section_models.py` and `--with-sections`. This does not alter GPL rights
-in the app code. Check optional workers in the resulting bundle with:
+Spleeter conversion needs NumPy, not TensorFlow. All inference runtimes are included
+by default; their weights are user-selected downloads. A developer-only offline
+edition can be built with `--bundle-models` after provisioning verified weights.
+Check the real HTTPS key-model download and frozen inference without developer
+assets using `BeatStitch --check-model-download /new/isolated/report-folder`.
+Check advanced workers using external models, never by adding them to the app:
 
 ```sh
 .venv/bin/python -m ci.check_optional_workers \
   --executable 'dist/BeatStitch.app/Contents/MacOS/BeatStitch' \
   --resources 'dist/BeatStitch.app/Contents/Frameworks' \
-  --output dist/optional-package-check --sections --separation
+  --output dist/optional-package-check --model-dir /path/to/test-models \
+  --sections --separation
 ```
 
 ## Rebuild or replace libraries

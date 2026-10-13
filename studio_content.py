@@ -30,17 +30,21 @@ GROUPS = {'voice': (*range(0, 40), 254), 'drums': (*range(161, 169), *range(171,
 
 
 def model_path():
-    return Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent)) / 'assets/models/panns-cnn10.pth'
+    from studio_model_store import directory
+    return directory('content') / 'panns-cnn10.pth'
 
 
 def verify_model(path=None):
     path = Path(path) if path is not None else model_path()
     if not path.is_file() or path.stat().st_size != MODEL_SIZE:
-        raise djmix.MixError('The passage detector is missing. Reinstall the full app, or run download_content_model.py from source.')
+        from studio_model_store import missing_message
+        raise djmix.MixError(missing_message('content'))
     h = hashlib.sha256()
     with path.open('rb') as handle:
         while chunk := handle.read(1024 * 1024): h.update(chunk)
-    if h.hexdigest() != MODEL_SHA256: raise djmix.MixError('The passage detector is damaged. Reinstall the full app.')
+    if h.hexdigest() != MODEL_SHA256:
+        from studio_model_store import missing_message
+        raise djmix.MixError(missing_message('content'))
     return path
 
 

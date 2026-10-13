@@ -429,6 +429,9 @@ class CueReview(QDialog):
 
     def analyze_passages(self):
         if self.busy: return
+        from studio_content import current_content
+        from studio_downloads import ensure_models
+        if not current_content(self.track) and not ensure_models(self, ['content'], self.analyze_passages): return
         from studio_content import analyze_content
         self.audition.stop(); self.set_busy(True)
         track = copy.deepcopy(self.track)
@@ -471,6 +474,8 @@ class CueReview(QDialog):
         if current_sections(self.track):
             self.sections.refresh()
             self.status.setText('Reusing unchanged section observations. Listen before applying any changes.'); return
+        from studio_downloads import ensure_models
+        if not ensure_models(self, ['sections'], self.analyze_sections): return
         self.audition.stop(); self.set_busy(True)
         track = copy.deepcopy(self.track)
 
@@ -507,6 +512,8 @@ class CueReview(QDialog):
     def analyze(self):
         if self.busy:
             return
+        from studio_downloads import ensure_models
+        if not current_analysis(self.track, check_source=True) and not ensure_models(self, ['beats'], self.analyze): return
         self.set_busy(True)
         track = copy.deepcopy(self.track)
 

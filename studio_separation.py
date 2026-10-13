@@ -29,9 +29,8 @@ MODES = {'instrumental': 'Reduce vocals', 'drums': 'Keep mostly drums'}
 
 
 def model_directory():
-    packaged = ROOT / 'assets' / 'separation'
-    if getattr(sys, 'frozen', False) or (packaged / MODEL_FILE).is_file(): return packaged
-    return ROOT / 'outputs/spleeter-research/models'
+    from studio_model_store import directory
+    return directory('separation')
 
 
 def worker_command():
@@ -40,10 +39,8 @@ def worker_command():
 
 
 def available():
-    try:
-        model = model_directory() / MODEL_FILE
-        return model.stat().st_size == MODEL_BYTES and Path(worker_command()[0]).is_file()
-    except OSError: return False
+    from studio_model_store import available as model_available
+    return model_available('separation') and Path(worker_command()[0]).is_file()
 
 
 def plan_separation(session, index, side, mode='instrumental', amount=75):
@@ -110,7 +107,9 @@ def _stems(track, plan, cache, progress):
         progress('Reusing the separated musical parts'); os.utime(folder / 'report.json', None)
         return folder, key
     except (OSError, ValueError, KeyError): pass
-    if not available(): raise djmix.MixError('Local separation is not installed. Install the separation edition to prepare musical parts; the normal mix tools remain available.')
+    if not available():
+        from studio_model_store import missing_message
+        raise djmix.MixError(missing_message('separation'))
     require_space(cache, math.ceil(track.duration * djmix.SR * 8 + (plan['end'] - plan['start']) * 40), 'separate this overlap')
     folder.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.separate-', dir=cache) as temp:

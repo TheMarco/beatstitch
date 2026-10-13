@@ -31,7 +31,8 @@ FPS = 50
 
 
 def model_path():
-    return Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent)) / 'assets/models/beat-this-final0.ckpt'
+    from studio_model_store import directory
+    return directory('beats') / 'beat-this-final0.ckpt'
 
 
 def current_analysis(track, check_source=False):
@@ -221,12 +222,13 @@ def _infer(path, duration, directory, progress):
     from studio_structure_features import decoded_audio, extract, RATE
     check_cancelled()
     identity = source_signature(path)
+    checkpoint = model_path()
+    if not checkpoint.is_file() or hashlib.sha256(checkpoint.read_bytes()).hexdigest() != MODEL_SHA256:
+        from studio_model_store import missing_message
+        raise djmix.MixError(missing_message('beats'))
     import torch
     from beat_this.inference import Audio2Frames
     from beat_this.model.postprocessor import Postprocessor
-    checkpoint = model_path()
-    if not checkpoint.is_file() or hashlib.sha256(checkpoint.read_bytes()).hexdigest() != MODEL_SHA256:
-        raise djmix.MixError('The beat-analysis model is missing or damaged. Reinstall the full app, or run download_structure_model.py from source.')
     threads = torch.get_num_threads()
     torch.set_num_threads(min(4, max(1, os.cpu_count() or 1)))
     try:
