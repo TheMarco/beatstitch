@@ -1417,7 +1417,7 @@
       ],
       "status": "Demo \u00b7 authored BPM, key and regular beat grid",
       "timing": {
-        "version": 1,
+        "version": 2,
         "state": "authored",
         "source": [
           "media/01-night-drive.flac",
@@ -2860,7 +2860,7 @@
       ],
       "status": "Demo \u00b7 authored BPM, key and regular beat grid",
       "timing": {
-        "version": 1,
+        "version": 2,
         "state": "authored",
         "source": [
           "media/02-signal-bloom.flac",
@@ -4303,7 +4303,7 @@
       ],
       "status": "Demo \u00b7 authored BPM, key and regular beat grid",
       "timing": {
-        "version": 1,
+        "version": 2,
         "state": "authored",
         "source": [
           "media/03-first-light.flac",

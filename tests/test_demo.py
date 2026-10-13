@@ -22,6 +22,7 @@ from studio_engine import Clip, Session, Track, layout
 from studio_projects import read_project
 from studio_guidance import timing_guidance
 from studio_recommendations import review_mix
+from studio_timing import VERSION as TIMING_VERSION
 
 
 class DemoAssetsTests(unittest.TestCase):
@@ -60,7 +61,7 @@ class DemoAssetsTests(unittest.TestCase):
         self.assertEqual(timing_guidance(track.timing, track=track).title, 'Timing not analyzed')
         track.bpm -= 1; track.timing['source'] = ['old', 0, 0]
         self.assertEqual(timing_guidance(track.timing, track=track).title, 'Timing not analyzed')
-        self.assertEqual(timing_guidance({'version': 1, 'state': 'steady'}).title, 'No significant drift detected')
+        self.assertEqual(timing_guidance({'version': TIMING_VERSION, 'state': 'steady'}).title, 'No significant drift detected')
 
     def test_sources_persist_and_reopening_resets_only_the_demo_arrangement(self):
         with tempfile.TemporaryDirectory() as directory:

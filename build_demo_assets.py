@@ -9,6 +9,7 @@ import soundfile as sf
 from scipy.signal import butter, sosfilt
 
 from studio_engine import Clip, Session, Track
+from studio_timing import VERSION as TIMING_VERSION
 
 RATE = 48000
 BARS = 32
@@ -99,7 +100,7 @@ def song(bpm, root, variant):
                          .045 if breakdown else .065 + .006 * variant, pan=.35 * (-1) ** step)
     t = np.arange(count, dtype=np.float32) / RATE
     # Pump the synthesized musical layer with the kick; the demo renderer itself
-    # still uses normal DJ Studio processing, with no compressor.
+    # still uses normal BeatStitch processing, with no compressor.
     pump = .25 + .75 * (1 - np.exp(-(t % beat) / .12))
     music *= pump[:, None]
     # A full bar of release ends before the authored drums-only outro begins.
@@ -130,7 +131,7 @@ def build(destination):
         duration = len(audio) / RATE
         track = Track(f'demo-{i + 1}', relative, name, duration, bpm, key, cue_out=duration,
                       estimated=False, waveform=waveform, status='Demo · authored BPM, key and regular beat grid',
-                      timing={'version': 1, 'state': 'authored', 'source': signature, 'bpm': bpm},
+                      timing={'version': TIMING_VERSION, 'state': 'authored', 'source': signature, 'bpm': bpm},
                       beat_grid={'version': 1, 'source': signature, 'bpm': bpm, 'anchor': 0.},
                       fingerprint={'source': signature, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
         session.tracks[track.id] = track
@@ -139,7 +140,7 @@ def build(destination):
     value = {**session.to_dict(), '_portable_paths': 1, '_demo_version': 1}
     (destination / 'Mix.djmix').write_text(json.dumps(value, indent=2, allow_nan=False) + '\n')
     (destination / 'ABOUT.txt').write_text(
-        'DJ Studio — First mix demo\n\n'
+        'BeatStitch — First mix demo\n\n'
         'Three original, procedurally synthesized dance recordings made for this project.\n'
         'No external recordings, samples or loops are used. You may use this audio in demo\n'
         'mixes, exports and shared test projects. The generator is build_demo_assets.py.\n\n'
