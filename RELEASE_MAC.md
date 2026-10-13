@@ -17,7 +17,8 @@ permission for commercial model use. Spleeter code and weights are MIT licensed.
 ## Run the app
 
 Extract the application archive and move BeatStitch.app to a folder of your choice,
-usually Applications. This build is ad-hoc signed, not Apple notarized. If macOS
+usually Applications. The release copy is Developer ID signed; Apple notarization is tracked separately
+in [MAC_SIGNING.md](MAC_SIGNING.md). If macOS
 blocks first launch, use its Open/Privacy & Security controls for a download you
 trust. The app uses local models and does not require a server, an account, or an
 end-user model download. About → Credits & licenses works offline.
@@ -45,6 +46,7 @@ python3.13 -m venv .venv
 .venv/bin/python download_separation_model.py --destination assets/separation
 .venv/bin/python build_demo_assets.py
 .venv/bin/python build_listening_lessons.py
+.venv/bin/python rebuild_qt_cocoa.py
 .venv/bin/python build_desktop.py --with-sections --with-separation --check
 ```
 
