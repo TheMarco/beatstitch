@@ -1061,12 +1061,13 @@ class Studio(QMainWindow):
             self.downloads_window = DownloadsDialog(self)
             self.downloads_window.stateChanged.connect(self.download_state_changed)
         if required:
-            if not self.downloads_window.busy:
-                self.downloads_window.setParent(requester or self, self.downloads_window.windowFlags())
+            self.downloads_window.hide()
+            self.downloads_window.setWindowModality(Qt.WindowModality.ApplicationModal)
             self.downloads_window.request(required, on_ready)
         else:
             if not self.downloads_window.busy:
-                self.downloads_window.setParent(self, self.downloads_window.windowFlags())
+                self.downloads_window.hide()
+                self.downloads_window.setWindowModality(Qt.WindowModality.NonModal)
                 self.downloads_window.on_ready = None
                 self.downloads_window.request_note.hide()
             self.downloads_window.refresh()
@@ -1079,7 +1080,16 @@ class Studio(QMainWindow):
         if all(available(p) for p in packs):
             return True
         def continue_if_open():
-            if on_ready and (requester is None or requester.isVisible()):
+            try:
+                visible = requester is None or requester.isVisible()
+            except RuntimeError:
+                # A review window may have WA_DeleteOnClose. Downloads belong
+                # to the main window and survive that review window's deletion.
+                return
+            if visible and self.jobs:
+                self.say('Download ready. Finish the current task, then try this action again.')
+                return
+            if on_ready and visible:
                 on_ready()
         self.show_downloads(packs, continue_if_open if on_ready else None, requester)
         return False

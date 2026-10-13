@@ -69,11 +69,16 @@ class SeparationWindowTests(unittest.TestCase):
         self.assertEqual(reopened.clips[1].track_id, replacement.id)
         self.assertTrue(Path(reopened.tracks[replacement.id].path).is_file())
 
-    def test_missing_model_explains_unavailable_preparation(self):
+    def test_missing_model_offers_download_without_preparing_audio(self):
         with patch('studio_separation_ui.available', return_value=False):
             self.w.show_separation(); dialog = self.w.separation_dialog
-            self.assertFalse(dialog.prepare.isEnabled()); self.assertIn('not installed', dialog.status.text())
+            self.assertTrue(dialog.prepare.isEnabled()); self.assertIn('Download vocal removal', dialog.prepare.text())
+            self.assertIn('146 MB', dialog.status.text())
             self.assertFalse(dialog.apply.isEnabled()); self.assertTrue(self.w.act_separation.isEnabled())
+            with patch('studio_downloads.ensure_models', return_value=False) as offer:
+                dialog.prepare_audio()
+                offer.assert_called_once_with(dialog, ['separation'], dialog.prepare_audio)
+                self.assertFalse(dialog.busy); self.assertFalse(self.w.jobs)
 
 
 if __name__ == '__main__': unittest.main()

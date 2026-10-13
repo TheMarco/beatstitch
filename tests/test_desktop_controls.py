@@ -42,6 +42,23 @@ class DesktopControlsTests(unittest.TestCase):
         self.windows.append(window)
         return window
 
+    def test_download_manager_survives_closed_review_window(self):
+        from PySide6.QtCore import QCoreApplication
+        from PySide6.QtWidgets import QDialog
+        review = QDialog(self.window)
+        review.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        review.show(); self.app.processEvents()
+        called = []
+        with patch('studio_model_store.available', return_value=False):
+            self.assertFalse(self.window.require_models(['key'], lambda: called.append(True), requester=review))
+        manager = self.window.downloads_window
+        self.assertIs(manager.parentWidget(), self.window)
+        review.close(); QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        manager.on_ready()
+        self.assertEqual(called, [])
+        self.assertTrue(manager.isVisible())
+        manager.hide()
+
     def close_windows(self):
         for window in self.windows:
             window.close()
