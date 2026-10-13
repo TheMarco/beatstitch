@@ -1,5 +1,6 @@
 """Fetch the pinned official PANNs CNN10 weights for offline passage analysis."""
 import hashlib
+import argparse
 import os
 import tempfile
 from pathlib import Path
@@ -8,8 +9,11 @@ from urllib.request import urlopen
 from studio_content import MODEL_SHA256, MODEL_SIZE, MODEL_URL, model_path, verify_model
 
 
-def main():
-    destination = model_path(); destination.parent.mkdir(parents=True, exist_ok=True)
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--destination', type=Path, help='Checkpoint file for a source/test build; normal user downloads use Downloads & features.')
+    options = parser.parse_args(argv)
+    destination = options.destination or model_path(); destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.is_file():
         try:
             verify_model(destination); print('Passage detector already verified.'); return

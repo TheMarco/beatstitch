@@ -72,6 +72,10 @@ jobs:
         run: |
           python build_demo_assets.py
           python build_listening_lessons.py
+      - name: Prepare small content model for existing inference and cancellation tests
+        # Test input only: default packaging excludes this checkpoint and the
+        # frozen package's absence gate rejects accidentally bundled weights.
+        run: python download_content_model.py --destination assets/models/panns-cnn10.pth
       - name: Prepare verified optional models
         if: env.DJ_OPTIONAL_PACKS == 'true'
         run: |
