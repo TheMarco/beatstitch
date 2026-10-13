@@ -36,9 +36,10 @@ def analyze(path: Path, start: float, duration: float, bars: int = 8):
     info = probe(path)
     if start < 0 or duration < 4 or start + duration > info["duration"] + 0.01:
         raise MixError("Choose an excerpt of at least four seconds within the source file.")
-    decoded = ffmpeg("-i", str(path), "-ss", str(start), "-t", str(duration), "-map", "0:a:0",
-                     "-ar", str(RATE), "-ac", "1", "-f", "f32le", "-").stdout
-    y = np.frombuffer(decoded, dtype="<f4").copy()
+    from studio_analysis_audio import mono_stream
+    y = np.frombuffer(b''.join(mono_stream(path, RATE, start=start, duration=duration)),
+                      dtype='<f4').copy()
+    if not len(y): raise MixError('The selected excerpt contains no audio.')
     if np.max(np.abs(y)) < 1e-5:
         raise MixError("The selected excerpt is effectively silent.")
     spectrum = librosa.stft(y, n_fft=2048, hop_length=HOP)

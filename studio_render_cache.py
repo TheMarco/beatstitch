@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import copy
 import os
 from pathlib import Path
 import uuid
@@ -18,7 +19,7 @@ from studio_storage import managed_cache
 RENDER_CACHE_VERSION = 1
 
 
-def audio_recipe(session, region=None):
+def audio_recipe(session, region=None, *, include_mastering=True):
     positions = layout(session)
     if not positions:
         raise djmix.MixError('Add songs before preparing audio.')
@@ -59,11 +60,20 @@ def audio_recipe(session, region=None):
         ingredients.append([identity, track.duration, track.bpm, clip.cue_in, clip.shift,
                             None if points is None else [points.tolist(), clip.cue_out],
                             pos['start'] - start, left - start, right - start, incoming, outgoing])
-    parts = [RENDER_CACHE_VERSION, RENDER_VERSION, engine_signature(), session.target_bpm, end - start, ingredients]
+    # Project loading accepts integer JSON tempos as floats. That spelling must
+    # not invalidate identical prepared audio after saving and reopening.
+    parts = [RENDER_CACHE_VERSION, RENDER_VERSION, engine_signature(), float(session.target_bpm), end - start, ingredients]
     from studio_finishing import recipe as finishing_recipe
     finishing = finishing_recipe(session, positions, start, end)
     if finishing: parts.append(finishing)
     if tempo_sources: parts.append(['set-tempo-sources', tempo_sources, curve.segment_token(start / djmix.SR, end / djmix.SR)])
+    if include_mastering and session.mastering_enabled:
+        from studio_mastering import VERSION
+        # Global loudness and compressor history come from the whole mix. An
+        # edited later song can therefore change the finishing of an earlier
+        # excerpt, while its transformed source cache stays valid.
+        full = audio_recipe(session, include_mastering=False)
+        parts.append(['automatic-mastering', VERSION, full['fingerprint']])
     output_start, output_end = curve.output_span(start, end)
     key = digest(parts)
     return {'fingerprint': key, 'start': start / djmix.SR, 'reference_end': end / djmix.SR,
@@ -98,7 +108,10 @@ class RenderCache:
                     levels = None
             except (OSError, ValueError):
                 levels = None
-            os.utime(folder / 'report.json', None)
+            # A read-only cache can still supply valid prepared audio. Failure
+            # to update its access time must not force needless processing.
+            try: os.utime(folder / 'report.json', None)
+            except OSError: pass
             return {**result, **recipe, 'path': str(path), 'levels': levels, 'cached_render': True}
         except (OSError, ValueError, KeyError, TypeError, RuntimeError):
             return None
@@ -143,7 +156,10 @@ def prepare_listening(session, root, region=None, progress=lambda message: None,
                                    for item in cached.get('level_balance', []) if item.get('relative_start') in indices]
         return cached
     destination = cache.destination(recipe['fingerprint'])
-    result = render_session(session, destination, region=region, progress=progress, cache_dir=audio_cache)
+    if session.mastering_enabled:
+        result = prepare_finished(session, root, destination, region, progress, audio_cache)
+    else:
+        result = render_session(session, destination, region=region, progress=progress, cache_dir=audio_cache)
     if audio_recipe(session, region)['fingerprint'] != recipe['fingerprint']:
         destination.unlink(missing_ok=True)
         raise djmix.MixError('A source changed while preparing audio. Please try again.')
@@ -152,3 +168,69 @@ def prepare_listening(session, root, region=None, progress=lambda message: None,
     result.update(recipe)
     cache.put(recipe, result)
     return result
+
+
+def prepare_finished(session, root, destination, region, progress, audio_cache):
+    """Finish once; regional auditions are excerpts of that exact finished mix."""
+    from studio_mastering import master_file
+    if region is None:
+        dry = copy.deepcopy(session)
+        dry.mastering_enabled = False
+        base = prepare_listening(dry, root, progress=progress, audio_cache=audio_cache)
+        progress('Automatic mastering: finishing the prepared mix; song processing is unchanged')
+        finished = master_file(Path(base['path']), destination, progress=progress)
+        return {**base, **finished, 'cached_render': False, 'mastering_applied': True,
+                'processed_tracks': 0 if base.get('cached_render') else base['processed_tracks'],
+                'reused_tracks': len(session.clips) if base.get('cached_render') else base['reused_tracks']}
+    full = prepare_listening(session, root, progress=progress, audio_cache=audio_cache)
+    from studio_tempo_curve import session_curve
+    start, end = session_curve(session).output_span(*region)
+    progress('Preparing an excerpt of the finished mix; no new mastering pass')
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(uuid.uuid4().hex + '.wav')
+    try:
+        with sf.SoundFile(full['path']) as source, sf.SoundFile(temporary, mode='w',
+                samplerate=djmix.SR, channels=2, subtype='PCM_24') as target:
+            source.seek(start)
+            offset = 0
+            while offset < end - start:
+                progress('Copying the prepared mastered excerpt')
+                chunk = source.read(min(65536, end - start - offset), dtype='float64', always_2d=True)
+                if not len(chunk):
+                    raise djmix.MixError('The prepared finished mix ended unexpectedly.')
+                n = np.arange(offset, offset + len(chunk))
+                edge = np.minimum(np.clip(n / (.005 * djmix.SR), 0, 1),
+                                  np.clip((end - start - 1 - n) / (.005 * djmix.SR), 0, 1))
+                target.write(chunk * edge[:, None])
+                offset += len(chunk)
+        check = sf.info(temporary)
+        if check.frames != end - start:
+            raise djmix.MixError('The finished excerpt has the wrong duration.')
+        progress('Checking the finished excerpt peak headroom')
+        levels = djmix.meter(temporary, require_loudness=False)
+        peak = levels['true_peak_db']
+        safety = min(0.0, -1.1 - peak)
+        if np.isfinite(peak) and safety < 0:
+            protected = temporary.with_name(uuid.uuid4().hex + '.wav')
+            try:
+                djmix.ffmpeg('-i', str(temporary), '-af', f'volume={safety:.9f}dB',
+                             '-c:a', 'pcm_s24le', str(protected))
+                os.replace(protected, temporary)
+            finally:
+                protected.unlink(missing_ok=True)
+            levels = djmix.meter(temporary, require_loudness=False)
+            peak = levels['true_peak_db']
+        if peak > -1.0:
+            raise djmix.MixError('The finished excerpt failed its peak headroom check.')
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+    # A boundary fade changes the signal's spectrum; check actual intersample
+    # peaks rather than assuming that sample attenuation bounds true peak.
+    return {**full, 'path': str(destination), 'duration': (end - start) / djmix.SR,
+            'lufs': levels['lufs'] if np.isfinite(levels['lufs']) else None,
+            'true_peak_db': peak if np.isfinite(peak) else full['true_peak_db'],
+            'meter_scope': 'excerpt' if np.isfinite(peak) else 'full-mix upper bound; silent excerpt',
+            'excerpt_attenuation_db': safety, 'cached_render': False,
+            'processed_tracks': 0 if full.get('cached_render') else full['processed_tracks'],
+            'reused_tracks': len(session.clips) if full.get('cached_render') else full['reused_tracks']}

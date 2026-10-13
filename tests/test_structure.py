@@ -69,7 +69,8 @@ class StructureTests(unittest.TestCase):
             source = root / 'song.wav'
             source.write_bytes(b'fixture identity')
             b, d, bs, ds = observations()
-            observations_file = root / (digest([1, MODEL_SHA256, source_signature(source)]) + '.npz')
+            from studio_structure import OBSERVATION_VERSION
+            observations_file = root / (digest([OBSERVATION_VERSION, MODEL_SHA256, source_signature(source)]) + '.npz')
             np.savez(observations_file, beats=b, downbeats=d, beat_strength=bs, downbeat_strength=ds,
                      logmel=np.ones((3100, 8)), rms=np.full(3100, .1))
             with patch('studio_structure.djmix.probe', return_value={'duration': 62}), \

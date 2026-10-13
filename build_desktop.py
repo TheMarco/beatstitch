@@ -52,7 +52,9 @@ def macos_bundle_only_spec(path):
 
 
 def run_packager(options, root, destination, environment):
-    build_options = ['--noconfirm', '--distpath', str(destination), '--workpath', str(root / 'build')]
+    # A previous incremental PYZ retained old dependency bytecode despite a
+    # changed source module. Release artifacts must contain the reviewed code.
+    build_options = ['--clean', '--noconfirm', '--distpath', str(destination), '--workpath', str(root / 'build')]
     if sys.platform == 'darwin':
         subprocess.run([sys.executable, '-m', 'PyInstaller.utils.cliutils.makespec', *options],
                        check=True, cwd=root, env=environment)

@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import platform
 import sys
@@ -105,6 +106,11 @@ def run_checks(destination, *, allow_source=False):
     destination.mkdir(parents=True, exist_ok=False)
     frozen = bool(getattr(sys, 'frozen', False))
     root = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))
+    original_cwd = Path.cwd()
+    original_numba_cache = os.environ.get('NUMBA_CACHE_DIR')
+    if frozen:
+        os.environ['NUMBA_CACHE_DIR'] = str(destination / 'numba-cache')
+        os.chdir(root)
     report = {'version': 1, 'status': 'running', 'frozen': frozen,
               'platform': sys.platform, 'os': platform.platform(), 'architecture': platform.machine(),
               'checks': [], 'not_tested': [
@@ -206,6 +212,27 @@ def run_checks(destination, *, allow_source=False):
                     'frames': result['frames'], 'scores': len(result['candidates']),
                     'note': 'Tests offline inference and cache reuse, not musical accuracy.'}
         check('offline source-key worker and cache reuse', source_key)
+        def cancelling_stereo():
+            from studio_analysis_audio import mono_samples
+            from studio_structure_features import decoded_audio, RATE
+            import soundfile as sf
+            rate = 48000; t = np.arange(rate * 9) / rate
+            signal = .2 * np.sin(2*np.pi*80*t) + .1 * np.sin(2*np.pi*440*t)
+            source = destination / 'cancelling-stereo.wav'
+            sf.write(source, np.column_stack((signal, -signal)), rate, subtype='FLOAT')
+            before = hashlib.sha256(source.read_bytes()).hexdigest(); details = {}
+            audio = mono_samples(source, 44100, duration=9., details=details)
+            require(len(audio) == 9*44100 and np.max(abs(audio)) > .1,
+                    'Cancelling stereo lost its audible analysis signal.')
+            require(details['analysis_channel'] == 'stronger_left', 'Unexpected analysis channel choice.')
+            with decoded_audio(source, 9., destination/'phase-cache', lambda _: None) as (raw,count):
+                require(count == 9*RATE, 'Beat frontend changed the source clock.')
+                require(np.max(abs(np.fromfile(raw,dtype='<f4'))) > .1, 'Beat frontend lost stereo audio.')
+            require(hashlib.sha256(source.read_bytes()).hexdigest() == before,
+                    'Stereo analysis changed its playback source.')
+            return {'sample_clock_preserved':True, 'source_unchanged':True,
+                    'analysis_channel':details['analysis_channel']}
+        check('cancelling stereo remains audible to analysis', cancelling_stereo)
         check('offline beat-based BPM import and saved alternatives', lambda: check_tempo_import(
             session.tracks[session.clips[0].track_id], destination / 'tempo-import'))
         region = preview_range(session, 1)
@@ -222,6 +249,48 @@ def run_checks(destination, *, allow_source=False):
             require(np.max(abs(data)) > .001 and result['true_peak_db'] <= -.99, 'The demo is silent or clips.')
             return result
         check('bundled demo with gradual tempo', render)
+        def mastering():
+            from studio_mastering import master_file, prepare_comparison
+            from studio_mastering_audio import prepare_playback
+            finished = master_file(master, destination / 'Demo mastered.wav')
+            require(finished['true_peak_db'] <= -1 and sf.info(finished['path']).frames == sf.info(master).frames,
+                    'Automatic mastering clips or changes duration.')
+            folder = destination / 'mastering-comparison'
+            comparison = prepare_comparison(master, Path(finished['path']), folder,
+                                             processing_summary=finished['mastering']['processing_summary'])
+            require(abs(comparison['current']['lufs'] - comparison['matched']['lufs']) <= .15,
+                    'Mastering A/B loudness is not matched.')
+            data, peaks = prepare_playback(folder)
+            try:
+                require(len(peaks[(0, len(data.current))]['current']) == 1024,
+                        'Streamed mastering waveform is incomplete.')
+            finally: data.close()
+            return {'lufs': finished['lufs'], 'true_peak_db': finished['true_peak_db'],
+                    'frames': finished['frames'], 'matched_lufs': comparison['matched']['lufs'],
+                    'streamed_playback_ready': True}
+        check('automatic mastering and streamed volume-matched comparison', mastering)
+        def listening_notes():
+            import copy
+            from studio_engine import Session
+            from studio_listening_notes import capture_note, note_status
+            from studio_listening_notes_ui import ListeningNotesDialog
+            from studio_render_cache import listening_recipe
+            sample = copy.deepcopy(session)
+            recipe = listening_recipe(sample, 'transition', 1)
+            note = capture_note(sample, 1, recipe['fingerprint'], {},
+                                'Package test fixture; no human listening judgment.')
+            sample.listening_notes.append(note)
+            restored = Session.from_dict(json.loads(json.dumps(sample.to_dict())))
+            require(restored.listening_notes == sample.listening_notes, 'Saved listening notes were lost.')
+            require(note_status(note, restored) == 'current', 'Project reopening changed the reviewed sound identity.')
+            restored.clips[1].bass_swap = not restored.clips[1].bass_swap
+            require(note_status(note, restored) == 'changed', 'Changed blend sound retained current listening judgments.')
+            require(all(v == 'unchecked' for v in note['judgments'].values()), 'Unchecked notes acquired judgments.')
+            return {'project_version': sample.to_dict()['version'], 'roundtrip': True,
+                    'changed_sound_recognized': True, 'implicit_judgments': False,
+                    'native_dialog_imported': ListeningNotesDialog is not None,
+                    'note': 'Tests provenance and persistence, not human listening quality.'}
+        check('saved listening notes and audio identity', listening_notes)
         duration = djmix.probe(master)['duration']
         from studio_export import export_audio
         for preset in ('flac', 'mp3'):
@@ -238,6 +307,10 @@ def run_checks(destination, *, allow_source=False):
         report['error'] = f'{type(error).__name__}: {error}'
     finally:
         save()
+        if frozen:
+            os.chdir(original_cwd)
+            if original_numba_cache is None: os.environ.pop('NUMBA_CACHE_DIR', None)
+            else: os.environ['NUMBA_CACHE_DIR'] = original_numba_cache
     return report
 
 

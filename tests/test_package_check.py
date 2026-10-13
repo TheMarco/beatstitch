@@ -57,6 +57,7 @@ app = BUNDLE(coll, name='DJ Studio.app', bundle_identifier='local.djstudio.app')
                 with patch('build_desktop.sys.platform', platform), patch('build_desktop.subprocess.run') as run:
                     run_packager(options, root, root / 'dist', {})
                 commands = [call.args[0] for call in run.call_args_list]
+                self.assertIn('--clean', commands[-1])
                 if platform == 'darwin':
                     self.assertEqual(len(commands), 2)
                     self.assertIn('PyInstaller.utils.cliutils.makespec', commands[0])

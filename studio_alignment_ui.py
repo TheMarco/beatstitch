@@ -150,7 +150,11 @@ class BeatAlignment(QWidget):
         self.player = AlignmentTransport(self); self.player.set_volume(editor.volume)
         self.setProperty('helpTopic', 'beat-alignment')
         box = QVBoxLayout(self); box.setContentsMargins(0, 0, 0, 0); box.setSpacing(6)
+        box.setAlignment(Qt.AlignmentFlag.AlignTop)
         title = QLabel('Beat alignment'); title.setProperty('role', 'section'); box.addWidget(title)
+        pair = [editor.session.tracks[editor.session.clips[i].track_id].name for i in (editor.index - 1, editor.index)]
+        names = QLabel(f'A: {pair[0]}\nB: {pair[1]}'); names.setTextFormat(Qt.TextFormat.PlainText)
+        names.setWordWrap(True); names.setProperty('role', 'secondary'); box.addWidget(names)
         self.summary = QLabel('Same BPM can still leave the kicks apart. Align beats suggests a timing correction for B.')
         self.summary.setWordWrap(True); self.summary.setTextFormat(Qt.TextFormat.PlainText); box.addWidget(self.summary)
         row = QHBoxLayout()
@@ -172,6 +176,7 @@ class BeatAlignment(QWidget):
         row.addStretch(); box.addLayout(row)
         self.details = QWidget()
         details = QVBoxLayout(self.details); details.setContentsMargins(0, 0, 0, 0); details.setSpacing(6)
+        details.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.view = KickView(); details.addWidget(self.view)
         self.view.offsetRequested.connect(self.move_to); self.view.nudgeRequested.connect(self.nudge)
         self.view.seekRequested.connect(lambda seconds: self.player.seek(round(seconds * 1000)))
@@ -232,9 +237,15 @@ class BeatAlignment(QWidget):
 
     def refresh(self):
         if self.data:
-            try: valid = self.data['identity'] == alignment_identity(self.editor.session, self.editor.index)
+            try:
+                actual_offset = offset_for_cue(self.editor.session, self.editor.index, self.data['cue'])
+                valid = (self.data['identity'] == alignment_identity(self.editor.session, self.editor.index)
+                         and abs(actual_offset) <= self.data['margin'] / RATE)
             except (OSError, ValueError, djmix.MixError): valid = False
             if not valid: self.clear()
+            else:
+                self.offset = actual_offset
+                self.monitor()
         self.details.setVisible(self.data is not None)
         for control in (self.listen, self.earlier, self.later, self.reset, self.coarse, self.focus,
                         self.before, self.after, self.view):
@@ -258,7 +269,9 @@ class BeatAlignment(QWidget):
         self.view.set_data(report); self.refresh(); self.monitor()
         self.player.load_report(report); self.player.set_focus(self.focus.isChecked()); self.monitor()
         if result['state'] == 'suggested':
-            self.move_to(self.offset + result['offset_seconds'])
+            if not self.move_to(self.offset + result['offset_seconds']):
+                self.summary.setText('The suggested move could not be made. ' + self.editor.status.text()
+                                     + ' Timing is unchanged; compare the visible hits and try another move.')
         elif result['state'] == 'aligned':
             self.summary.setText('The repeated kick hits already line up closely. No new timing correction was made. Listen and check bar accents too.')
         else:
@@ -293,7 +306,9 @@ class BeatAlignment(QWidget):
                     self.clear(); e.status.setText('The draft or source changed. Align beats again.'); return
                 if old_data:
                     self.result = result
-                    if result['state'] == 'suggested': self.move_to(self.offset + result['offset_seconds'])
+                    if result['state'] == 'suggested':
+                        if not self.move_to(self.offset + result['offset_seconds']):
+                            self.summary.setText('The suggested move could not be made. ' + e.status.text() + ' Timing is unchanged.')
                     else: self.summary.setText(result['reason'] + ' Check the visible hits and listen.')
                     self.monitor(); self.player.play()
                 else: self.set_result(report, result)

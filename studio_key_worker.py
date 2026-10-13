@@ -16,12 +16,12 @@ def infer(source):
     from studio_key_model import verify_model
     model_path = verify_model()
     duration = min(60., djmix.probe(source)['duration'])
-    decoded = djmix.ffmpeg('-i', str(source), '-t', str(duration), '-map', '0:a:0',
-                           '-ar', '44100', '-ac', '1', '-f', 'f32le', '-').stdout
-    audio = np.frombuffer(decoded, dtype='<f4').copy()
+    from studio_analysis_audio import mono_samples
+    details = {}
+    audio = mono_samples(source, 44100, duration=duration, details=details)
     if not len(audio) or not np.isfinite(audio).all():
         raise ValueError('Decoded audio is empty or non-finite.')
-    details = {'excerpt_seconds': len(audio) / 44100, 'frames': len(audio)}
+    details.update(excerpt_seconds=len(audio) / 44100, frames=len(audio))
     if len(audio) < 2 * 44100 or np.max(np.abs(audio)) < 1e-5:
         return {**details, 'state': 'uncertain', 'candidates': [],
                 'reason': 'Too little audible music to estimate a key. Choose a key yourself, or leave it Unknown.'}

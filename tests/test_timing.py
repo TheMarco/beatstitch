@@ -75,6 +75,22 @@ class TimingTests(unittest.TestCase):
         loaded.tracks['a'].timing={'version':VERSION,'state':'drift','map':[[0,0],[20,-1]]}
         with self.assertRaisesRegex(djmix.MixError,'Invalid timing'):layout(loaded)
 
+    def test_old_enabled_correction_survives_reopening_without_becoming_current_analysis(self):
+        from studio_timing import current_analysis
+        from studio_guidance import timing_guidance
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary); session, _, _ = fixture(folder)
+            track, clip = session.tracks['a'], session.clips[0]
+            track.timing['version'] = 1
+            before = layout(session)
+            restored = Session.from_dict(json.loads(json.dumps(session.to_dict())))
+            self.assertTrue(restored.clips[0].stabilize)
+            self.assertEqual(layout(restored), before)
+            self.assertEqual(current_analysis(restored.tracks['a']), {})
+            guidance = timing_guidance(track.timing, True, track=track)
+            self.assertEqual(guidance.title, 'Saved correction on')
+            self.assertFalse(guidance.available)
+
     def test_real_warp_tempo_pitch_nonzero_cues_and_cache(self):
         with tempfile.TemporaryDirectory() as temporary:
             folder=Path(temporary);session,beats,desired=fixture(folder)

@@ -54,8 +54,10 @@ class AlignmentAudioTests(unittest.TestCase):
             # align the same source events through a shared changing set tempo.
             session.tempo_enabled = True
             session.tempo_points = [{'beat': 0., 'bpm': 120.}, {'beat': 64., 'bpm': 132.}]
+            reference_session = Session.from_dict(before)
+            reference_session.tempo_enabled = True; reference_session.tempo_points = session.tempo_points
             with patch('studio_alignment_audio.djmix.prepare', side_effect=AssertionError('Reference check should reuse its audio')):
-                reference = prepare_alignment(Session.from_dict(before), 1, root / 'cache')
+                reference = prepare_alignment(reference_session, 1, root / 'cache')
             render_session(session, root / 'curve-mix.wav', cache_dir=root / 'cache', region=(a, b),
                            stems={0: root / 'curve-a.wav', 1: root / 'curve-b.wav'})
             curved = [sf.read(root / name, dtype='float32', always_2d=True)[0] for name in ('curve-a.wav', 'curve-b.wav')]

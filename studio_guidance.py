@@ -25,7 +25,16 @@ def timing_guidance(timing, enabled=False, busy=False, *, track=None):
         state = 'authored' if valid else None
     elif state in ('drift', 'steady', 'uncertain') and track is not None and not source_matches(timing, track):
         state = 'stale'
-    if state == 'stale':
+    if (enabled and timing.get('version') == 1 and timing.get('state') == 'drift'
+            and timing.get('map') and track is not None and source_matches(timing, track)):
+        result = TimingGuidance(
+            'Saved correction on',
+            'Using your earlier correction.\nAnalyze again to check with the updated detector.',
+            'Your project keeps the correction you previously enabled. The saved timing-map format and renderer '
+            'are unchanged, so opening this project does not discard that sound. This result came from an earlier '
+            'analyzer; it is not a new detector assessment. Listen to check it, turn correction off if unwanted, '
+            'or Analyze again before choosing a new correction.')
+    elif state == 'stale':
         result = TimingGuidance(
             'Timing needs updating',
             'Saved analysis does not match this source.\nReconnect missing audio or Analyze again.',

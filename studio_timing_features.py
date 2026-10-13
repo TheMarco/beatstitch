@@ -29,8 +29,9 @@ def _forward(path, output, sos, edge, progress, duration):
     head = np.empty(0, dtype='<f4')
     tail = head
     count, reported = 0, -1
-    stream = djmix.stream_ffmpeg('-i', str(path), '-map', '0:a:0', '-ar', str(RATE),
-                                '-ac', '1', '-f', 'f32le', '-', chunk_bytes=BLOCK * 4)
+    from studio_analysis_audio import mono_stream
+    stream = mono_stream(path, RATE, cache_dir=output.parent, chunk_samples=BLOCK,
+                         progress=progress)
     with output.open('wb') as handle, closing(stream):
         for raw in stream:
             check_cancelled()

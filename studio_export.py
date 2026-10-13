@@ -15,7 +15,7 @@ import djmix
 
 PRESETS: dict[str, dict[str, str]] = {
     "wav": {
-        "label": "High-quality master",
+        "label": "High-quality audio",
         "extension": ".wav",
         "description": "Stereo 48 kHz 24-bit",
     },

@@ -79,20 +79,28 @@ class Session:
     fade_out_bars: int = 0
     tempo_enabled: bool = False
     tempo_points: list[dict] = field(default_factory=list)
+    mastering_enabled: bool = False
+    listening_notes: list[dict] = field(default_factory=list)
 
     def to_dict(self):
-        return {"version": 14, **asdict(self)}
+        return {"version": 16, **asdict(self)}
 
     @classmethod
     def from_dict(cls, value):
-        if value.get("version") not in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14):
+        if value.get("version") not in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16):
             raise djmix.MixError("Unsupported project version.")
         result = cls(name=str(value["name"]), target_bpm=float(value["target_bpm"]),
                      tracks={k: Track(**v) for k, v in value["tracks"].items()},
                      clips=[Clip(**v) for v in value["clips"]], planning=value.get('planning', {}),
                      collections=value.get('collections', {}), fade_in_bars=value.get('fade_in_bars', 0),
                      fade_out_bars=value.get('fade_out_bars', 0),
-                     tempo_enabled=value.get('tempo_enabled', False), tempo_points=value.get('tempo_points', []))
+                     tempo_enabled=value.get('tempo_enabled', False), tempo_points=value.get('tempo_points', []),
+                     mastering_enabled=value.get('mastering_enabled', False),
+                     listening_notes=value.get('listening_notes', []))
+        from studio_listening_notes import validate_notes
+        validate_notes(result.listening_notes)
+        if type(result.mastering_enabled) is not bool:
+            raise djmix.MixError('Automatic mastering must be on or off.')
         if not isinstance(result.planning, dict):
             raise djmix.MixError('Invalid song-order preferences.')
         from studio_library import validate_collections
@@ -237,6 +245,8 @@ def estimate_track(track: Track, timing_cache=None, progress=lambda message: Non
 
 
 def layout(session: Session, *, check_protection=True) -> list[dict]:
+    if type(session.mastering_enabled) is not bool:
+        raise djmix.MixError('Automatic mastering must be on or off.')
     from studio_tempo_curve import session_curve
     session_curve(session)
     if not math.isfinite(session.target_bpm) or not 20 <= session.target_bpm <= 300:
@@ -376,7 +386,7 @@ def _weights(n: np.ndarray, start: int, length: int, incoming: bool, bass_swap: 
 def render_session(session: Session, destination: Path, *, region=None,
                    progress: Callable[[str], None] = lambda message: None, cache_dir: Path | None = None,
                    stems: dict[int, Path] | None = None) -> dict:
-    """Render sources once, optionally retaining selected songs at their mix gains.
+    """Assemble sources before final mastering, retaining optional deck stems.
 
     Audition stems include the same transition envelopes and share headroom with
     the mix. They are never independently normalized: soloing preserves balance.

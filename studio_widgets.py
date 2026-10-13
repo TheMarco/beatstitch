@@ -268,7 +268,7 @@ class ValueBox(QDoubleSpinBox):
         painter.setBrush(QColor(T.FIELD))
         painter.drawRoundedRect(rect, 2, 2)
         painter.setFont(T.font(self.font_size, QFont.Weight.Medium, tabular=True))
-        painter.setPen(QColor(T.TEXT_3 if not self.isEnabled() else T.ACCENT if self._moved else T.TEXT))
+        painter.setPen(QColor(T.DISABLED_TEXT if not self.isEnabled() else T.ACCENT if self._moved else T.TEXT))
         painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self.display())
 
     def mousePressEvent(self, event):
@@ -400,19 +400,19 @@ class Knob(QDial):
         fraction = (self._value - self.minimum()) / (self.maximum() - self.minimum())
         angle = 225 - 270 * fraction
         if self._value:
-            painter.setPen(QPen(QColor(T.ACCENT if enabled else T.TEXT_3), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap))
+            painter.setPen(QPen(QColor(T.ACCENT if enabled else T.DISABLED_TEXT), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap))
             painter.drawArc(dial, 90 * 16, int((angle - 90) * 16))
         center = dial.center()
         radians = math.radians(angle)
         tip = QPointF(center.x() + math.cos(radians) * 10, center.y() - math.sin(radians) * 10)
-        painter.setPen(QPen(QColor(T.TEXT if enabled else T.TEXT_3), 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.setPen(QPen(QColor(T.TEXT if enabled else T.DISABLED_TEXT), 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
         painter.drawLine(center, tip)
         if self.hasFocus():
             painter.setPen(QPen(T.color(T.ACCENT, .7), 1))
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawEllipse(dial.adjusted(-3, -3, 3, 3))
         painter.setFont(T.font(11, QFont.Weight.Medium, tabular=True))
-        painter.setPen(QColor(T.TEXT if enabled else T.TEXT_3))
+        painter.setPen(QColor(T.TEXT if enabled else T.DISABLED_TEXT))
         text = f"{self._value:+d} {self.unit}" if self._value else f"0 {self.unit}"
         painter.drawText(QRectF(0, 34, self.width(), 16), Qt.AlignmentFlag.AlignCenter, text)
 
@@ -2089,7 +2089,7 @@ class LibraryDelegate(QStyledItemDelegate):
             width = 30 if column == 1 else 40
             painter.drawRoundedRect(QRectF(text_rect.right() - width, rect.center().y() - 4, width, 8), 2, 2)
         elif column == 1:
-            painter.setPen(QColor(T.TEXT if track.bpm else T.BAD))
+            painter.setPen(QColor(T.TEXT if track.bpm else T.BAD_TEXT))
             painter.drawText(text_rect, align, f"{track.bpm:.1f}" if track.bpm else "Needs BPM")
         elif column == 2:
             text = f"{camelot(track.key)} {display_key(track.key, True)}" if track.key else "?"

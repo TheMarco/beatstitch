@@ -32,8 +32,9 @@ LINE_STRONG = "#454545"
 EDGE_HOVER = "#5A5A5A"
 
 TEXT = "#DCDCDC"
-TEXT_2 = "#A3A3A3"
-TEXT_3 = "#737373"
+TEXT_2 = "#BFBFBF"
+TEXT_3 = "#B8B8B8"
+DISABLED_TEXT = "#737373"
 
 ACCENT = "#FFA234"
 ACCENT_HOVER = "#FFB65E"
@@ -49,6 +50,7 @@ BANDS = (LOW, MID, HIGH)
 
 GOOD = "#6FD08C"
 BAD = "#FF6B5E"
+BAD_TEXT = "#FFA99F"
 SELECTION = "#3D4A60"
 
 # One color per song, stable across sessions. Light, saturated, readable with dark text.
@@ -254,7 +256,7 @@ def icon(name: str, ink: str = TEXT_2, size: int = 16, active: str | None = None
     result = QIcon()
     result.addPixmap(pixmap(name, ink, size), QIcon.Mode.Normal)
     result.addPixmap(pixmap(name, active or TEXT, size), QIcon.Mode.Active)
-    result.addPixmap(pixmap(name, TEXT_3, size, .45), QIcon.Mode.Disabled)
+    result.addPixmap(pixmap(name, DISABLED_TEXT, size, .45), QIcon.Mode.Disabled)
     return result
 
 
@@ -284,8 +286,9 @@ def palette() -> QPalette:
     }
     for role, value in roles.items():
         result.setColor(role, QColor(value))
-    for role in (QPalette.ColorRole.WindowText, QPalette.ColorRole.Text, QPalette.ColorRole.ButtonText):
-        result.setColor(QPalette.ColorGroup.Disabled, role, QColor(TEXT_3))
+    for role in (QPalette.ColorRole.WindowText, QPalette.ColorRole.Text, QPalette.ColorRole.ButtonText,
+                 QPalette.ColorRole.PlaceholderText):
+        result.setColor(QPalette.ColorGroup.Disabled, role, QColor(DISABLED_TEXT))
     return result
 
 
@@ -297,6 +300,10 @@ def stylesheet() -> str:
 QMainWindow, QDialog {{ background: {GUTTER}; }}
 QDialog {{ background: {BASE}; }}
 QWidget {{ color: {TEXT}; }}
+QLineEdit, QTextEdit, QPlainTextEdit, QComboBox {{ placeholder-text-color: {TEXT_3}; }}
+QLineEdit:disabled, QTextEdit:disabled, QPlainTextEdit:disabled, QComboBox:disabled {{
+    placeholder-text-color: {DISABLED_TEXT};
+}}
 QLabel {{ background: transparent; }}
 QLabel[role="title"] {{ font-size: {SIZE_TITLE}px; font-weight: 600; }}
 QLabel[role="heading"] {{ font-size: {SIZE_HEADING}px; font-weight: 600; }}
@@ -324,17 +331,19 @@ QPushButton {{ background: {RAISED}; color: {TEXT}; border: 1px solid {GUTTER}; 
 QPushButton:hover {{ background: {HOVER}; }}
 QPushButton:pressed {{ background: {PRESSED}; }}
 QPushButton:focus {{ border-color: {ACCENT}; }}
-QPushButton:disabled {{ color: {TEXT_3}; background: {TITLE}; }}
+QPushButton:disabled {{ color: {DISABLED_TEXT}; background: {TITLE}; }}
 QPushButton:checked {{ background: {ACCENT}; color: {ON_ACCENT}; border-color: {ACCENT_PRESSED}; }}
 QPushButton:checked:hover {{ background: {ACCENT_HOVER}; }}
 QPushButton:checked:disabled {{ background: #6B532F; color: #2A2116; }}
 QPushButton[role="primary"] {{ background: {ACCENT}; color: {ON_ACCENT}; border-color: {ACCENT_PRESSED}; font-weight: 600; }}
 QPushButton[role="primary"]:hover {{ background: {ACCENT_HOVER}; }}
 QPushButton[role="primary"]:pressed {{ background: {ACCENT_PRESSED}; }}
-QPushButton[role="primary"]:disabled {{ background: {TITLE}; color: {TEXT_3}; border-color: {GUTTER}; }}
+QPushButton[role="primary"]:disabled {{ background: {TITLE}; color: {DISABLED_TEXT}; border-color: {GUTTER}; }}
 QPushButton[role="ghost"] {{ background: transparent; border-color: transparent; color: {TEXT_2}; }}
 QPushButton[role="ghost"]:hover {{ background: {HOVER}; color: {TEXT}; }}
-QPushButton[role="danger"] {{ color: {BAD}; }}
+QPushButton[role="ghost"]:disabled {{ color: {DISABLED_TEXT}; }}
+QPushButton[role="danger"] {{ color: {BAD_TEXT}; }}
+QPushButton[role="danger"]:disabled {{ color: {DISABLED_TEXT}; }}
 
 QToolButton {{ background: transparent; border: 1px solid transparent; border-radius: 2px; padding: 2px; }}
 QToolButton:hover {{ background: {HOVER}; }}
@@ -354,7 +363,7 @@ QComboBox {{ background: {FIELD}; border: 1px solid {LINE_STRONG}; border-radius
             min-height: 16px; font-size: 12px; }}
 QComboBox:hover {{ border-color: {EDGE_HOVER}; }}
 QComboBox:focus {{ border-color: {ACCENT}; }}
-QComboBox:disabled {{ color: {TEXT_3}; border-color: {LINE}; }}
+QComboBox:disabled {{ color: {DISABLED_TEXT}; border-color: {LINE}; }}
 QComboBox::drop-down {{ border: 0; width: 18px; subcontrol-origin: padding; subcontrol-position: center right; }}
 QComboBox::down-arrow {{ image: url("{chevron}"); width: 9px; height: 9px; }}
 QComboBox QAbstractItemView {{ background: {TITLE}; border: 1px solid {LINE_STRONG}; padding: 2px; outline: 0;
@@ -393,7 +402,7 @@ QMenuBar::item:selected {{ background: {HOVER}; }}
 QMenu {{ background: {TITLE}; border: 1px solid {LINE_STRONG}; padding: 4px; }}
 QMenu::item {{ padding: 4px 24px 4px 10px; }}
 QMenu::item:selected {{ background: {SELECTION}; }}
-QMenu::item:disabled {{ color: {TEXT_3}; }}
+QMenu::item:disabled {{ color: {DISABLED_TEXT}; }}
 QMenu::indicator {{ width: 13px; height: 13px; }}
 QMenu::indicator:checked {{ image: url("{tick}"); }}
 QMenu::separator {{ height: 1px; background: {LINE_STRONG}; margin: 4px 2px; }}

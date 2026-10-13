@@ -7,7 +7,7 @@ from studio_widgets import clock
 
 
 class ExportDialog(QDialog):
-    def __init__(self, duration, preset="wav", tracklist=False, parent=None):
+    def __init__(self, duration, preset="wav", tracklist=False, parent=None, *, mastering_enabled=False):
         super().__init__(parent)
         self.setWindowTitle("Export your mix")
         self.setMinimumWidth(450)
@@ -20,6 +20,10 @@ class ExportDialog(QDialog):
         subtitle = QLabel("Choose how you will use this audio file. Your project stays editable.")
         subtitle.setWordWrap(True)
         box.addWidget(subtitle)
+        self.mastering_state = QLabel('Automatic mastering: ' + ('On — included in this export.' if mastering_enabled else 'Off — exporting the mix before mastering.'))
+        self.mastering_state.setWordWrap(True)
+        self.mastering_state.setToolTip('This follows the project choice in Mastering beside Export, or Edit → Automatic mastering. Cancel this dialog to change it or compare before/after. Listening volume and A/B volume matching never change export loudness.')
+        box.addWidget(self.mastering_state)
         self.choices = QButtonGroup(self)
         self.buttons = {}
         for identity, info in PRESETS.items():

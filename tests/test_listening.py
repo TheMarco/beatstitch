@@ -320,6 +320,100 @@ class ListeningTests(unittest.TestCase):
         self.assertFalse(w.reviewing)
         self.assertEqual(w.session.to_dict(), original)
 
+    def test_saved_listening_notes_are_optional_undoable_and_do_not_process_or_interrupt_audio(self):
+        from studio_render_cache import listening_recipe
+        w = self.w
+        w.show_listening_notes()
+        self.assertFalse(w.listening_notes_dialog.save.isEnabled())
+        w.listening_notes_dialog.reject()
+        self.prepared_review()
+        before = listening_recipe(w.session, 'transition', 1)['fingerprint']
+        state, plays, seeks = w.player.state, w.player.play_count, list(w.player.position_calls)
+        w.show_listening_notes(); dialog = w.listening_notes_dialog
+        self.assertTrue(dialog.save.isEnabled())
+        self.assertFalse(dialog.isModal())
+        dialog.answers['timing'].setCurrentIndex(dialog.answers['timing'].findData('fits'))
+        dialog.comment.setPlainText('Check the bass again later.')
+        with patch.object(w, 'start_render') as render, patch.object(w, 'job') as job:
+            dialog.save_notes()
+            render.assert_not_called(); job.assert_not_called()
+        self.assertEqual(len(w.session.listening_notes), 1)
+        self.assertEqual(w.session.listening_notes[0]['judgments'],
+                         {'timing': 'fits', 'harmony': 'unchecked', 'content': 'unchecked'})
+        self.assertEqual((w.player.state, w.player.play_count, w.player.position_calls), (state, plays, seeks))
+        self.assertEqual(listening_recipe(w.session, 'transition', 1)['fingerprint'], before)
+        self.assertTrue(w.notes_audio_ready(1))
+        self.assertIsNone(w.listening_notes_dialog)
+        self.assertEqual(w.listening_review.kept, {})
+        w.show_listening_notes()
+        self.assertEqual(w.listening_notes_dialog.answers['timing'].currentData(), 'fits')
+        w.listening_notes_dialog.reject()
+        path = self.root / 'with-notes.djmix'
+        self.assertTrue(w.write_project(path))
+        import json
+        reopened = Session.from_dict(json.loads(path.read_text()))
+        self.assertEqual(reopened.listening_notes, w.session.listening_notes)
+        w.undo(); self.assertEqual(w.session.listening_notes, [])
+        w.redo(); self.assertEqual(len(w.session.listening_notes), 1)
+
+    def test_notes_never_carry_old_answers_into_a_changed_sound_or_different_project(self):
+        from studio_engine import preview_range
+        w = self.w; self.prepared_review()
+        w.show_listening_notes(); dialog = w.listening_notes_dialog
+        dialog.answers['harmony'].setCurrentIndex(dialog.answers['harmony'].findData('unsure'))
+        dialog.comment.setPlainText('Previous reminder'); dialog.save_notes()
+        w.show_listening_notes(); dialog = w.listening_notes_dialog
+        w.edit(lambda: setattr(w.session.clips[1], 'bass_swap', False))
+        self.assertFalse(dialog.save.isEnabled())
+        start, end = preview_range(w.session, 1)
+        record = self.record('transition', 1, start / 48000, (end - start) / 48000)
+        w.activate_audio(record, start / 48000, False)
+        w.media_ready(QMediaPlayer.MediaStatus.LoadedMedia)
+        self.assertFalse(dialog.save.isEnabled())
+        self.assertIn('changed', dialog.message.text())
+        dialog.reject(); w.show_listening_notes(); dialog = w.listening_notes_dialog
+        self.assertTrue(dialog.save.isEnabled())
+        self.assertEqual(dialog.answers['harmony'].currentData(), 'unchecked')
+        self.assertIn('Previous reminder', dialog.previous.text())
+        old_session = w.session
+        w.session = Session(); w.reset_listening()
+        self.assertIsNone(w.listening_notes_dialog)
+        self.assertEqual(len(old_session.listening_notes), 1)
+        self.assertEqual(w.session.listening_notes, [])
+
+    def test_notes_refuse_changed_sources_and_empty_or_overlong_answers(self):
+        w = self.w; self.prepared_review(); w.show_listening_notes()
+        dialog = w.listening_notes_dialog
+        dialog.save_notes()
+        self.assertIn('Choose an answer', dialog.message.text())
+        self.assertEqual(w.session.listening_notes, [])
+        dialog.comment.setPlainText('x' * 2001); dialog.save_notes()
+        self.assertIn('2,000', dialog.message.text())
+        dialog.comment.setPlainText('A real reminder')
+        Path(self.track.path).write_bytes(b'replaced source')
+        with patch.object(w, 'start_render') as render:
+            dialog.save_notes(); render.assert_not_called()
+        self.assertIn('changed', dialog.message.text())
+        self.assertEqual(w.session.listening_notes, [])
+
+    def test_return_in_listening_checklist_does_not_start_audio_or_save_implicit_answers(self):
+        w = self.w; w.show_listening_notes(); dialog = w.listening_notes_dialog
+        dialog.show(); self.app.processEvents()
+        with patch.object(w, 'preview') as preview:
+            QTest.keyClick(dialog, Qt.Key.Key_Return)
+            dialog.answers['timing'].setFocus()
+            QTest.keyClick(dialog.answers['timing'], Qt.Key.Key_Down)
+            QTest.keyClick(dialog.answers['timing'], Qt.Key.Key_Return)
+            dialog.comment.setFocus(); QTest.keyClick(dialog.comment, Qt.Key.Key_Return)
+            preview.assert_not_called()
+        self.assertEqual(w.session.listening_notes, [])
+        self.assertFalse(dialog.listen.autoDefault())
+        self.assertFalse(dialog.save.autoDefault())
+        with patch.object(w, 'show_help') as help_guide:
+            dialog.activateWindow(); self.app.processEvents()
+            QTest.keyClick(dialog, Qt.Key.Key_F1)
+            help_guide.assert_called_once_with('transitions')
+
     def prepared_review(self):
         from studio_engine import preview_range
         for index in (1, 2):

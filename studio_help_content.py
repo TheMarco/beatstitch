@@ -215,6 +215,59 @@ REFERENCE_TOPICS = (
         ),
     },
     {
+        'id': 'automatic-mastering',
+        'title': 'Automatic mastering: an optional final finishing pass',
+        'keywords': 'automatic mastering AI loudness compression limiter peaks dB LUFS match before after export finish dynamics louder',
+        'body': (
+            '## What it does\n\n'
+            '**Mastering: On/Off…** beside Export, or **Edit → Automatic mastering…**, opens an optional '
+            'finishing choice for the whole mix. It gently controls dynamics and brief peaks, then raises '
+            'average loudness where a restrained peak-reduction allowance permits. Some mixes need little '
+            'change. A measured amount of very-low-frequency energy may also trigger 20 Hz cleanup. '
+            'It uses established audio processing, not a neural mastering model. Broad tonal EQ and stereo '
+            'widening are not applied automatically.\n\n'
+            'Mastering is off by default. Your source recordings, cues, BPM, keys and song order stay '
+            'unchanged. It does not repair misplaced beats, musical clashes or competing vocals; review '
+            'those choices before finishing the mix.\n\n'
+            '## Hear a fair comparison\n\n'
+            'Choose **Compare before / after** to prepare both versions and start listening. '
+            '**A · Current mix** is the mix before this final pass. **B · Mastered** is after it. '
+            'Switch A/B while playback continues at the same position, or choose a blend from **Passage** '
+            'and enable **Loop**. The real waveform rows show these two rendered versions on one fixed '
+            'amplitude scale. Library and source waveforms still show the original recording.\n\n'
+            'Leave **Match listening loudness** checked first. It attenuates the louder version so extra '
+            'volume does not automatically win. Listen for kick punch, clear vocals, harshness, and '
+            'unwanted pumping or smeared attacks. If both sound equally good, no audible quality '
+            'improvement has been demonstrated; keeping mastering off is a valid choice.\n\n'
+            'Uncheck matching to hear the actual finished loudness. B will often become louder. '
+            'The listening-volume slider only adjusts monitoring. Neither matching nor listening '
+            'volume changes the mastered export. Hover the level summary for measurements and the '
+            'processing summary for the decisions made.\n\n'
+            '## Keep your choice\n\n'
+            'The top **Use automatic mastering for this mix** checkbox is a draft project setting. '
+            '**Apply changes** saves that on/off choice as one Undo action. Comparing A/B alone does '
+            'not apply it. **Close** stops listening and discards an unapplied choice. '
+            'Applying takes effect when you next prepare or play the mix or export it; it does not '
+            'change the audio files you previously exported. The setting survives saving and reopening '
+            'the project. Older projects open with mastering off.\n\n'
+            'With mastering on, **Play mix**, the main **Listen to blend**, opening/ending previews and '
+            'exports use the same finished mix. Blend excerpts come from that whole render rather '
+            'than running a different mastering pass on each short clip. The detailed blend editor '
+            'and timing/beat tools monitor source or deck audio before final mastering so you can '
+            'inspect individual parts and their balance; return to main Listen to blend to judge '
+            'the finished result. The export dialog states whether mastering is included.\n\n'
+            '## What needs processing\n\n'
+            'Turning mastering on reuses the assembled mix and prepared songs where available. It only '
+            'adds a final finishing pass. Turning it off reuses the existing mix before mastering. '
+            'A/B, matching, loop and seeking use already prepared audio without another audio-processing '
+            'job. The task banner states when finishing or comparison preparation is running and lets '
+            'you cancel. Editing a song or fade may change whole-mix loudness and require finishing '
+            'again; unchanged pitch and tempo work still remains reusable.\n\n'
+            '[Check blends](help:transitions) · [Start and ending](help:finishing) · '
+            '[Save and export](help:projects)'
+        ),
+    },
+    {
         'id': 'finishing',
         'title': 'Give the mix a clean start and ending',
         'keywords': 'opening ending fade fade-in fade-out tail reverb cut abrupt start finish bars source beginning',
@@ -919,7 +972,7 @@ REFERENCE_TOPICS = (
     {
         "id": "transitions",
         "title": "Transitions",
-        "keywords": "transition blend editor preview solo outgoing incoming loop bass swap overlap order chevron verdict cue end alternatives current draft comparison A/B pitch matched loudness balance levels quieter louder volume jump review all keep change next unchecked remaining filter echo outgoing finish effects",
+        "keywords": "transition blend editor preview solo outgoing incoming loop bass swap overlap order chevron verdict cue end alternatives current draft comparison A/B pitch matched loudness balance levels quieter louder volume jump review all keep change next unchecked remaining filter echo outgoing finish effects listening notes checklist beats harmony voices melodies fits unsure",
         "body": (
             '**Kicks landing apart despite matching BPM?** Choose **Align beats…** in the Transition box. '
             'It checks the beats, offers a timing draft and shows the actual kick hits for live comparison. '
@@ -950,8 +1003,19 @@ REFERENCE_TOPICS = (
             "Playing the full mix, auditioning a source or selecting another pair also pauses the walk.\n\n"
             "A Keep decision belongs to the sound you heard. Changing cues, tempo, pitch, correction or bass handling "
             "clears affected decisions; changing one song's pitch can affect both neighboring blends. Unchanged "
-            "blends stay kept. Source-file replacements also need another listen. These are temporary listening "
-            "notes, not quality scores, locks or proof that a mix is correct. They are not saved in the project.\n"
+            "blends stay kept. Source-file replacements also need another listen. Keep markers are temporary "
+            "choices, not quality scores, locks or proof that a mix is correct. Keep markers are not saved in the project.\n"
+            "\n## Listening notes\n\n"
+            "**Listening notes…** in the Transition box opens an optional checklist for the selected blend. "
+            "Use **Listen to blend** first, then separately judge whether the beats stay together, the musical notes "
+            "fit, and the voices or lead melodies coexist. **Not checked** means you have not judged that question; "
+            "**Not sure** means you listened but cannot decide. Neither means the blend has passed a check. "
+            "You can add a reminder about phrasing, bass, levels or processing. Playback can continue while you write.\n\n"
+            "**Save notes** stores your opinions with the project and is undoable. It never alters audio, starts "
+            "processing or creates detector confidence scores. These notes belong to the exact prepared sound. "
+            "If settings or source files change, earlier notes stay in the project but the checklist asks you to "
+            "check the new sound. Changing a title or source-key label alone does not make audio different. "
+            "Keep markers and saved listening notes are separate: keeping a blend never fills in the checklist for you.\n"
             "\n## Blend editor\n\n"
             "**Open blend editor** shows both real song waveforms on one time axis. The grid follows the incoming cue "
             "and project BPM; it is not a verified beat or phrase analysis. With tempo correction enabled, the waveform "

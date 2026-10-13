@@ -36,7 +36,7 @@ def project():
 class PresetTests(unittest.TestCase):
     def test_presets_and_estimates(self):
         self.assertEqual(set(studio_export.PRESETS), {"wav", "flac", "mp3"})
-        self.assertEqual(studio_export.PRESETS["wav"]["label"], "High-quality master")
+        self.assertEqual(studio_export.PRESETS["wav"]["label"], "High-quality audio")
         self.assertEqual(studio_export.PRESETS["wav"]["extension"], ".wav")
         self.assertEqual(studio_export.PRESETS["flac"]["label"], "Lossless, smaller file")
         self.assertEqual(studio_export.PRESETS["flac"]["extension"], ".flac")

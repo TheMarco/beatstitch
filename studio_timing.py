@@ -20,7 +20,7 @@ from scipy.signal import correlate, find_peaks
 import djmix
 from studio_storage import managed_cache
 
-VERSION = 1
+VERSION = 2
 RENDER_VERSION = 2
 
 
@@ -250,7 +250,10 @@ def mapping(track, clip):
     if not clip.stabilize:
         return None
     timing = track.timing
-    if not timing or timing.get('version') != VERSION:
+    # Analyzer v2 changed stereo feature extraction, not the saved map format
+    # or its renderer. Keep explicitly enabled v1 corrections usable; freshness
+    # checks still require v2 before offering new detector advice.
+    if not timing or type(timing.get('version')) is not int or timing['version'] not in (1, VERSION):
         raise djmix.MixError(f'Analyze timing for {track.name} before enabling stabilization.')
     if timing.get('state') != 'drift' or not timing.get('map'):
         return None  # Stable / inconclusive analysis never causes extra processing.

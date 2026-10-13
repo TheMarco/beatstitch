@@ -8,6 +8,13 @@ Ubuntu 24.04 x86-64 runners.
 
 ## Desktop app
 
+The isolated **detector-confidence pilot** uses the 25 songs supplied in
+`~/Downloads/dataset`. Double-click `Launch Detector Pilot.command` for native
+listening, real waveforms and independently entered reference labels. Suggestions
+start hidden, answers are saved separately, and revealing results records exposure.
+It changes no mix or installed detector settings. See [the pilot instructions](DETECTOR_PILOT.md).
+These development predictions do not establish accuracy or calibrated confidence.
+
 On this Mac, double-click `Launch DJ Studio.command` to open the app and restore
 the current session from `outputs/studio`. A packaged app is built at
 `dist/DJ Studio.app`; its default project storage is the operating system's local
@@ -95,6 +102,19 @@ Apply is one Undo action, previews and exports use the same fade, and fade-only
 edits reuse processed and assembled audio. A fresh Mix guide arrangement starts
 with fades off. Context help explains the choices and available duration.
 
+**Mastering: On/Off…** beside Export (also **Edit → Automatic mastering…**) adds an
+optional conservative final pass: measured gentle dynamics control, compensated
+oversampled peak limiting and a bounded loudness increase. It is off by default.
+**Compare before / after** offers real waveforms and one playback clock; leave
+**Match listening loudness** on to compare punch and texture fairly. A/B, matching,
+looping and seeking use prepared audio. The checkbox is a draft until **Apply
+changes**, one Undo action. Project format 15 remembers it; formats 1–14 still open
+with mastering off. Main mix/blend playback and exports use the same full master;
+short previews are excerpts of it. Deck/timing tools monitor audio before final
+mastering. Switching the setting reuses assembled and transformed sources. Hover
+for tooltips or press F1 for the full beginner explanation. This uses established
+DSP rather than a neural model; it makes no automatic broad EQ or widening choices.
+
 **Protect…** below the source waveform (also Song cues → Protect passages) marks
 source ranges that must stay fully included and outside both adjacent blends.
 Vocal/build/drop/favorite are user labels. **Find possible vocals** offers tentative
@@ -175,8 +195,13 @@ ordinary linked project; create another portable copy to copy its media too.
    The review strip shows kept and unchecked counts; **Review remaining** revisits
    unchecked blends. Audio edits clear affected Keep decisions, including both
    neighbors when a song's pitch changes. **End review** or **Stop** pauses the walk.
-   Decisions are temporary listening notes, not quality scores or locks. They are
+   Keep markers are temporary choices, not quality scores or locks. They are
    not saved with the project; **Review all** starts a new pass.
+   **Listening notes…** opens an optional checklist for beats, harmony and competing
+   voices or melodies. Those separate notes are saved with the project and are
+   undoable. Unchecked and unsure remain distinct; keeping a blend never supplies
+   answers for you. Notes belong to the prepared sound and ask for another listen
+   after audio edits. Saving them does not process audio or change playback.
    To make a blend longer or shorter, click **− / +**, drag the Overlap number or double-click to
    type. Seconds and the maximum available length appear below it; **Presets**
    offers 4/8/16/32-bar presets. Both songs' other blends count toward the limit.

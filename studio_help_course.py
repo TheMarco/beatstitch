@@ -651,6 +651,14 @@ LESSONS = (
 
     ## Save the project before exporting
 
+    You can also try **Mastering: Off…** beside Export. Choose **Compare before / after**,
+    leave **Match listening loudness** on and switch A/B while it plays. Judge the kicks,
+    vocal clarity and texture. More volume alone does not establish better sound.
+    Check **Use automatic mastering for this mix**, then **Apply changes**, only if you
+    want the final pass. Off is a valid choice, and one Undo restores your setting.
+    Main playback and export follow this choice; the detailed beat/deck tools monitor
+    audio before final mastering. See [Automatic mastering](help:automatic-mastering).
+
     **File → Save** ({MOD}+S) stores an editable **.djmix** project: the arrangement,
     cues, tempo and other choices. An ordinary project refers to source files in
     their existing locations. It is not a self-contained audio mix or automatically
@@ -773,6 +781,12 @@ LESSONS = (
     your listening choice; **Next** leaves that join unchecked. **Change** opens its
     editor. A kept marker records a decision, not an objective guarantee of quality.
     After relevant edits, listen again.
+
+    **Remember:** optional **Listening notes…** keeps separate judgments about
+    beats, harmony and competing voices or melodies with the project. Leave a
+    question **Not checked** if you skipped it; use **Not sure** if you listened
+    but cannot decide. These opinions do not become detector scores. Notes are
+    tied to the prepared sound, so an edited blend needs a new listen.
 
     **Finish:** play the entire mix, check its start and ending, save the project,
     export, and listen to the exported file. A string of good local joins can still

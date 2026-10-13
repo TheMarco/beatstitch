@@ -171,6 +171,7 @@ class Studio(QMainWindow):
         from studio_review_walk import ReviewWalk
         self.listening_review = ReviewWalk()
         self.dirty = False
+        self.listening_notes_dialog = None
         self.autosave_time, self.autosave_error = None, ''
         self.autosave_blocked = False
         self.project_error = ''
@@ -183,6 +184,7 @@ class Studio(QMainWindow):
         self.comparison = None
         self.transition_editor = None
         self.finishing_dialog = None
+        self.mastering_dialog = None
         self.loop_dialog = None
         self.separation_dialog = None
         self.lessons_dialog = None
@@ -441,6 +443,10 @@ class Studio(QMainWindow):
         row.addSpacing(8)
         self.export_btn = button("Export…", self.export_mix, None, "export")
         self.export_btn.setToolTip("Render the whole mix to a WAV file (Cmd+E)")
+        self.mastering_btn = button('Mastering: Off…', self.show_mastering)
+        self.mastering_btn.setToolTip('Open optional final mastering settings and volume-matched A/B listening. Applying a choice affects whole-mix playback and export. Unchanged songs are reused.')
+        self.mastering_btn.setProperty('helpTopic', 'automatic-mastering')
+        row.addWidget(self.mastering_btn)
         row.addWidget(self.export_btn)
         return bar
 
@@ -920,6 +926,12 @@ class Studio(QMainWindow):
         listening.addWidget(self.loop_blend)
         listening.addWidget(self.review_btn)
         body.addLayout(listening)
+        self.listening_notes_btn = button('Listening notes…', self.show_listening_notes)
+        self.listening_notes_btn.setToolTip('Optional checklist for beats, harmony and competing voices or melodies. '
+                                           'Save your own judgments with the project. Notes never change audio or become detector scores.')
+        self.listening_notes_btn.setAccessibleDescription(self.listening_notes_btn.toolTip())
+        self.listening_notes_btn.setProperty('helpTopic', 'transitions')
+        body.addWidget(self.listening_notes_btn)
         return frame
 
     def build_review_strip(self):
@@ -1064,6 +1076,7 @@ class Studio(QMainWindow):
         edit.addSeparator()
         self.act_order = add(edit, "Suggest order", self.propose_order)
         self.act_finishing = add(edit, 'Start && ending…', self.show_finishing)
+        self.act_mastering = add(edit, 'Automatic mastering…', self.show_mastering)
         self.act_tempo_curve = add(edit, 'Set tempo curve…', self.show_tempo_curve)
         self.act_loop_extension = add(edit, 'Extend selected drums…', self.show_loop_extension)
         self.act_separation = add(edit, 'Reduce competing parts…', self.show_separation)
@@ -1232,6 +1245,8 @@ class Studio(QMainWindow):
                 "planning": copy.deepcopy(self.session.planning),
                 "collections": copy.deepcopy(self.session.collections),
                 'fades': (self.session.fade_in_bars, self.session.fade_out_bars),
+                'mastering': self.session.mastering_enabled,
+                'listening_notes': copy.deepcopy(self.session.listening_notes),
                 'tempo_curve': (self.session.tempo_enabled, copy.deepcopy(self.session.tempo_points)),
                 'locations': {k: (t.path, t.duration, t.cue_in, t.cue_out, copy.deepcopy(t.fingerprint),
                                   t.waveform, t.structure, t.content, t.song_sections) for k, t in self.session.tracks.items()},
@@ -1245,6 +1260,8 @@ class Studio(QMainWindow):
         self.session.planning = copy.deepcopy(state.get('planning', {}))
         self.session.collections = copy.deepcopy(state.get('collections', {}))
         self.session.fade_in_bars, self.session.fade_out_bars = state.get('fades', (0, 0))
+        self.session.mastering_enabled = state.get('mastering', False)
+        self.session.listening_notes = copy.deepcopy(state.get('listening_notes', []))
         self.session.tempo_enabled, self.session.tempo_points = copy.deepcopy(state.get('tempo_curve', (False, [])))
         for identity, values in state["metadata"].items():
             if identity in self.session.tracks:
@@ -1323,6 +1340,8 @@ class Studio(QMainWindow):
             paths.append(self.player.source().toLocalFile())
         if self.finishing_dialog is not None and self.finishing_dialog.preview_path:
             paths.append(self.finishing_dialog.preview_path)
+        if self.mastering_dialog is not None:
+            paths.extend(self.mastering_dialog.preview_paths)
         if self.loop_dialog is not None:
             paths.extend(self.loop_dialog.cache_paths)
         if self.separation_dialog is not None:
@@ -1658,6 +1677,9 @@ class Studio(QMainWindow):
         self.order_btn.setAccessibleDescription(self.order_btn.toolTip())
         self.act_order.setEnabled(clips > 1 and not busy)
         self.act_finishing.setEnabled(clips > 0 and not busy)
+        self.act_mastering.setEnabled(clips > 0 and not busy)
+        self.mastering_btn.setEnabled(clips > 0 and not busy)
+        self.mastering_btn.setText('Mastering: ' + ('On…' if self.session.mastering_enabled else 'Off…'))
         self.act_lessons.setEnabled(not busy)
         self.act_undo.setEnabled(bool(self.history) and not rendering)
         self.act_redo.setEnabled(bool(self.future) and not rendering)
@@ -2719,6 +2741,16 @@ class Studio(QMainWindow):
         self.finishing_dialog.finished.connect(lambda _: setattr(self, 'finishing_dialog', None))
         self.finishing_dialog.open()
 
+    def show_mastering(self):
+        if self.jobs or not self.session.clips: return
+        if self.mastering_dialog is not None:
+            self.mastering_dialog.raise_(); return
+        from studio_mastering_ui import MasteringDialog
+        self.stop(); self.source_audition.stop()
+        self.mastering_dialog = MasteringDialog(self)
+        self.mastering_dialog.finished.connect(lambda _: setattr(self, 'mastering_dialog', None))
+        self.mastering_dialog.open()
+
     def align_selected_blend(self):
         self.edit_blend()
         dialog = self.transition_editor
@@ -3022,6 +3054,8 @@ class Studio(QMainWindow):
     # Rendering and playback ----------------------------------------------------------------
 
     def reset_listening(self):
+        if self.listening_notes_dialog is not None:
+            self.listening_notes_dialog.reject()
         from studio_review_walk import ReviewWalk
         self.listening_review = ReviewWalk()
         self.loaded_record = None
@@ -3096,6 +3130,38 @@ class Studio(QMainWindow):
         self.review_keep.setAccessibleDescription(tip)
         self.review_end.setText('End review' if review.active else 'Close review')
         self.review_btn.setEnabled(total > 0 and not self.jobs and not review.active)
+        self.listening_notes_btn.setEnabled(total > 0 and not self.jobs)
+        if self.listening_notes_dialog is not None:
+            self.listening_notes_dialog.refresh_available()
+
+    def notes_audio_ready(self, index):
+        return (not self.jobs and self.listen_kind == 'transition' and self.listen_transition == index
+                and self.audio_revision == self.revision and self.loaded_record is not None
+                and not self.player.source().isEmpty() and self.pending_playback is None)
+
+    def show_listening_notes(self):
+        index = self.transition_index()
+        if not index or len(self.session.clips) < 2 or self.jobs:
+            return
+        if self.listening_notes_dialog is not None:
+            self.listening_notes_dialog.raise_(); self.listening_notes_dialog.activateWindow()
+            return
+        from studio_listening_notes_ui import ListeningNotesDialog
+        dialog = ListeningNotesDialog(self, index)
+        self.listening_notes_dialog = dialog
+        dialog.finished.connect(lambda _: setattr(self, 'listening_notes_dialog', None))
+        dialog.show()
+
+    def save_listening_note(self, index, judgments, comment):
+        if not self.notes_audio_ready(index) or not self.refresh_prepared_audio():
+            raise djmix.MixError('This blend changed. Listen to its current audio before saving notes.')
+        from studio_listening_notes import capture_note, validate_notes
+        note = capture_note(self.session, index, self.loaded_record['fingerprint'], judgments, comment)
+        validate_notes([*self.session.listening_notes, note])
+        saved = self.edit(lambda: self.session.listening_notes.append(note), action='Save listening notes')
+        if saved:
+            self.say('Listening notes saved with this project. The audio is unchanged.')
+        return saved
 
     def dismiss_review(self):
         active = self.reviewing
@@ -3310,7 +3376,8 @@ class Studio(QMainWindow):
         from studio_export_ui import ExportDialog
         from studio_tempo_curve import session_curve
         chooser = ExportDialog(float(session_curve(self.session).to_output(self.timeline.duration())), self.prefs.get("export_preset", "wav"),
-                               self.prefs.get("export_tracklist", False), self)
+                               self.prefs.get("export_tracklist", False), self,
+                               mastering_enabled=self.session.mastering_enabled)
         if not chooser.exec():
             return
         preset, tracklist = chooser.preset(), chooser.tracklist.isChecked()
@@ -3405,10 +3472,11 @@ class Studio(QMainWindow):
             from studio_render_cache import prepare_listening, audio_recipe
             if not export:
                 return prepare_listening(snapshot, self.data / 'renders', region, progress, self.data / 'audio-cache')
-            result = render_session(snapshot, destination, region=region, progress=progress, cache_dir=self.data / 'audio-cache')
-            result['levels'] = level_envelope(destination)
-            result.update(audio_recipe(snapshot, region))
-            return result
+            from studio_export import export_audio
+            prepared = prepare_listening(snapshot, self.data / 'renders', region, progress, self.data / 'audio-cache')
+            exported = export_audio(Path(prepared['path']), destination, 'wav', title=snapshot.name,
+                                    protected_sources=[Path(t.path) for t in snapshot.tracks.values()], progress=progress)
+            return {**prepared, **exported, 'levels': level_envelope(destination)}
 
         def finished(result):
             record = {**result, "kind": kind, "transition": transition,
@@ -3436,7 +3504,8 @@ class Studio(QMainWindow):
                 self.refresh()
 
         self.job(work, finished, rendering=True, cancellable=True, title=f'Preparing {title.lower()}',
-                 reason=('The full mix is not prepared for these settings. Checking cached audio first.' if kind == 'mix' else
+                 reason=('Checking the cached full mix, then finishing it with automatic mastering. Unchanged songs are reused.' if snapshot.mastering_enabled else
+                         'The full mix is not prepared for these settings. Checking cached audio first.' if kind == 'mix' else
                          'Preparing this blend and its listening context. Unchanged song audio is reused.'))
 
     def toggle_play(self):
@@ -3527,7 +3596,8 @@ class Studio(QMainWindow):
         else:
             length = f", {clock(duration)}" if duration > 0 else ""
             changed = " · edits need preparation" if self.audio_revision != self.revision else ""
-            self.source_label.set_text(f"{self.loaded_label}{length}{changed}")
+            finishing = ' · mastered' if self.loaded_record and self.loaded_record.get('mastering_applied') else ''
+            self.source_label.set_text(f"{self.loaded_label}{finishing}{length}{changed}")
 
     def playback_reference(self):
         return float(self.audio_curve.to_reference(self.audio_curve.to_output(self.audio_origin) + self.player.position() / 1000))
@@ -3557,10 +3627,14 @@ class Studio(QMainWindow):
         self.timeline.viewport().update()
 
     def closeEvent(self, event):
+        if self.listening_notes_dialog is not None:
+            self.listening_notes_dialog.reject()
         if self.lessons_dialog is not None:
             self.lessons_dialog.reject()
         if self.finishing_dialog is not None:
             self.finishing_dialog.reject()
+        if self.mastering_dialog is not None:
+            self.mastering_dialog.reject()
         if self.loop_dialog is not None:
             self.loop_dialog.reject()
         if self.separation_dialog is not None:

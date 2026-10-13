@@ -23,7 +23,8 @@ from studio_cache import digest, source_signature
 from studio_storage import managed_cache
 from studio_beat_tempo import VERSION as TEMPO_VERSION, tempo_from_beats
 
-VERSION = 2
+VERSION = 3
+OBSERVATION_VERSION = 2
 MODEL_SHA256 = '8c328b45f59d8dd3dff219253ff6a8d6482be57d0133a29140e2febbf8eb8331'
 MODEL_URL = 'https://cloud.cp.jku.at/public.php/dav/files/7ik4RrBKTS273gp/final0.ckpt'
 FPS = 50
@@ -276,7 +277,7 @@ def _observations(path, duration, cache_dir, signature, progress):
     from studio_structure_features import MEL_BINS
     if abs(djmix.probe(path)['duration'] - duration) > .1:
         raise djmix.MixError('The song changed on disk. Re-import it before analysis.')
-    prediction_file = cache_dir / (digest([1, MODEL_SHA256, signature]) + '.npz')
+    prediction_file = cache_dir / (digest([OBSERVATION_VERSION, MODEL_SHA256, signature]) + '.npz')
     try:
         with zipfile.ZipFile(prediction_file) as archive:
             limit = (math.ceil(duration * FPS) + 1) * (MEL_BINS * 4 + 64) + 65536

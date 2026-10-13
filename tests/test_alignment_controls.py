@@ -10,6 +10,8 @@ from unittest.mock import Mock, patch
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 import numpy as np
 from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QPoint, Qt
+from PySide6.QtTest import QTest
 
 from desktop_app import Studio
 from studio_alignment_audio import AlignmentMixer, AlignmentTransport, RATE, alignment_identity
@@ -117,6 +119,23 @@ class AlignmentControlsTests(unittest.TestCase):
         self.assertFalse(self.dialog.apply.isEnabled())
         self.assertIn('No reliable automatic correction', self.controls.summary.text())
 
+    def test_unavailable_source_audio_does_not_claim_a_suggestion_was_applied(self):
+        self.dialog.session.clips[2].cue_in = 0.
+        report = preview_report(self.dialog.session, self.dialog.index)
+        self.controls.set_result(report, {'state': 'suggested', 'offset_seconds': .1, 'reason': 'fixture'})
+        self.assertEqual(self.dialog.session.clips[2].cue_in, 0.)
+        self.assertIn('could not be made', self.controls.summary.text())
+
+    def test_other_cue_choices_sync_small_changes_and_invalidate_outside_handles(self):
+        self.ready()
+        self.dialog.session.clips[2].cue_in = 4.25
+        self.dialog.change_draft()
+        self.assertAlmostEqual(self.controls.offset, -.25)
+        self.dialog.session.clips[2].cue_in = 8.25
+        self.dialog.change_draft()
+        self.assertIsNone(self.controls.data)
+        self.assertEqual(self.dialog.session.clips[2].cue_in, 8.25)
+
     def test_late_results_after_cancellation_and_source_replacement_are_rejected(self):
         report = preview_report(self.dialog.session, self.dialog.index)
         cancel = threading.Event(); self.dialog.start_job = Mock(return_value=cancel)
@@ -137,7 +156,7 @@ class AlignmentControlsTests(unittest.TestCase):
         for i in (0, 1): self.assertGreater(len(report['markers'][i]), 8)
         original_b = report['markers'][1].copy()
         self.controls.move_to(-.1)
-        self.assertEqual(self.controls.view.offset, -.1)
+        self.assertAlmostEqual(self.controls.view.offset, -.1)
         np.testing.assert_array_equal(report['markers'][1], original_b)
         self.controls.view.resize(650, 156)
         self.assertFalse(self.controls.view.grab().isNull())
@@ -152,6 +171,17 @@ class AlignmentControlsTests(unittest.TestCase):
         self.dialog.more_blend_controls.click()
         self.assertFalse(self.dialog.view.isHidden())
         self.assertEqual(self.dialog.session.clips[2].cue_in, cue)
+
+    def test_dragging_the_b_row_changes_timing_without_a_processing_job(self):
+        self.ready(); self.dialog.start_job = Mock()
+        view = self.controls.view; view.resize(650, 156)
+        start_offset = view.offset; a, b = view.window()
+        QTest.mousePress(view, Qt.MouseButton.LeftButton, pos=QPoint(300, 110))
+        QTest.mouseMove(view, QPoint(330, 110), delay=5)
+        QTest.mouseRelease(view, Qt.MouseButton.LeftButton, pos=QPoint(330, 110))
+        self.assertAlmostEqual(self.controls.offset, start_offset + 30 * (b - a) / (view.width() - 70))
+        self.assertAlmostEqual(view.offset, self.controls.offset)
+        self.dialog.start_job.assert_not_called()
 
 
 class LiveMixerTests(unittest.TestCase):

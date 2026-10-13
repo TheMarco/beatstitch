@@ -24,6 +24,20 @@ def observation(path, winner='D minor'):
 
 
 class KeyDetectionTests(unittest.TestCase):
+    def test_frozen_worker_uses_collected_sources_and_local_compilation_cache(self):
+        (self.root / 'result.json').write_text('{"state":"estimated"}')
+        with patch.object(key.sys, 'frozen', True, create=True), \
+             patch.object(key.sys, '_MEIPASS', str(self.root), create=True), \
+             patch.object(key.subprocess, 'Popen') as opened, \
+             patch.dict(key.os.environ, {}, clear=True):
+            child = opened.return_value.__enter__.return_value
+            child.wait.return_value = 0; child.poll.return_value = 0
+            result = key._run_worker(self.source, self.root)
+        self.assertEqual(result['state'], 'estimated')
+        options = opened.call_args.kwargs
+        self.assertEqual(options['cwd'], str(self.root))
+        self.assertEqual(options['env']['NUMBA_CACHE_DIR'], str(self.root.parent / 'numba-cache'))
+
     def setUp(self):
         self.folder = tempfile.TemporaryDirectory(); self.addCleanup(self.folder.cleanup)
         self.root = Path(self.folder.name); self.source = self.root / 'audio.wav'

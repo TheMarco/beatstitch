@@ -32,8 +32,9 @@ def decoded_audio(path, duration, cache_dir, progress):
         raw_file = Path(directory) / 'audio.raw'
         chunk_samples = RATE * 5
         count, peak, reported = 0, 0., -1
-        stream = djmix.stream_ffmpeg('-i', str(path), '-ar', str(RATE), '-ac', '1',
-                                    '-f', 'f32le', '-', chunk_bytes=chunk_samples * 4)
+        from studio_analysis_audio import mono_stream
+        stream = mono_stream(path, RATE, cache_dir=root, chunk_samples=chunk_samples,
+                             progress=progress)
         with raw_file.open('wb') as output, closing(stream):
             for block in stream:
                 check_cancelled()

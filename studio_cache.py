@@ -82,6 +82,8 @@ class AudioCache:
         # affect the transformed source audio. A disabled pitch setting is always zero.
         from studio_timing import mapping, RENDER_VERSION
         points = mapping(track, clip)
+        # JSON distinguishes 120 from 120.0; saved-project round trips must not
+        # change the identity of otherwise identical transformed audio.
         settings = [self.engine, source_signature(track.path),
                     float(track.bpm), float(target), clip.shift, float(clip.cue_in), float(gain), True]
         if points is not None:

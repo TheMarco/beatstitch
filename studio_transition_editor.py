@@ -41,7 +41,7 @@ class TransitionEditor(QDialog):
         self.busy, self.ready, self.closing_after_job = False, False, False
         self.cancel = None
         self.overlap_harmony = None
-        self.setWindowTitle(f'Blend {index} → {index + 1}')
+        self.setWindowTitle(f'Blend {index} → {index + 1}' + (' · before final mastering' if session.mastering_enabled else ''))
         self.setWindowModality(Qt.WindowModality.WindowModal)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setMinimumSize(760, 590)
@@ -82,6 +82,9 @@ class TransitionEditor(QDialog):
         self.local_advice.setTextFormat(Qt.TextFormat.PlainText)
         self.local_advice.setToolTip('Analyzes the two rendered sides only where they overlap, including the applied pitch, tempo, fades, bass handoff and tonal tails. Estimates can be ambiguous and do not detect competing vocals. It never changes the source key labels or marks a passage as drums only.')
         self.harmony_tooltip = self.local_advice.toolTip()
+        if session.mastering_enabled:
+            self.harmony_tooltip += ' This editor monitors the decks before final mastering. Use main Listen to blend or Play mix to hear the finished output.'
+            self.local_advice.setToolTip(self.harmony_tooltip)
         self.local_advice.setAccessibleDescription(self.harmony_tooltip)
         box.addWidget(self.local_advice)
         self.view = TransitionView()
@@ -172,7 +175,7 @@ class TransitionEditor(QDialog):
         # Playback and commit controls stay reachable when long explanations need scrolling.
         box = outer
         row = QHBoxLayout()
-        row.addWidget(QLabel('Hear'))
+        self.hear_label = QLabel('Hear'); row.addWidget(self.hear_label)
         self.variants = QButtonGroup(self)
         for text, variant in [('Outgoing', 'outgoing'), ('Blend', 'blend'), ('Incoming', 'incoming')]:
             button = QPushButton(text)
@@ -276,6 +279,7 @@ class TransitionEditor(QDialog):
         hide_others(self.details_scroll.widget().layout())
         self.setWindowTitle(f'Align beats {self.index} → {self.index + 1}')
         self.full_listen_label = 'Listen to full blend'
+        self.hear_label.setText('Full blend:')
         self.play.setText('Pause' if self.player.playing else self.full_listen_label)
         self.more_blend_controls.show()
 
@@ -284,6 +288,7 @@ class TransitionEditor(QDialog):
         self.normal_details.clear(); self.alignment_mode = False
         self.more_blend_controls.hide()
         self.full_listen_label = 'Listen'; self.play.setText('Pause' if self.player.playing else 'Listen')
+        self.hear_label.setText('Hear')
         self.setWindowTitle(f'Blend {self.index} → {self.index + 1}')
 
     def refresh_output(self):

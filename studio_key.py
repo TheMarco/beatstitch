@@ -19,9 +19,9 @@ from studio_key_model import MODEL_SHA256, SOURCE_REVISION, RUNTIME_PACKAGES, ve
 from studio_process import check_cancelled, _stop
 from studio_storage import managed_cache, require_space
 
-VERSION = 1
+VERSION = 2
 ROOT = Path(__file__).resolve().parent
-MODEL_ID = hashlib.sha256(f'{VERSION}:{MODEL_SHA256}:{SOURCE_REVISION}:first60-mono44100-f32'.encode()).hexdigest()
+MODEL_ID = hashlib.sha256(f'{VERSION}:{MODEL_SHA256}:{SOURCE_REVISION}:first60-phase-safe-mono44100-f32'.encode()).hexdigest()
 KEYS = {djmix.key_name((root, mode)) for mode in ('major', 'minor') for root in range(12)}
 
 
@@ -105,9 +105,15 @@ def _run_worker(source, folder):
     command = ([sys.executable, '--key-worker'] if getattr(sys, 'frozen', False)
                else [sys.executable, str(ROOT / 'studio_key_worker.py')]) + [str(source), str(output)]
     environment = os.environ.copy()
+    environment.setdefault('NUMBA_CACHE_DIR', str(folder.parent / 'numba-cache'))
     for name in ('OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'VECLIB_MAXIMUM_THREADS'):
         environment[name] = '1'
     options = {'creationflags': subprocess.CREATE_NO_WINDOW} if sys.platform == 'win32' else {'start_new_session': True}
+    if getattr(sys, 'frozen', False):
+        # Collected librosa sources are relative to the bundle's resource root.
+        # Numba's user-provided locator needs those files to exist; keep its
+        # compiled data in the analysis cache rather than the installation.
+        options['cwd'] = str(Path(getattr(sys, '_MEIPASS', ROOT)))
     deadline = time.monotonic() + 180
     with subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=environment, **options) as process:
         try:
