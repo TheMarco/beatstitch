@@ -1,4 +1,4 @@
-"""Pinned, resumable model downloads. No analysis code runs downloaded graphs."""
+"""Pinned, resumable downloads for models and app updates. No analysis code runs downloaded graphs."""
 from __future__ import annotations
 
 import hashlib
@@ -33,12 +33,12 @@ def download(url, target, expected, progress=lambda received, total: None, *, op
     over safely. An invalid range, size, digest or insecure redirect is refused.
     """
     if not url.startswith('https://'):
-        raise ValueError('Model downloads require HTTPS.')
+        raise ValueError('Downloads require HTTPS.')
     target = Path(target)
     target.parent.mkdir(parents=True, exist_ok=True)
     partial = target.with_name(target.name + '.partial')
     if target.is_symlink() or partial.is_symlink():
-        raise ValueError('The model download destination cannot be a symbolic link.')
+        raise ValueError('The download destination cannot be a symbolic link.')
     check_cancelled()
     if verified(target, expected):
         progress(expected['size'], expected['size'])
@@ -64,20 +64,20 @@ def download(url, target, expected, progress=lambda received, total: None, *, op
         response = opener(request, timeout=15)
     with response:
         if not response.geturl().startswith('https://'):
-            raise ValueError('The model publisher redirected to an insecure download.')
+            raise ValueError('The download was redirected to an insecure address.')
         status = response.status
         if status == 206:
             match = re.fullmatch(r'bytes (\d+)-(\d+)/(\d+)', response.headers.get('Content-Range', ''))
             if (not match or int(match[1]) != offset or int(match[2]) != expected['size'] - 1
                     or int(match[3]) != expected['size']):
-                raise ValueError('The model server returned an invalid download range.')
+                raise ValueError('The download server returned an invalid download range.')
         elif status == 200:
             offset = 0
         else:
-            raise ValueError(f'The model server returned HTTP {status}.')
+            raise ValueError(f'The download server returned HTTP {status}.')
         remaining = response.headers.get('Content-Length')
         if remaining is not None and int(remaining) != expected['size'] - offset:
-            raise ValueError('The model server returned an unexpected file size.')
+            raise ValueError('The download server returned an unexpected file size.')
         digest = hashlib.sha256()
         if offset:
             with partial.open('rb') as prior:
@@ -95,14 +95,14 @@ def download(url, target, expected, progress=lambda received, total: None, *, op
                 count += len(chunk)
                 if count > expected['size']:
                     output.close(); partial.unlink(missing_ok=True)
-                    raise ValueError('The downloaded model exceeds its pinned size.')
+                    raise ValueError('The download is larger than its pinned size.')
                 output.write(chunk); digest.update(chunk)
                 progress(count, expected['size'])
         if count != expected['size']:
             raise ValueError('The download stopped early. Retry to resume the saved bytes.')
         if digest.hexdigest() != expected['sha256']:
             partial.unlink(missing_ok=True)
-            raise ValueError('Model verification failed. Retry to download a fresh copy.')
+            raise ValueError('Download verification failed. Retry to download a fresh copy.')
         check_cancelled()
         os.replace(partial, target)
     return target

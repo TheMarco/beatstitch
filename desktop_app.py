@@ -199,6 +199,7 @@ class Studio(QMainWindow):
         self.cue_review = None
         self.help_window = None
         self.about_window = None
+        self.update_signals, self.update_manual = None, False
         self.downloads_window = None
         self.key_suggestion = None
         self.prefs = self.read_prefs()
@@ -1060,6 +1061,94 @@ class Studio(QMainWindow):
         self.about_window.raise_()
         self.about_window.activateWindow()
 
+    # Updates -------------------------------------------------------------------------------
+
+    def schedule_update_check(self, delay=4000):
+        """Only main() calls this, so tests and screenshot captures never reach the network."""
+        from studio_updates import due
+        if self.prefs.get('update_check', True) and due(self.prefs.get('update_checked_at'), time.time()):
+            QTimer.singleShot(delay, lambda: self.check_for_updates(manual=False))
+
+    def check_for_updates(self, manual=True):
+        if manual:
+            self.say('Checking for updates…')
+        if self.update_signals is not None:
+            self.update_manual = self.update_manual or manual
+            return
+        from studio_updates import fetch_latest
+        signals = self.update_signals = WorkerSignals()
+        self.update_manual = manual
+        signals.result.connect(self.update_checked)
+        signals.error.connect(self.update_check_failed)
+
+        def run():
+            try:
+                signals.result.emit(fetch_latest())
+            except ValueError as error:
+                signals.error.emit(str(error))
+            except Exception:
+                signals.error.emit('The BeatStitch website could not be reached. Check your internet connection and try again.')
+        # A daemon thread never holds up quitting, even while a DNS lookup hangs.
+        threading.Thread(target=run, name='update-check', daemon=True).start()
+
+    def update_checked(self, release):
+        manual, self.update_signals = self.update_manual, None
+        self.write_prefs(update_checked_at=time.time())
+        from studio_updates import is_newer
+        from studio_version import VERSION
+        if is_newer(release['version']):
+            self.show_update_notice(release, manual)
+        elif manual and not self.closing:
+            self.notify(f'BeatStitch {VERSION} is the latest version.')
+
+    def update_check_failed(self, message):
+        manual, self.update_signals = self.update_manual, None
+        if manual and not self.closing:
+            self.notify('Could not check for updates. ' + message, 'error')
+
+    def show_update_notice(self, release, manual=False):
+        if self.closing:
+            return
+        # An automatic check waits for any message already on screen instead of replacing it.
+        if not manual and self.notice.isVisible():
+            QTimer.singleShot(3000, lambda: self.show_update_notice(release))
+            return
+        from studio_updates import package
+        from studio_version import VERSION
+        entry = package(release)
+        action = ('Download', lambda: self.download_update(release['version'], entry)) if entry else ('Open download page', self.open_download_page)
+        self.notify(f"BeatStitch {release['version']} is available. You have {VERSION}.", 'info', [action])
+
+    def download_update(self, version, entry):
+        from studio_downloads import size_text
+        from studio_updates import download_folder, download_update
+        folder = download_folder()
+
+        def work(progress, _item):
+            return download_update(entry, folder, lambda received, total: progress(f'{size_text(received)} of {size_text(total)}'))
+
+        def finished(path):
+            steps = {'darwin': 'open the zip and drag the new BeatStitch into Applications to replace this one',
+                     'win32': 'extract the zip and replace your BeatStitch folder with the new one'}.get(
+                         sys.platform, 'extract the archive and replace your BeatStitch folder with the new one')
+            self.notify(f'BeatStitch {version} is saved as {path.name} in {path.parent}. Quit BeatStitch, then {steps}.',
+                        'info', [(REVEAL, lambda: self.reveal(path))])
+
+        def failed(message):
+            if message == 'Operation cancelled.':
+                self.say('Download stopped. The saved part is kept, so downloading again resumes it.')
+            else:
+                self.notify(f'BeatStitch {version} could not be downloaded. {message}', 'error',
+                            [('Try again', lambda: self.download_update(version, entry)), ('Open download page', self.open_download_page)])
+
+        self.job(work, finished, cancellable=True, failed_callback=failed, title=f'Downloading BeatStitch {version}',
+                 reason=f'Saving to {folder}. Your mix is unchanged.')
+
+    @staticmethod
+    def open_download_page():
+        from studio_updates import DOWNLOAD_PAGE
+        QDesktopServices.openUrl(QUrl(DOWNLOAD_PAGE))
+
     def show_downloads(self, required=None, on_ready=None, requester=None):
         from studio_downloads import DownloadsDialog
         self.write_prefs(downloads_intro_seen=True)
@@ -1183,6 +1272,14 @@ class Studio(QMainWindow):
         self.act_lessons = add(help_menu, 'Listening examples…', self.show_lessons)
         add(help_menu, "Understanding tempo correction", lambda: self.show_help("timing"))
         add(help_menu, "Keyboard and mouse shortcuts", lambda: self.show_help("shortcuts"))
+        help_menu.addSeparator()
+        self.act_check_updates = add(help_menu, 'Check for updates', lambda: self.check_for_updates(manual=True))
+        self.act_auto_updates = QAction('Check for updates automatically', self)
+        self.act_auto_updates.setCheckable(True)
+        self.act_auto_updates.setChecked(bool(self.prefs.get('update_check', True)))
+        self.act_auto_updates.setToolTip('Once a day, ask the BeatStitch website for the newest version number. Nothing about your music is sent.')
+        self.act_auto_updates.toggled.connect(lambda on: self.write_prefs(update_check=on))
+        help_menu.addAction(self.act_auto_updates)
         help_menu.addSeparator()
         self.act_about = add(help_menu, "About BeatStitch…", self.show_about)
         self.act_about.setMenuRole(QAction.MenuRole.AboutRole)
@@ -4033,6 +4130,7 @@ def main():
         data = legacy_data
     window = Studio(data, args.project)
     window.show()
+    window.schedule_update_check()
     if args.library:
         QTimer.singleShot(250, lambda: window.import_paths(window.audio_files([args.library])))
     return app.exec()

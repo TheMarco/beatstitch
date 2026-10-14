@@ -57,6 +57,18 @@ where checkpoint terms are not established. The app icon uses the same PNG
 emblem. `build_credits.py` refreshes the catalog during packaging; native icon
 files are maintained with `tools/build_beatstitch_icons.py`.
 
+**Updates.** A few seconds after launch, at most once a day, the app asks
+`https://beatstitch.ai-created.com/latest.json` for the newest version. The request
+carries only the app version in its User-Agent. **Help → Check for updates** runs the
+check on demand, and **Check for updates automatically** turns the daily check off.
+When a newer version exists, **Download** saves this platform's package to the
+Downloads folder, resuming saved bytes and verifying the size and SHA-256 listed
+in `latest.json`. It never overwrites another file, and installing stays manual.
+Only `main()` schedules the check, so tests and screenshot captures never reach
+the network. To publish a release, update `web/latest.json` with the
+GitHub release asset URLs, sizes and checksums, and the two `data-release`
+versions in `web/index.html`. `tests.test_updates` keeps the three consistent.
+
 The isolated **detector-confidence pilot** uses the 25 songs supplied in
 `~/Downloads/dataset`. Double-click `Launch Detector Pilot.command` for native
 listening, real waveforms and independently entered reference labels. Suggestions
