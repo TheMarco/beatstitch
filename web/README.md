@@ -33,8 +33,7 @@ favicons, share image and the three emblem layers the hero record is built from.
 
 ## Before publishing
 
-The download buttons for macOS, Windows and Linux all point to
-`https://github.com/TheMarco/dj-studio/releases/latest` (search `data-download` in
-`index.html`); the hero button's label follows the visitor's OS. The repository is
-private, so update the links or publish a release first. `og:image` is relative; make it absolute once the
-site has a domain.
+The macOS, Windows and Linux cards in the download section link to the installers on
+Google Drive (search `data-os` in `index.html`). The hero button takes its label and
+link from the card that matches the visitor's OS and falls back to macOS. `og:image`
+is relative; make it absolute once the site has a domain.

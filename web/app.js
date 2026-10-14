@@ -1398,7 +1398,12 @@
     else if (/mac/i.test(platform)) os = 'mac';
     if (!os) return;
     const names = { mac: 'Mac', windows: 'Windows', linux: 'Linux' };
-    $$('[data-download-label]').forEach(label => { label.textContent = `Download for ${names[os]}`; });
+    const card = $(`.platform[data-os="${os}"]`);
+    $$('[data-download-label]').forEach(label => {
+      label.textContent = `Download for ${names[os]}`;
+      const link = label.closest('a');
+      if (link && card) link.href = card.href;
+    });
     $$('.platform').forEach(card => card.classList.toggle('is-recommended', card.dataset.os === os));
   })();
 
