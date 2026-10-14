@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BeatStitch brand</title>
+<link rel="stylesheet" href="../../styles.css">
+<style>
+  /* Preview sheet by default; #icon, #touch and #og show one export at the window's size. */
+  .sheet { padding: 48px; }
+  .row { display: flex; align-items: center; gap: 48px; margin-bottom: 48px; }
+  .export { display: none; }
+  html[data-export] .sheet { display: none; }
+  html[data-export="icon"] body { background: var(--matte, transparent); }
+  html[data-export="icon"] .export-icon,
+  html[data-export="touch"] .export-touch,
+  html[data-export="og"] .export-og { display: grid; place-items: center; width: 100vw; height: 100vh; overflow: hidden; }
+  .export-icon .mark { --mark-size: 96vmin; }
+  .export-touch { background: #121217; }
+  .export-touch .mark { --mark-size: 74vmin; }
+  .export-og { position: relative; isolation: isolate; background: var(--bg); }
+  .export-og::before {
+    content: ""; position: absolute; z-index: -1; inset: 0;
+    background: radial-gradient(ellipse 34% 52% at 26% 46%, rgba(124, 30, 255, 0.28), transparent 70%),
+                radial-gradient(ellipse 30% 46% at 34% 58%, rgba(255, 140, 20, 0.16), transparent 70%);
+  }
+  .og { display: flex; align-items: center; gap: 56px; }
+  .og .mark { --mark-size: 300px; }
+  .og .wordmark { font-size: 92px; }
+  .og p { margin: 22px 0 0; color: var(--text-2); font-size: 34px; line-height: 1.25; }
+</style>
+<script>
+  const target = location.hash.slice(1);
+  if (target) document.documentElement.dataset.export = target;
+  const matte = new URLSearchParams(location.search).get('matte');
+  if (matte) document.documentElement.style.setProperty('--matte', matte);
+</script>
+</head>
+<body>
+<main class="sheet">
+  <div class="row">
+    <span class="mark" style="--mark-size: 440px"><span class="mark-half mark-purple"></span><span class="mark-half mark-amber"></span><span class="mark-stitch"></span><span class="mark-stitch"></span></span>
+    <span class="mark" style="--mark-size: 140px"><span class="mark-half mark-purple"></span><span class="mark-half mark-amber"></span><span class="mark-stitch"></span><span class="mark-stitch"></span></span>
+    <span class="mark" style="--mark-size: 64px"><span class="mark-half mark-purple"></span><span class="mark-half mark-amber"></span><span class="mark-stitch"></span><span class="mark-stitch"></span></span>
+  </div>
+  <div class="row">
+    <span class="lockup" style="--mark-size: 34px"><span class="mark"><span class="mark-half mark-purple"></span><span class="mark-half mark-amber"></span><span class="mark-stitch"></span><span class="mark-stitch"></span></span><span class="wordmark">BeatStitch</span></span>
+    <span class="mark" style="--mark-size: 32px"><span class="mark-half mark-purple"></span><span class="mark-half mark-amber"></span><span class="mark-stitch"></span><span class="mark-stitch"></span></span>
+    <span class="mark" style="--mark-size: 16px"><span class="mark-half mark-purple"></span><span class="mark-half mark-amber"></span><span class="mark-stitch"></span><span class="mark-stitch"></span></span>
+  </div>
+</main>
+<div class="export export-icon"><span class="mark"><span class="mark-half mark-purple"></span><span class="mark-half mark-amber"></span><span class="mark-stitch"></span><span class="mark-stitch"></span></span></div>
+<div class="export export-touch"><span class="mark"><span class="mark-half mark-purple"></span><span class="mark-half mark-amber"></span><span class="mark-stitch"></span><span class="mark-stitch"></span></span></div>
+<div class="export export-og">
+  <div class="og">
+    <span class="mark"><span class="mark-half mark-purple"></span><span class="mark-half mark-amber"></span><span class="mark-stitch"></span><span class="mark-stitch"></span></span>
+    <div><span class="wordmark">BeatStitch</span><p>Stitch your songs into<br>one continuous mix.</p></div>
+  </div>
+</div>
+</body>
+</html>
