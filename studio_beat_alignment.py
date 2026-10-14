@@ -243,6 +243,23 @@ def estimate_beat_positions(outgoing, incoming, bpm, duration):
             'alignment_kind': 'detected beats', 'diagnostics': diagnostics}
 
 
+def combine_alignment(kicks, beats, bpm):
+    """Keep supported kick-accent moves when the independent pulse agrees."""
+    critical = beats.get('reason_code') in ('tempo_mismatch', 'irregular_beats', 'changing_gap')
+    if critical or kicks['state'] == 'uncertain': return beats
+    if beats['state'] == 'uncertain': return kicks
+    if kicks.get('alignment_kind') == 'kick accents':
+        difference = _wrap_delay(kicks['offset_seconds'] - beats['offset_seconds'], 60 / bpm)
+        if abs(difference) > .04:
+            return {'state': 'uncertain', 'offset_seconds': None,
+                    'reason': 'Detected beats and strong kick accents disagree. Listen before choosing a timing move.',
+                    'reason_code': 'conflicting_positions', 'diagnostics': beats['diagnostics']}
+        return {**kicks, 'diagnostics': {**kicks['diagnostics'],
+                                       'measured_tempos': beats['diagnostics']['measured_tempos'],
+                                       'beat_rate_check': beats['diagnostics']}}
+    return beats
+
+
 def _accent_correction(out_env, in_env, env_sr, beat, pulse_offset):
     """Require a distinct, repeated strongest kick in at least three full bars.
 

@@ -13,7 +13,7 @@ import djmix
 import studio_theme as T
 from studio_alignment_audio import (AlignmentMixer, AlignmentTransport, RATE, alignment_identity,
                                     cue_for_offset, offset_for_cue, prepare_alignment)
-from studio_beat_alignment import estimate_alignment, estimate_beat_positions, kick_markers
+from studio_beat_alignment import estimate_alignment, estimate_beat_positions, combine_alignment, kick_markers
 from studio_blend_choices import draft_session
 
 
@@ -323,11 +323,8 @@ class BeatAlignment(QWidget):
                 observed_result = estimate_beat_positions(beats[0], incoming, report['bpm'], length)
                 # Reliable observed pulse positions can resolve different kick
                 # shapes. A detected speed mismatch must never become an offset.
-                if (observed_result['state'] != 'uncertain' or
-                        observed_result.get('reason_code') in ('tempo_mismatch', 'irregular_beats', 'changing_gap') or
-                        result['state'] == 'uncertain'):
-                    result = observed_result
-                else:
+                result = combine_alignment(result, observed_result, report['bpm'])
+                if observed_result['state'] == 'uncertain' and result is not observed_result:
                     report['markers'] = [np.asarray(kick_markers(side['full'], RATE, report['bpm']))
                                          - report['margin'] / RATE for side in report['sides']]
                     report.pop('marker_label', None)

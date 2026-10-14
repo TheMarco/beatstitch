@@ -4,7 +4,7 @@ import unittest
 
 import numpy as np
 
-from studio_beat_alignment import estimate_alignment, estimate_beat_positions
+from studio_beat_alignment import estimate_alignment, estimate_beat_positions, combine_alignment
 
 SR = 22050
 
@@ -176,6 +176,18 @@ class TestBeatAlignment(unittest.TestCase):
 
 
 class DetectedBeatAlignmentTests(unittest.TestCase):
+    def test_actual_rate_check_preserves_supported_whole_beat_accent_moves(self):
+        a = np.arange(.05, 15, .5)
+        beats = estimate_beat_positions(a, a + .04, 120, 15)
+        kick = {'state': 'suggested', 'offset_seconds': -.54, 'reason': 'Repeated strong accents',
+                'alignment_kind': 'kick accents', 'diagnostics': {'kick_accent': {'accent_slots': [0, 1]}}}
+        result = combine_alignment(kick, beats, 120)
+        self.assertAlmostEqual(result['offset_seconds'], -.54)
+        self.assertEqual(result['alignment_kind'], 'kick accents')
+        self.assertEqual(len(result['diagnostics']['measured_tempos']), 2)
+        mismatch = estimate_beat_positions(a, np.arange(.09, 15, 60 / 124), 120, 15)
+        self.assertEqual(combine_alignment(kick, mismatch, 120)['reason_code'], 'tempo_mismatch')
+
     def test_speed_mismatch_is_actionable_and_does_not_offer_an_offset(self):
         a = np.arange(.05, 15, 60 / 128)
         b = np.arange(.08, 15, 60 / 132)

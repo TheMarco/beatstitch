@@ -95,7 +95,7 @@ def collect(archive, output, expected_sha):
     with tarfile.open(archive) as tar:
         for member in tar:
             path = Path(member.name)
-            if not member.isfile() or path.parent.as_posix() != 'BeatStitch/_internal':
+            if not member.isfile() or (path.parent.as_posix() != 'BeatStitch/_internal' and 'quadmath' not in path.name):
                 continue
             if not path.name.startswith('lib') or '.so' not in path.name:
                 continue
@@ -106,7 +106,12 @@ def collect(archive, output, expected_sha):
             ident = build_id(target)
             record = {'path': member.name, 'sha256': hashlib.sha256(data).hexdigest(), 'build_id': ident}
             binaries.append(record)
-            candidates = list(Path('/usr/lib/x86_64-linux-gnu').rglob(path.name))
+            if path.name == 'libpython3.13.so.1.0' and b'3.13.5' in data:
+                record.update({'common_component': 'CPython 3.13.5',
+                               'source_url': 'https://www.python.org/ftp/python/3.13.5/Python-3.13.5.tgz'})
+                continue  # Matching source is in the common/Mac source companion.
+            candidate_name = 'libquadmath.so.0' if 'quadmath' in path.name else path.name
+            candidates = list(Path('/usr/lib/x86_64-linux-gnu').rglob(candidate_name))
             found = False
             for candidate in candidates:
                 if not candidate.is_file() or not ident or build_id(candidate) != ident:
@@ -118,7 +123,8 @@ def collect(archive, output, expected_sha):
                 matched.append(record); found = True; break
             if not found:
                 unmatched.append(record)
-    inventory = {'release_sha256': expected_sha, 'matched': matched, 'unmatched': unmatched}
+    inventory = {'release_sha256': expected_sha, 'matched': matched, 'unmatched': unmatched,
+                 'common_sources': [x for x in binaries if 'common_component' in x]}
     (output / 'native-inventory.json').write_text(json.dumps(inventory, indent=2) + '\n')
     identities = sorted({(x['source'], x['source_version']) for x in matched})
     print(len(matched), 'matched libraries;', len(unmatched), 'explicit gaps;', len(identities), 'source packages', flush=True)

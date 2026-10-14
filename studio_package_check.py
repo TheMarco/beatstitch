@@ -210,6 +210,26 @@ def run_checks(destination, *, allow_source=False):
         import numpy as np
         import soundfile as sf
 
+        if sys.platform == 'linux' and (root / 'quadmath-runtime-source.json').is_file():
+            def mathematical_runtime():
+                from scipy import linalg
+                receipt = json.loads((root / 'quadmath-runtime-source.json').read_text())
+                require(bool(receipt['replaced']), 'The runtime source receipt has no replaced libraries.')
+                for item in receipt['replaced']:
+                    binary = root / item['path']
+                    require(hashlib.sha256(binary.read_bytes()).hexdigest() == item['sha256'],
+                            'A packaged mathematical runtime differs from its source identity.')
+                matrix = np.array([[4., 1., 0.], [1., 3., 1.], [0., 1., 2.]])
+                eigenvalues, eigenvectors = linalg.eigh(matrix)
+                require(np.allclose(matrix @ eigenvectors, eigenvectors * eigenvalues, atol=1e-12),
+                        'The scientific eigensolver failed its numerical residual check.')
+                rhs = np.array([1., 2., 3.])
+                require(np.allclose(matrix @ np.linalg.solve(matrix, rhs), rhs, atol=1e-12),
+                        'The scientific linear solver failed its numerical residual check.')
+                return {'source_package': receipt['source_package'], 'source_version': receipt['source_version'],
+                        'libraries_verified': len(receipt['replaced']), 'linear_algebra': 'passed'}
+            check('source-identifiable mathematical runtimes', mathematical_runtime)
+
         def tools():
             result = {}
             for name in ('ffmpeg', 'ffprobe', 'rubberband'):

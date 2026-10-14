@@ -7,6 +7,18 @@ on:
         description: Collect native sources for the already tested 0.1.1 Linux archive (no rebuild)
         type: boolean
         default: false
+      source_run_id:
+        description: Existing tested desktop build run for source collection
+        type: string
+        default: '38518953939'
+      source_version:
+        description: Version of the existing Linux archive
+        type: string
+        default: '0.1.1'
+      source_sha256:
+        description: Verified SHA256 of the existing Linux tar.gz
+        type: string
+        default: '27e749998b625ab3cd0d379c7ea9ca3da7dd4d1a817f8f936df0fb84c1b6d75c'
       optional_packs:
         description: Also exercise large external build/drop and vocal-removal models (development check)
         type: boolean
@@ -28,6 +40,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  windows-source-audio:
+    if: github.event_name != 'workflow_dispatch' || !inputs.collect_release_sources
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install the Windows cross compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mingw-w64 nasm build-essential pkg-config
+      - name: Build pinned FFmpeg and LAME from source
+        run: bash ci/build_windows_ffmpeg.sh build/windows-source-audio
+      - name: Keep binaries with matching sources, notices and recipes
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Windows-source-audio
+          path: build/windows-source-audio/
+          compression-level: 6
+          retention-days: 3
+          if-no-files-found: error
   linux-release-sources:
     if: github.event_name == 'workflow_dispatch' && inputs.collect_release_sources
     runs-on: ubuntu-24.04
@@ -35,6 +69,10 @@ jobs:
     permissions:
       contents: read
       actions: read
+    env:
+      SOURCE_RELEASE_RUN: ${{ inputs.source_run_id }}
+      SOURCE_RELEASE_VERSION: ${{ inputs.source_version }}
+      SOURCE_RELEASE_SHA: ${{ inputs.source_sha256 }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -46,27 +84,32 @@ jobs:
       - name: Retrieve the tested Linux archive
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh run download 38518953939 --repo TheMarco/beatstitch --name BeatStitch-0.1.1-linux-x64 --dir build/source-input
+        run: |
+          [[ "$SOURCE_RELEASE_RUN" =~ ^[0-9]+$ ]]
+          [[ "$SOURCE_RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$SOURCE_RELEASE_SHA" =~ ^[0-9a-f]{64}$ ]]
+          gh run download "$SOURCE_RELEASE_RUN" --repo TheMarco/beatstitch --name "BeatStitch-$SOURCE_RELEASE_VERSION-linux-x64" --dir build/source-input
       - name: Match native identities and collect exact Ubuntu sources
-        run: python3 ci/collect_linux_release_sources.py --archive build/source-input/BeatStitch-0.1.1-linux-x64.tar.gz --sha256 27e749998b625ab3cd0d379c7ea9ca3da7dd4d1a817f8f936df0fb84c1b6d75c --output build/linux-release-sources
+        run: python3 ci/collect_linux_release_sources.py --archive "build/source-input/BeatStitch-$SOURCE_RELEASE_VERSION-linux-x64.tar.gz" --sha256 "$SOURCE_RELEASE_SHA" --output build/linux-release-sources
       - name: Preserve sources and explicit coverage gaps
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: BeatStitch-0.1.1-linux-native-sources
+          name: BeatStitch-${{ inputs.source_version }}-linux-native-sources
           path: build/linux-release-sources/
           compression-level: 0
           retention-days: 3
           if-no-files-found: error
   desktop-package:
     if: github.event_name != 'workflow_dispatch' || !inputs.collect_release_sources
+    needs: windows-source-audio
     name: Desktop package on ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, windows-2022]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 35
+    timeout-minutes: 40
     env:
       QT_QPA_PLATFORM: offscreen
       PYTHONPATH: tests
@@ -95,9 +138,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg rubberband-cli libegl1 libopengl0 libxcb-cursor0 libxkbcommon-x11-0
+      - name: Retrieve the source-built Windows audio tools
+        if: runner.os == 'Windows'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: Windows-source-audio
+          path: build/source-audio
       - name: Install pinned Windows audio tools
         if: runner.os == 'Windows'
-        run: python ci/install_windows_audio.py --destination build/audio-tools --github-path
+        run: python ci/install_windows_audio.py --destination build/audio-tools --source-ffmpeg build/source-audio --github-path
       - name: Install CPU analysis and desktop dependencies
         run: |
           python -m pip install torch==2.11.0 torchaudio==2.11.0 --index-url https://download.pytorch.org/whl/cpu
@@ -120,7 +169,7 @@ jobs:
           python download_section_models.py --destination build/test-models/sections
           python download_separation_model.py --destination build/test-models/separation
       - name: Check packaging, key-runtime compatibility, mix guide and offline help
-        run: python -m unittest tests.test_windows_audio_tools tests.test_package_check tests.test_lightweight_packaging tests.test_model_downloads tests.test_model_download_ui tests.test_key_detection tests.test_first_mix tests.test_help tests.test_optional_package_check tests.test_section_model_download tests.test_spleeter tests.test_release_source_bundle tests.test_about -v
+        run: python -m unittest tests.test_windows_audio_tools tests.test_linux_runtime_sources tests.test_package_check tests.test_lightweight_packaging tests.test_model_downloads tests.test_model_download_ui tests.test_key_detection tests.test_first_mix tests.test_help tests.test_optional_package_check tests.test_section_model_download tests.test_spleeter tests.test_release_source_bundle tests.test_about -v
       - name: Check timing freshness, preview controls and listening guidance
         run: python -m unittest tests.test_desktop_controls tests.test_beat_alignment tests.test_alignment_audio tests.test_alignment_controls tests.test_library tests.test_processing tests.test_relink tests.test_timing_freshness tests.test_timing_comparison tests.test_preview_navigation tests.test_transition_audio tests.test_listening tests.test_recommendations tests.test_content tests.test_demo.DemoAssetsTests -v
       - name: Build and exercise the model-free package

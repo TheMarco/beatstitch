@@ -9,10 +9,42 @@ from unittest.mock import patch
 import warnings
 import zipfile
 
-from ci.install_windows_audio import install
+from ci.install_windows_audio import install, SOURCE_IDENTITIES
 
 
 class WindowsAudioToolsTests(unittest.TestCase):
+    def source_fixture(self, root):
+        source = root / 'source-build'; (source / 'bin').mkdir(parents=True)
+        (source / 'licenses').mkdir()
+        members = ['bin/ffmpeg.exe', 'bin/ffprobe.exe', 'licenses/test-copyright.txt']
+        files = []
+        for name in members:
+            data = ('source-built ' + name).encode(); (source / name).write_bytes(data)
+            files.append({'path': name, 'size': len(data), 'sha256': hashlib.sha256(data).hexdigest()})
+        receipt = {'compiler_target': 'x86_64-w64-mingw32',
+                   'sources': [{'url': url, 'sha256': sha} for url, sha in SOURCE_IDENTITIES.items()],
+                   'binaries': files[:2], 'licenses': files[2:]}
+        (source / 'receipt.json').write_text(json.dumps(receipt))
+        # Compressed sources belong in a separate release asset, not the app.
+        (source / 'sources').mkdir(); (source / 'sources/compiler.tar.xz').write_bytes(b'source fixture')
+        return source
+
+    def test_source_built_receipt_verified_and_source_archives_not_bundled(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); source = self.source_fixture(root); target = root / 'tools'
+            install(target, archives=[], source_ffmpeg=source)
+            self.assertEqual((target / 'bin/ffmpeg.exe').read_bytes(), (source / 'bin/ffmpeg.exe').read_bytes())
+            self.assertFalse((target / 'sources').exists())
+            self.assertIsNotNone(json.loads((target / 'manifest.json').read_text())['source_ffmpeg'])
+
+    def test_tampered_source_built_executable_leaves_no_partial_installation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); source = self.source_fixture(root); target = root / 'tools'
+            (source / 'bin/ffprobe.exe').write_bytes(b'changed executable')
+            with self.assertRaises(ValueError): install(target, archives=[], source_ffmpeg=source)
+            self.assertFalse(target.exists())
+            self.assertEqual(sorted(p.name for p in root.iterdir()), ['source-build'])
+
     def fixture(self, duplicate=False):
         content = io.BytesIO()
         with zipfile.ZipFile(content, 'w') as archive:

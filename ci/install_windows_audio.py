@@ -27,6 +27,40 @@ ARCHIVES = (
                'rubberband-4.0.0-gpl-executable-windows/README.txt': 'licenses/rubberband-README.txt'}},
 )
 
+SOURCE_IDENTITIES = {
+    'https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz': '8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e',
+    'https://downloads.sourceforge.net/project/lame/lame/3.100/lame-3.100.tar.gz': 'ddfe36cab873794038ae2c1210557ad34857a4b6bdc515785d1da9e175b1da1e',
+}
+
+
+def copy_source_built_ffmpeg(source, stage):
+    source = Path(source).resolve()
+    receipt = json.loads((source / 'receipt.json').read_text())
+    identities = {x['url']: x['sha256'] for x in receipt['sources']}
+    if identities != SOURCE_IDENTITIES or receipt['compiler_target'] != 'x86_64-w64-mingw32':
+        raise ValueError('FFmpeg source build differs from the pinned sources or Windows target.')
+    binaries = {x['path']: x for x in receipt['binaries']}
+    if set(binaries) != {'bin/ffmpeg.exe', 'bin/ffprobe.exe'}:
+        raise ValueError('Unexpected source-built audio executables.')
+    selected = list(binaries.values())
+    for item in receipt['licenses']:
+        path = Path(item['path'])
+        if path.parent.as_posix() != 'licenses' or path.name in ('', '.', '..'):
+            raise ValueError('Unexpected source-build license path.')
+        selected.append(item)
+    for item in selected:
+        path = source / item['path']
+        if path.is_symlink() or not path.is_file():
+            raise ValueError('Source-build artifact must be a regular file.')
+        data = path.read_bytes()
+        if len(data) != item['size'] or hashlib.sha256(data).hexdigest() != item['sha256']:
+            raise ValueError('Source-build artifact differs from its receipt.')
+    for item in selected:
+        target = stage / item['path']; target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source / item['path'], target)
+    (stage / 'licenses/source-build-receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
+    return receipt
+
 
 def download(spec, target):
     digest, count = hashlib.sha256(), 0
@@ -54,19 +88,21 @@ def extract(spec, archive_path, destination):
                 shutil.copyfileobj(source, output, 1024 * 1024)
 
 
-def install(destination, archives=ARCHIVES):
+def install(destination, archives=ARCHIVES, source_ffmpeg=None):
     destination = Path(destination).resolve()
     if destination.exists():
         raise FileExistsError('Choose a new directory; existing tools are kept unchanged.')
     destination.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='dj-audio-tools-', dir=destination.parent) as temp:
         stage = Path(temp) / 'tools'; stage.mkdir()
-        for spec in archives:
+        selected_archives = [s for s in archives if not source_ffmpeg or not s['name'].startswith('ffmpeg-')]
+        for spec in selected_archives:
             archive = Path(temp) / (spec['name'] + '.zip')
             download(spec, archive)
             extract(spec, archive, stage)
             archive.unlink()
-        manifest = {'archives': archives, 'files': {
+        source_receipt = copy_source_built_ffmpeg(source_ffmpeg, stage) if source_ffmpeg else None
+        manifest = {'archives': selected_archives, 'source_ffmpeg': source_receipt, 'files': {
             p.relative_to(stage).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
             for p in sorted(stage.rglob('*')) if p.is_file()}}
         (stage / 'manifest.json').write_text(json.dumps(manifest, indent=2)+'\n', encoding='utf-8')
@@ -78,10 +114,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--destination', type=Path, required=True)
     parser.add_argument('--github-path', action='store_true')
+    parser.add_argument('--source-ffmpeg', type=Path,
+                        help='Pinned source-built Windows FFmpeg artifact; omit only for private development builds.')
     args = parser.parse_args()
     if args.github_path and 'GITHUB_PATH' not in os.environ:
         parser.error('--github-path requires the Actions environment.')
-    binary = install(args.destination)
+    binary = install(args.destination, source_ffmpeg=args.source_ffmpeg)
     if args.github_path:
         with Path(os.environ['GITHUB_PATH']).open('a', encoding='utf-8') as handle:
             handle.write(str(binary)+'\n')

@@ -257,6 +257,9 @@ def main():
     else:
         packaged_root = destination / 'BeatStitch/_internal'
         packaged_executable = destination / 'BeatStitch' / ('BeatStitch.exe' if sys.platform == 'win32' else 'BeatStitch')
+    if sys.platform == 'linux':
+        from ci.linux_runtime_sources import replace_quadmath
+        replace_quadmath(packaged_root)
     add_packaged_credits(packaged_root / 'assets/about', packaged_executable)
     import platform
     import datetime
