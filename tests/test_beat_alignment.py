@@ -176,6 +176,16 @@ class TestBeatAlignment(unittest.TestCase):
 
 
 class DetectedBeatAlignmentTests(unittest.TestCase):
+    def test_detector_positions_cannot_override_observed_silence(self):
+        audio = make_kicks(15, 120, SR)
+        kicks = estimate_alignment(audio, np.zeros_like(audio), SR, 120)
+        positions = np.arange(.05, 15, .5)
+        beats = estimate_beat_positions(positions, positions + .04, 120, 15)
+        self.assertEqual(beats['state'], 'suggested')
+        result = combine_alignment(kicks, beats, 120)
+        self.assertEqual(result['reason_code'], 'silence')
+        self.assertIsNone(result['offset_seconds'])
+
     def test_actual_rate_check_preserves_supported_whole_beat_accent_moves(self):
         a = np.arange(.05, 15, .5)
         beats = estimate_beat_positions(a, a + .04, 120, 15)

@@ -181,7 +181,8 @@ class BeatAlignment(QWidget):
         row.addStretch(); box.addLayout(row)
         self.tempo_result = QLabel('Actual beat speeds have not been checked.')
         self.tempo_result.setWordWrap(True); self.tempo_result.setProperty('role', 'hint')
-        self.tempo_result.setToolTip('Measured from beat-detector observations inside this overlap, after tempo and pitch processing. '
+        self.tempo_result.setToolTip('Measured from beat-detector observations in the checked excerpt, after source tempo and pitch processing. '
+                                     'This check uses the project reference BPM before the optional set tempo curve. '
                                      'Source BPM is the original recording’s tempo; Project BPM is its intended playback tempo. '
                                      'Detection can be wrong or local tempo can drift. These measurements do not edit song labels.')
         box.addWidget(self.tempo_result)
@@ -363,8 +364,8 @@ class BeatAlignment(QWidget):
     def show_tempos(self, result):
         fits = result.get('diagnostics', {}).get('measured_tempos', [])
         if len(fits) == 2:
-            self.tempo_result.setText(f"Measured in this overlap: A {fits[0]['bpm']:.2f} BPM · "
-                                      f"B {fits[1]['bpm']:.2f} BPM. Project target: {self.data['bpm']:g} BPM.")
+            self.tempo_result.setText(f"Measured in {self.data['frames'] / RATE:g}s beat check: A {fits[0]['bpm']:.2f} BPM · "
+                                      f"B {fits[1]['bpm']:.2f} BPM. Reference: {self.data['bpm']:g} BPM.")
         else:
             self.tempo_result.setText('Actual beat speeds could not be confirmed. '
                                       'Matching source labels or project BPM does not prove the beat rates match.')

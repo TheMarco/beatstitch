@@ -1689,7 +1689,8 @@ class Studio(QMainWindow):
         timing = track.timing
         from studio_timing import current_analysis as current_timing
         bpm_suggestion = current_timing(track).get("bpm")
-        self.bpm_hint.setText(f'Playback follows Project BPM ({self.session.target_bpm:g}). '
+        self.bpm_hint.setText(('Playback follows the set tempo curve. ' if self.session.tempo_enabled else
+                              f'Playback follows Project BPM ({self.session.target_bpm:g}). ') +
                               'Source BPM describes the original recording; changing it corrects its tempo label.')
         idle = not self.jobs
         guidance = timing_guidance(timing, clip.stabilize, not idle, track=track)

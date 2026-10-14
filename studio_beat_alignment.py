@@ -245,6 +245,7 @@ def estimate_beat_positions(outgoing, incoming, bpm, duration):
 
 def combine_alignment(kicks, beats, bpm):
     """Keep supported kick-accent moves when the independent pulse agrees."""
+    if kicks.get('reason_code') == 'silence': return kicks
     critical = beats.get('reason_code') in ('tempo_mismatch', 'irregular_beats', 'changing_gap')
     if critical or kicks['state'] == 'uncertain': return beats
     if beats['state'] == 'uncertain': return kicks
@@ -331,7 +332,8 @@ def estimate_alignment(outgoing, incoming, sample_rate, bpm):
 
     # Silence check on raw power.
     if float(np.max(np.abs(out_ch))) < 1e-7 or float(np.max(np.abs(in_ch))) < 1e-7:
-        return uncertain("One track is silent, so no beat alignment can be estimated.", diag_base)
+        return {**uncertain("One track is silent, so no beat alignment can be estimated.", diag_base),
+                'reason_code': 'silence'}
 
     out_env, out_on, env_sr = _kick_envelope(out_ch, sr)
     in_env, in_on, _ = _kick_envelope(in_ch, sr)

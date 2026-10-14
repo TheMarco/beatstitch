@@ -42,7 +42,12 @@ class AlignmentControlsTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        with patch.object(Studio, 'load_bands'): self.window = Studio(self.root)
+        # Fixture files are deliberately not audio. Keep all band decoding
+        # mocked, including undo's refresh; otherwise a background worker can
+        # still own Windows cache locks when the temporary directory closes.
+        bands = patch.object(Studio, 'load_bands')
+        bands.start(); self.addCleanup(bands.stop)
+        self.window = Studio(self.root)
         self.window.session = project()
         for track in self.window.session.tracks.values():
             path = self.root / f'{track.id}.wav'; path.write_bytes(b'fixture'); track.path = str(path)

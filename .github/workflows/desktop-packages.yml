@@ -19,6 +19,10 @@ on:
         description: Verified SHA256 of the existing Linux tar.gz
         type: string
         default: '27e749998b625ab3cd0d379c7ea9ca3da7dd4d1a817f8f936df0fb84c1b6d75c'
+      reuse_windows_audio_run:
+        description: Optional previous run with the unchanged Windows-source-audio artifact
+        type: string
+        default: ''
       optional_packs:
         description: Also exercise large external build/drop and vocal-removal models (development check)
         type: boolean
@@ -44,16 +48,30 @@ jobs:
     if: github.event_name != 'workflow_dispatch' || !inputs.collect_release_sources
     runs-on: ubuntu-24.04
     timeout-minutes: 40
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
       - name: Install the Windows cross compiler
+        if: inputs.reuse_windows_audio_run == ''
         run: |
           sudo apt-get update
           sudo apt-get install -y mingw-w64 nasm build-essential pkg-config
       - name: Build pinned FFmpeg and LAME from source
+        if: inputs.reuse_windows_audio_run == ''
         run: bash ci/build_windows_ffmpeg.sh build/windows-source-audio
+      - name: Reuse unchanged source-built audio tools
+        if: inputs.reuse_windows_audio_run != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_AUDIO_RUN: ${{ inputs.reuse_windows_audio_run }}
+        run: |
+          [[ "$SOURCE_AUDIO_RUN" =~ ^[0-9]+$ ]]
+          gh run download "$SOURCE_AUDIO_RUN" --repo TheMarco/beatstitch --name Windows-source-audio --dir build/windows-source-audio
+          cmp ci/build_windows_ffmpeg.sh build/windows-source-audio/build_windows_ffmpeg.sh
       - name: Keep binaries with matching sources, notices and recipes
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
