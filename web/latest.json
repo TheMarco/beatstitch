@@ -1,0 +1,20 @@
+{
+  "version": "0.1.2",
+  "downloads": {
+    "mac": {
+      "url": "https://github.com/TheMarco/beatstitch/releases/download/v0.1.2/BeatStitch-0.1.2-mac-arm64.zip",
+      "size": 346778832,
+      "sha256": "ff119d1fc062a63685cda49ea30683f5e08d7aabe1d37b5a2cc5f1d27148c76e"
+    },
+    "windows": {
+      "url": "https://github.com/TheMarco/beatstitch/releases/download/v0.1.2/BeatStitch-0.1.2-windows-x64.zip",
+      "size": 408491639,
+      "sha256": "fd9140129ba5215cbfdd1ffdbba7c38cb10b8b32bf84c58ccf22622f7811497c"
+    },
+    "linux": {
+      "url": "https://github.com/TheMarco/beatstitch/releases/download/v0.1.2/BeatStitch-0.1.2-linux-x64.tar.gz",
+      "size": 610392019,
+      "sha256": "3b81656142044b0e742c50897634a1eed62f5229efe61e460cdf173b36ff9d5b"
+    }
+  }
+}

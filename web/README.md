@@ -55,3 +55,7 @@ The macOS, Windows and Linux cards in the download section link to the installer
 Google Drive (search `data-os` in `index.html`). The hero button takes its label and
 link from the card that matches the visitor's OS and falls back to macOS. `og:image`
 is relative; make it absolute once the site has a domain.
+
+`latest.json` tells the app which version is newest and where to download it. For a
+release, update it with the GitHub release asset URLs, sizes and SHA-256 checksums,
+and change the two `data-release` versions in `index.html` to match.

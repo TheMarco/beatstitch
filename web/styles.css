@@ -453,6 +453,8 @@ h1, h2, h3 { text-wrap: balance; }
 .platform.is-recommended span { color: rgba(26, 18, 6, 0.75); }
 .platform.is-recommended:hover { background: var(--amber-hover); border-color: var(--amber-hover); }
 .download .fine a { color: var(--text-2); }
+.release { max-width: 40rem; margin: 1.5rem auto 0; color: var(--text-2); font-size: 0.9375rem; }
+.release b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
 @media (max-width: 640px) { .platforms { grid-template-columns: 1fr; } }
 .download-details { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(20px, 3vw, 40px); max-width: 60rem; margin: clamp(48px, 6vw, 72px) auto 0; text-align: left; }
 .download-details h3 { font-size: 1.0625rem; }
