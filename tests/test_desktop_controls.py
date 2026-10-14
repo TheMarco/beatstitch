@@ -266,6 +266,108 @@ class DesktopControlsTests(unittest.TestCase):
         w.undo()
         self.assertEqual((w.session.tracks['a'].key, w.selected_clip().shift), ('A major', 3))
 
+    def incoming_pitch(self, outgoing='C minor', incoming='D minor'):
+        w = self.window
+        w.session.tracks['a'].key = outgoing
+        w.session.tracks['b'] = Track('b', str(self.root / 'incoming.wav'), 'Incoming', 120, 120, incoming, cue_out=120)
+        w.session.clips.append(Clip('b', 0, 120, blend_bars=4))
+        w.select_clip(w.session.clips[1].id)
+        return w
+
+    def test_pitch_destinations_fit_previous_playing_key_and_rank_small_shifts(self):
+        import djmix
+        w = self.incoming_pitch()
+        target = w.play_key.target
+        self.assertEqual([target.itemData(i) for i in range(target.count())], [0, -2, 3, 5])
+        self.assertIn('Different key', target.itemText(0))
+        self.assertIn('Same key', target.itemText(target.findData(-2)))
+        self.assertIn('Original has no simple key match', w.play_key.explanation.text())
+        for i in range(1, target.count()):
+            self.assertTrue(djmix.relationship(djmix.parse_key('C minor'), djmix.transpose(djmix.parse_key('D minor'), target.itemData(i))))
+        w.session.clips[0].transpose = True; w.session.clips[0].semitones = 2; w.refresh()
+        self.assertEqual([target.itemData(i) for i in range(target.count())], [0, -5, 5])
+        self.assertIn('Previous plays in D minor', w.play_key.explanation.text())
+        self.assertIn('Original fits: same key', w.play_key.explanation.text())
+        self.assertEqual(w.selected_clip().shift, 0)
+
+    def test_relative_pitch_choice_preserves_minor_and_source_label(self):
+        w = self.incoming_pitch('C major', 'D minor'); target = w.play_key.target
+        self.assertEqual([target.itemData(i) for i in range(target.count())], [0, -5])
+        self.assertIn('A minor', target.itemText(1)); self.assertIn('Relative key', target.itemText(1))
+        self.assertNotIn('major', target.itemText(1))
+        self.assertIn('Song playing in C major', target.itemData(1, Qt.ItemDataRole.ToolTipRole))
+        self.assertIn('larger pitch change', target.itemData(1, Qt.ItemDataRole.ToolTipRole))
+        target.setCurrentIndex(1); target.activated.emit(1)
+        self.assertEqual((w.session.tracks['b'].key, w.selected_clip().shift), ('D minor', -5))
+        self.assertIn('This song plays in A minor (-5 st): relative key', w.play_key.explanation.text())
+        w.undo(); self.assertEqual(w.selected_clip().shift, 0)
+
+    def test_all_pitch_keys_sync_views_without_editing_or_processing(self):
+        w = self.incoming_pitch(); before = w.session.to_dict(); revision = w.revision; history = len(w.history)
+        with patch.object(w, 'job') as job, patch.object(w, 'render_full') as render, patch.object(w, 'preview') as preview:
+            w.simple_song.play_key.all_keys.click()
+            self.assertTrue(w.play_key.all_keys.isChecked())
+            self.assertEqual(w.play_key.target.count(), 12)
+            self.assertEqual(w.simple_song.play_key.target.count(), 12)
+            w.play_key.all_keys.click()
+            self.assertFalse(w.simple_song.play_key.all_keys.isChecked())
+            self.assertEqual(w.play_key.target.count(), 4)
+            job.assert_not_called(); render.assert_not_called(); preview.assert_not_called()
+        self.assertEqual(w.session.to_dict(), before)
+        self.assertEqual((w.revision, len(w.history)), (revision, history))
+
+    def test_current_incompatible_and_octave_pitch_choices_are_never_replaced(self):
+        w = self.incoming_pitch(); w.set_transpose(1); target = w.play_key.target
+        self.assertEqual(target.currentData(), 1); self.assertIn('Current', target.currentText())
+        self.assertIn('Different key', target.currentText())
+        self.assertIn('kept until you choose another key', w.play_key.explanation.text())
+        w.set_transpose(12)
+        self.assertEqual(target.currentData(), 12); self.assertIn('+12 st', target.currentText())
+        w.play_key.all_keys.click(); w.play_key.all_keys.click()
+        self.assertEqual(w.selected_clip().shift, 12)
+        recovered = self.restart()
+        self.assertEqual(recovered.play_key.target.currentData(), 12)
+        self.assertIn('Current', recovered.play_key.target.currentText())
+
+    def test_pitch_filter_follows_clip_identity_and_reordering(self):
+        w = self.incoming_pitch(); clip = w.selected_clip()
+        w.session.clips.reverse(); w.refresh()
+        self.assertEqual(w.play_key.target.count(), 12)
+        self.assertTrue(w.play_key.all_keys.isHidden())
+        self.assertIn('No previous song', w.play_key.explanation.text())
+        w.session.clips.reverse(); w.refresh()
+        self.assertEqual(w.play_key.target.count(), 4)
+        # The same source can appear twice with different pitch settings.
+        repeated = Clip('a', 0, 120, transpose=True, semitones=2, blend_bars=4)
+        w.session.clips.insert(1, repeated); w.refresh()
+        self.assertEqual(w.selected_clip().id, clip.id)
+        self.assertIn('Previous plays in D minor', w.play_key.explanation.text())
+        self.assertIn('Original fits', w.play_key.explanation.text())
+
+    def test_original_can_resolve_a_manual_shift_without_another_transposition(self):
+        w = self.incoming_pitch('G# minor', 'D# minor'); w.set_transpose(-1)
+        self.assertIn('Original would fit', w.play_key.explanation.text())
+        self.assertIn('Current', w.play_key.target.currentText())
+        w.play_key.target.setCurrentIndex(0); w.play_key.target.activated.emit(0)
+        self.assertEqual((w.session.tracks['b'].key, w.selected_clip().shift), ('D# minor', 0))
+        self.assertIn('No pitch change needed', w.play_key.explanation.text())
+
+    def test_unknown_previous_and_marked_drum_overlap_do_not_restrict_pitch(self):
+        w = self.incoming_pitch('', 'D minor')
+        self.assertEqual(w.play_key.target.count(), 12)
+        self.assertIn('Previous key unknown', w.play_key.explanation.text())
+        self.assertTrue(w.play_key.all_keys.isHidden())
+        w.session.tracks['a'].key = 'C minor'
+        for side in ('incoming', 'outgoing'):
+            w.session.clips[1].intro_percussive = side == 'incoming'
+            w.session.clips[0].outro_percussive = side == 'outgoing'
+            w.refresh()
+            self.assertEqual(w.play_key.target.count(), 12)
+            self.assertIn('Drums-only overlap marked', w.play_key.explanation.text())
+            self.assertTrue(w.play_key.all_keys.isHidden())
+        w.session.clips[0].outro_percussive = False; w.refresh()
+        self.assertEqual(w.play_key.target.count(), 4)
+
     def test_unknown_source_disables_key_destination_but_manual_octave_is_preserved(self):
         w = self.window; w.set_transpose(12)
         self.assertEqual(w.play_key.target.currentData(), 12)

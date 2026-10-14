@@ -1,4 +1,4 @@
-# BeatStitch 0.1.0 Mac release
+# BeatStitch 0.1.1 Mac release
 
 The release is a native Apple Silicon application for macOS 14 or newer. Keep the
 application archive, matching source companion, checksums and this README together

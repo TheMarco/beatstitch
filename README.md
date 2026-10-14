@@ -1,4 +1,4 @@
-# BeatStitch 0.1.0
+# BeatStitch 0.1.1
 
 A native **Qt / PySide6 desktop application** for arranging EDM mixes. No browser,
 webview, server, or online audio service is required. The code supports macOS,
@@ -263,7 +263,13 @@ ordinary linked project; create another portable copy to copy its media too.
    choose **Play in key**, then its nearby **Listen to blend** button (or **Listen
    in mix** for one song) to prepare and hear the choice. Minor songs offer only
    minor destinations; major songs offer only major destinations. **Original**
-   restores zero pitch shift. Advanced controls also offer a numeric semitone
+   restores zero pitch shift. For incoming songs, the list defaults to keys that
+   fit the previous song's playing key, including its pitch shift. Choices explain
+   same, relative and neighbouring keys; the smallest shifts appear first.
+   **Original fits** means no pitch change is needed. **Show all keys** opens every
+   destination for experimentation without starting processing. Existing choices
+   outside the suggestions are kept. First songs, unknown previous keys and marked
+   drums-only overlaps show every destination. Advanced controls also offer a numeric semitone
    control and **Apply shift** checkbox, disabled at zero. **Try … st**, when
    available, applies advice checked against both neighboring blends. **Source
    key** corrects the original recording's label without changing its sound;
@@ -271,7 +277,7 @@ ordinary linked project; create another portable copy to copy its media too.
    it again. Use **Detect key** first if no usable estimate is saved. Pitch edits
    take effect on the next preview or render, not during current playback.
    The library's Listen button always plays the original recording.
-   **Find matches** beside Play in key shows compatible library songs at their
+   **Find next songs** beside Play in key shows compatible library songs at their
    original pitch. It clears search/collection restrictions and selects the key
    filter; **All songs** restores the full list. Selecting a candidate explains
    the relationship in words. A minor and C major are relative keys and need no

@@ -76,8 +76,9 @@ class LibraryTests(unittest.TestCase):
         self.assertTrue(all(clip.shift == 0 for clip in w.session.clips))
         self.assertIn('No extra pitch shift', w.verdict.text())
         self.assertIsNone(w.key_suggestion)
-        self.assertEqual(w.play_key.target.count(), 12)
-        self.assertTrue(all('major' in w.play_key.target.itemText(i) for i in range(12)))
+        self.assertEqual(w.play_key.target.count(), 1)
+        self.assertIn('Relative key', w.play_key.target.itemText(0))
+        self.assertTrue(all('major' in w.play_key.target.itemText(i) for i in range(w.play_key.target.count())))
 
     def test_tab_leaves_table_for_batch_and_collection_controls(self):
         w = self.w; w.library.select_ids(['a', 'b']); w.library.setFocus()

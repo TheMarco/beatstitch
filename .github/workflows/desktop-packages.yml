@@ -34,6 +34,7 @@ jobs:
     timeout-minutes: 35
     env:
       QT_QPA_PLATFORM: offscreen
+      PYTHONPATH: tests
       PIP_DISABLE_PIP_VERSION_CHECK: '1'
       PIP_NO_CACHE_DIR: '1'
       OMP_NUM_THREADS: '1'
@@ -86,7 +87,7 @@ jobs:
       - name: Check packaging, key-runtime compatibility, mix guide and offline help
         run: python -m unittest tests.test_windows_audio_tools tests.test_package_check tests.test_lightweight_packaging tests.test_model_downloads tests.test_model_download_ui tests.test_key_detection tests.test_first_mix tests.test_help tests.test_optional_package_check tests.test_section_model_download tests.test_spleeter tests.test_release_source_bundle tests.test_about -v
       - name: Check timing freshness, preview controls and listening guidance
-        run: python -m unittest tests.test_library tests.test_processing tests.test_relink tests.test_timing_freshness tests.test_timing_comparison tests.test_preview_navigation tests.test_transition_audio tests.test_listening tests.test_recommendations tests.test_content tests.test_demo.DemoAssetsTests -v
+        run: python -m unittest tests.test_desktop_controls tests.test_library tests.test_processing tests.test_relink tests.test_timing_freshness tests.test_timing_comparison tests.test_preview_navigation tests.test_transition_audio tests.test_listening tests.test_recommendations tests.test_content tests.test_demo.DemoAssetsTests -v
       - name: Build and exercise the model-free package
         run: python build_desktop.py --check
       - name: Exercise an actual in-app download on Windows
