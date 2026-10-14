@@ -148,7 +148,8 @@
 
     get position() {
       if (!this.playing) return this.offset;
-      const elapsed = this.offset + context.currentTime - this.startedAt;
+      // Sources start 20 ms after the call, so clamp the gap before them.
+      const elapsed = Math.max(0, this.offset + context.currentTime - this.startedAt);
       return this.loop ? elapsed % this.duration : Math.min(elapsed, this.duration);
     }
 
@@ -329,6 +330,7 @@
   const WAVE_RATE = demo.waveRate || 16;
   const DETAIL_RATE = demo.detailRate || 150;
   const clips = demo.clips;
+  clips.forEach((clip, index) => document.documentElement.style.setProperty(`--song-${index + 1}`, clip.color));
   const mix = new SyncPlayer(demo.versions, { nominal: demo.duration });
 
   const ui = {
@@ -351,7 +353,13 @@
   let staticDirty = true;
   let layers = null;
 
-  function shortKey(clip) { return (clip.mode === 'minor' ? MINOR : MAJOR)[clip.tonic] + (clip.mode === 'minor' ? 'm' : ''); }
+  /** The song's key; in the BeatStitch version a pitch-shifted song shows the key it plays in, like the app. */
+  function shortKey(clip, shifted) {
+    const shift = shifted ? clip.shift || 0 : 0;
+    const tonic = (((clip.tonic + shift) % 12) + 12) % 12;
+    const name = (clip.mode === 'minor' ? MINOR : MAJOR)[tonic] + (clip.mode === 'minor' ? 'm' : '');
+    return shift ? `${name} (${shift > 0 ? '+' : ''}${shift})` : name;
+  }
   function percent(clip) {
     const change = (demo.bpm / clip.bpm - 1) * 100;
     if (Math.abs(change) < 0.05) return '';
@@ -499,7 +507,7 @@
       g.font = `600 ${header > 15 ? 12 : 11}px ${FONT}`;
       g.fillStyle = '#141414';
       g.textBaseline = 'middle';
-      const meta = `${shortKey(clip)}  ${clip.bpm.toFixed(1)}${m < 0.5 && percent(clip) ? '  ' + percent(clip) : ''}`;
+      const meta = `${shortKey(clip, m < 0.5)}  ${clip.bpm.toFixed(1)}${m < 0.5 && percent(clip) ? '  ' + percent(clip) : ''}`;
       const room = x1 - x0 - 14;
       const metaWidth = g.measureText(meta).width;
       const showMeta = !G.small && room > metaWidth + g.measureText(clip.name).width + 16;
@@ -692,12 +700,27 @@
     const phase = clip => {
       const span = clipSpan(clip, m);
       const source = span.srcStart + (t - span.start) * (span.srcEnd - span.srcStart) / (span.end - span.start);
-      return source * clip.bpm / 60;
+      // Count beats from the song's measured kicks rather than its grid line.
+      return (source - (clip.kick || 0)) * clip.bpm / 60;
     };
     let beats = (phase(outgoing) - phase(incoming)) % 1;
     if (beats >= 0.5) beats -= 1;
     if (beats < -0.5) beats += 1;
     return { beats, ms: Math.abs(beats) * 60 / incoming.bpm * 1000 };
+  }
+
+  function listText(items) {
+    return items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+  }
+
+  function keyText(clip) {
+    if (mode === 'beatstitch' && clip.shift) return `${clip.key} → ${clip.mixKey}, ${clip.camelot} → ${clip.mixCamelot}`;
+    return `${clip.key}, ${clip.camelot}`;
+  }
+
+  function tempoText(clip) {
+    if (mode !== 'beatstitch') return `${clip.bpm} BPM, original tempo`;
+    return Math.abs(clip.bpm - demo.bpm) > 0.01 ? `${clip.bpm} → ${demo.bpm} BPM` : `${demo.bpm} BPM`;
   }
 
   function songText(clip) {
@@ -720,7 +743,9 @@
     const blend = clips.findIndex((clip, index) => index && t >= clip.start && t < clip.start + clip.incoming);
     if (!started && !mix.busy && t === 0) {
       setText(ui.blendTitle, 'Ready');
-      setText(ui.blendDetail, `${clips.map(c => c.name).join(', ')} at ${demo.bpm} BPM with 8-bar blends.`);
+      const bars = clips[1] ? clips[1].blendBars : 0;
+      const blends = clips.length - 1;
+      setText(ui.blendDetail, `${listText(clips.map(c => c.name))} at ${demo.bpm} BPM${blends ? ` with ${blends === 1 ? `an ${bars}-bar blend` : `${bars}-bar blends`}` : ''}.`);
     } else if (blend > 0) {
       setText(ui.blendTitle, `Blend ${blend} → ${blend + 1}`);
       setText(ui.blendDetail, `${songText(clips[blend - 1])} into ${songText(clips[blend])}`);
@@ -729,7 +754,7 @@
       const clip = clips[index];
       const next = clips[index + 1];
       setText(ui.blendTitle, clip.name);
-      setText(ui.blendDetail, `${clip.key}, ${clip.camelot}. ${mode === 'beatstitch' ? `${clip.bpm} → ${demo.bpm} BPM` : `${clip.bpm} BPM, original tempo`}${next ? `. Next blend in ${clock(next.start - t)}` : ''}`);
+      setText(ui.blendDetail, `${keyText(clip)}. ${tempoText(clip)}${next ? `. Next blend in ${clock(next.start - t)}` : ''}`);
     }
 
     const key = blend > 0 ? `${blend}` : 'idle';
@@ -1179,7 +1204,9 @@
       const tonic = (minor ? minorByNumber : majorByNumber)[number];
       return { number, minor, short: (minor ? MINOR : MAJOR)[tonic] + (minor ? 'm' : ''), long: `${(minor ? MINOR : MAJOR)[tonic]} ${minor ? 'minor' : 'major'}` };
     };
-    const songsIn = code => clips.filter(clip => clip.camelot === code);
+    const mixCode = clip => clip.mixCamelot || clip.camelot;
+    const songsIn = code => clips.filter(clip => mixCode(clip) === code);
+    const shiftedFrom = code => clips.filter(clip => clip.shift && clip.camelot === code);
     const neighbors = code => {
       const { number, minor } = keyOf(code);
       const wrap = n => ((n - 1 + 12) % 12) + 1;
@@ -1214,9 +1241,12 @@
         codeText.textContent = code;
         const nameText = svgEl('text', { x: tx, y: ty + 9, class: 'name' }, group);
         nameText.textContent = keyOf(code).short;
-        songsIn(code).forEach((clip, i, list) => {
+        // Filled dots: where each song plays in the mix. Rings: a pitch-shifted song's own key.
+        const marks = [...songsIn(code).map(clip => [clip, true]), ...shiftedFrom(code).map(clip => [clip, false])];
+        marks.forEach(([clip, filled], i, list) => {
           const offset = (i - (list.length - 1) / 2) * 9;
-          svgEl('circle', { cx: tx + offset, cy: ty + 22, r: 3.2, fill: clip.color }, group);
+          svgEl('circle', filled ? { cx: tx + offset, cy: ty + 22, r: 3.4, fill: clip.color, stroke: '#141418', 'stroke-width': 1.2 }
+            : { cx: tx + offset, cy: ty + 22, r: 2.6, fill: 'none', stroke: clip.color, 'stroke-width': 1.2 }, group);
         });
         segments.set(code, { group, path, codeText, nameText });
         group.addEventListener('click', () => select(code, true));
@@ -1259,6 +1289,14 @@
         seg.nameText.style.fill = sub;
       }
     }
+    function demoText(here, moved) {
+      const raised = clip => `${clip.name}, ${clip.shift > 0 ? 'raised' : 'lowered'} ${Math.abs(clip.shift)} semitone${Math.abs(clip.shift) === 1 ? '' : 's'} from ${clip.camelot}`;
+      const parts = [];
+      if (here.length) parts.push(`In the demo: ${listText(here.map(clip => (clip.shift ? raised(clip) : clip.name)))}.`);
+      if (moved.length) parts.push(`${listText(moved.map(clip => clip.name))} ${moved.length === 1 ? 'starts' : 'start'} here, then ${moved.length === 1 ? 'plays' : 'play'} in ${listText(moved.map(clip => clip.mixCamelot))} in the demo.`);
+      return parts.length ? parts.join(' ') : 'Choose any key on the wheel.';
+    }
+
     function select(code, focus) {
       selected = code;
       for (const [key, seg] of segments) seg.group.setAttribute('tabindex', key === code ? '0' : '-1');
@@ -1266,12 +1304,13 @@
       paint(code);
       const key = keyOf(code);
       const here = songsIn(code);
+      const moved = shiftedFrom(code);
       const lines = neighbors(code).map(([c, why]) => {
         const songs = songsIn(c).map(clip => clip.name).join(', ');
         return `<li><span><b>${c}</b> ${keyOf(c).long}${songs ? `<br><span style="color:var(--text-3)">${songs}</span>` : ''}</span><span>${why}</span></li>`;
       }).join('');
       info.innerHTML = `<h4>${code}</h4><p>${key.long}</p><ul>${lines}</ul>` +
-        `<p class="wheel-songs">${here.length ? `In the demo: ${here.map(clip => clip.name).join(' and ')}.` : 'Choose any key on the wheel.'}</p>`;
+        `<p class="wheel-songs">${demoText(here, moved)}</p>`;
     }
     select(selected, false);
   })();

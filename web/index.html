@@ -81,23 +81,23 @@
                 <svg class="icon-play" aria-hidden="true"><use href="#i-play"/></svg><svg class="icon-pause" aria-hidden="true"><use href="#i-pause"/></svg>
               </button>
             </div>
-            <div class="readout num" aria-live="off"><span id="mix-time">0:00.0</span> <small id="mix-total">/ 2:32</small></div>
+            <div class="readout num" aria-live="off"><span id="mix-time">0:00.0</span> <small id="mix-total">/ 2:52</small></div>
             <div class="meta num hide-sm">Bar <b id="mix-bar">1.1</b></div>
-            <div class="meta num hide-sm"><b>126</b> BPM</div>
-            <div class="player-title"><strong>First mix · Demo</strong><span>3 songs, 2:32</span></div>
+            <div class="meta num hide-sm"><b>128</b> BPM</div>
+            <div class="player-title"><strong>Demo mix</strong><span>2 songs, 2:52</span></div>
             <div class="segmented" role="group" aria-label="Version">
               <button type="button" data-version="beatstitch" aria-pressed="true">BeatStitch <kbd>1</kbd></button>
               <button type="button" data-version="without" aria-pressed="false">Without <kbd>2</kbd></button>
             </div>
           </div>
           <div class="scope" id="scope" aria-hidden="true"><canvas id="scope-canvas"></canvas></div>
-          <div class="timeline" id="timeline" tabindex="0" role="slider" aria-label="Playback position" aria-valuemin="0" aria-valuemax="152" aria-valuenow="0" aria-valuetext="0 seconds">
+          <div class="timeline" id="timeline" tabindex="0" role="slider" aria-label="Playback position" aria-valuemin="0" aria-valuemax="172" aria-valuenow="0" aria-valuetext="0 seconds">
             <canvas id="timeline-canvas"></canvas>
           </div>
           <div class="blend-bar">
             <div class="blend-now" aria-live="polite">
               <strong id="blend-title">Ready</strong>
-              <span id="blend-detail">Night Drive, Signal Bloom and First Light at 126 BPM with 8-bar blends.</span>
+              <span id="blend-detail">Lose Yourself In The Latent Space and Friday Night LFG at 128 BPM with an 8-bar blend.</span>
             </div>
             <div class="phase idle" id="phase">
               <span class="phase-label">Kicks apart</span>
@@ -107,7 +107,7 @@
           </div>
           <p class="player-error" id="mix-error" hidden></p>
         </div>
-        <p class="player-note">Three original songs made for the app, mixed by the BeatStitch engine with the demo project's default settings. Without uses the same songs and overlaps at their original tempos, with each blend's first downbeat lined up by hand and a plain crossfade. Both versions play at matched loudness. Press 1 or 2 to switch while the music plays.</p>
+        <p class="player-note">Two songs by Marco van Hylckama Vlieg, an excerpt of a saved project rendered by the BeatStitch engine. Friday Night LFG plays two semitones higher so both songs are in A minor. Without uses the same songs and overlap at their original tempos and keys, with the blend's first downbeat lined up by hand and a plain crossfade. Both versions play at matched loudness. Press 1 or 2 to switch while the music plays.</p>
       </div>
     </section>
 
@@ -121,8 +121,8 @@
         <div class="feature">
           <div class="feature-text">
             <h3>Speed changes, pitch stays</h3>
-            <p>Rubber Band R3 time-stretches every song to the mix tempo and keeps its key. In the demo, Night Drive speeds up 1.6% and First Light slows down 1.6%. Both stay in A minor.</p>
-            <p>Beat grids then put the kicks in the same place. Skip the tempo match and two songs only 2 BPM apart drift half a beat apart within eight bars.</p>
+            <p>Rubber Band R3 time-stretches every song to the mix tempo and keeps its key. In the demo, Lose Yourself In The Latent Space speeds up 2.4%, from 125 to 128 BPM, and stays in A minor.</p>
+            <p>Beat grids then put the kicks in the same place. Skip the tempo match and two songs only 3 BPM apart drift three quarters of a beat apart within eight bars.</p>
             <table class="tempo-table num" id="tempo-table">
               <thead><tr><th scope="col">Song</th><th scope="col">Source</th><th scope="col">In the mix</th><th scope="col">Change</th></tr></thead>
               <tbody></tbody>
@@ -134,15 +134,15 @@
               <div class="chart-stat num"><b id="grid-stat">0 ms</b><span>apart after 8 bars</span></div>
             </div>
             <svg id="grid-figure" viewBox="0 0 640 200" role="img" aria-labelledby="grid-caption"></svg>
-            <figcaption class="figure-caption" id="grid-caption">Every mark is a kick drum in the demo's first 8-bar blend. Taller marks start a bar. Switch the tempo match off to see where Night Drive's kicks fall at its original 124 BPM.</figcaption>
+            <figcaption class="figure-caption" id="grid-caption">Every mark is a kick drum in the demo's 8-bar blend. Taller marks start a bar. Switch the tempo match off to see where the kicks of Lose Yourself In The Latent Space fall at its original 125 BPM.</figcaption>
           </figure>
         </div>
 
         <div class="feature">
           <div class="feature-text">
             <h3>Keys that agree</h3>
-            <p>BeatStitch detects each song's key on your computer and shows it in Camelot notation, the wheel DJs use to find songs that blend. Neighbors usually work. Night Drive (8A) into Signal Bloom (9A) is one step around the wheel.</p>
-            <p>When a blend clashes, BeatStitch can suggest a pitch change of up to two semitones. Nothing changes until you listen and choose it.</p>
+            <p>BeatStitch detects each song's key on your computer and shows it in Camelot notation, the wheel DJs use to find songs that blend. The same key or a neighbor usually works.</p>
+            <p>When a blend clashes, BeatStitch can suggest a pitch change of up to two semitones. Nothing changes until you listen and choose it. In the demo, Friday Night LFG (G minor, 6A) plays two semitones higher, in A minor (8A), the key of Lose Yourself In The Latent Space.</p>
           </div>
           <figure class="figure">
             <div class="camelot-layout">
@@ -216,7 +216,7 @@
           <p>Songs, arrangement and the selected blend stay in view together. This is the same demo mix, opened in the app.</p>
         </div>
         <figure class="screen">
-          <img src="img/app-arrangement.webp" width="2880" height="1800" loading="lazy" decoding="async" alt="The BeatStitch window with the demo mix open: a library of three songs with BPM and Camelot keys on the left, the arrangement with colored waveforms and fade curves in the middle, and transition controls for blend 1 to 2 on the right.">
+          <img src="img/app-arrangement.webp" width="2880" height="1800" loading="lazy" decoding="async" alt="The BeatStitch window with the demo mix open: a library of two songs with BPM and Camelot keys on the left, the arrangement with colored waveforms and fade curves in the middle, and transition controls for blend 1 to 2 on the right.">
         </figure>
         <div class="screen-notes">
           <div><h3>Library</h3><p>Add a folder and BPM and key analysis runs in the background. Sort by tempo, Camelot key or length.</p></div>
@@ -233,7 +233,7 @@
           <p>The blend editor zooms in on one transition, with both songs on a shared bar grid and the bass handoff marked where it happens.</p>
         </div>
         <figure class="screen">
-          <img src="img/app-blend-editor.webp" width="2600" height="1222" loading="lazy" decoding="async" alt="The BeatStitch blend editor for blend 1 to 2: Night Drive and Signal Bloom kick drums on a shared bar grid with the bass handoff marked at bar 5, followed by beat alignment, voice and crowding checks, alternatives and the overlap length.">
+          <img src="img/app-blend-editor.webp" width="2600" height="1222" loading="lazy" decoding="async" alt="The BeatStitch blend editor for blend 1 to 2: Lose Yourself In The Latent Space and Friday Night LFG kick drums on a shared bar grid with the bass handoff marked at bar 5, followed by beat alignment, voice and crowding checks, alternatives and the overlap length.">
         </figure>
         <div class="screen-notes four">
           <div><h3>Align beats</h3><p>Same BPM can still leave the kicks apart. Align beats suggests a timing correction for the incoming song.</p></div>
@@ -332,7 +332,7 @@
       <img src="img/beatstitch-logo.webp" alt="BeatStitch" width="112" height="32">
       <div>
         <p>BeatStitch by Marco van Hylckama Vlieg. <a href="https://github.com/TheMarco/beatstitch">Source code on GitHub</a></p>
-        <p>Built on Rubber Band, FFmpeg, Qt, Beat This!, OpenKeyScan, PANNs, EDMFormer, MusicFM, MuQ and Spleeter. The demo songs and listening examples are original synthesized audio made for BeatStitch. Barlow is used under the SIL Open Font License.</p>
+        <p>Built on Rubber Band, FFmpeg, Qt, Beat This!, OpenKeyScan, PANNs, EDMFormer, MusicFM, MuQ and Spleeter. The demo mix uses two songs by Marco van Hylckama Vlieg. The listening examples are original synthesized audio made for BeatStitch. Barlow is used under the SIL Open Font License.</p>
       </div>
     </div>
   </footer>

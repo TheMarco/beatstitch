@@ -2,12 +2,15 @@
 
 Run from the repository root with the app's environment (FFmpeg and Rubber Band on PATH):
 
-    .venv/bin/python web/tools/build_media.py
+    .venv/bin/python web/tools/build_media.py [project.djmix]
 
-The demo mix is rendered by the real engine from assets/demo. The comparison
-version uses the same songs, overlaps and per-song loudness gains, but keeps each
-song at its original tempo, lines up the first downbeat of every blend by hand
-and uses a plain full-band crossfade. Both are level-matched before encoding.
+The demo mix is rendered by the real engine from web/tools/demo/demo-mix.djmix, an
+excerpt of a saved project whose songs live outside the repository, so it only
+rebuilds where those files are. Pass another project to use different songs. The
+comparison version uses the same songs, overlaps, fades and per-song loudness gains,
+but keeps each song at its original tempo and pitch, lines up the first downbeat of
+every blend by hand and uses a plain full-band crossfade. Both are level-matched
+before encoding.
 Screenshots and brand images are separate steps: web/tools/capture_screens.py and
 web/tools/build_brand.py.
 """
@@ -22,6 +25,7 @@ from pathlib import Path
 
 import numpy as np
 import soundfile as sf
+from scipy.signal import butter, sosfilt
 
 ROOT = Path(__file__).resolve().parents[2]
 WEB = ROOT / 'web'
@@ -29,13 +33,14 @@ sys.path.insert(0, str(ROOT))
 
 import djmix  # noqa: E402
 import studio_engine  # noqa: E402
+import studio_theme  # noqa: E402
+from studio_finishing import envelope as finishing_envelope  # noqa: E402
 from studio_lessons import LESSONS  # noqa: E402
 from studio_projects import read_project  # noqa: E402
 from studio_widgets import camelot  # noqa: E402
 
 SR = djmix.SR
-# The app's per-song clip colors for the three demo songs (studio_theme.CLIP_COLORS).
-CLIP_COLORS = ('#5CCBEA', '#8FA2FF', '#CF8FFF')
+PROJECT = WEB / 'tools/demo/demo-mix.djmix'
 WAVE_RATE = 16  # buckets per second for the arrangement
 LESSON_RATE = 60  # buckets per second for the 16-second lessons
 DETAIL_RATE = 150  # buckets per second for the zoomed, scrolling deck view
@@ -46,6 +51,34 @@ def encode(source: Path, destination: Path, gain_db: float = 0.0):
     subprocess.run(['ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'error', '-y', '-i', str(source),
                     '-af', f'volume={gain_db:.3f}dB', '-ar', '44100', '-c:a', 'libmp3lame', '-b:a', '192k',
                     str(destination)], check=True)
+
+
+def decode(path: Path) -> np.ndarray:
+    """A whole song as stereo float at the engine's sample rate, whatever the file's rate."""
+    raw = subprocess.run(['ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'error', '-i', str(path),
+                          '-map', '0:a:0', '-ac', '2', '-ar', str(SR), '-f', 'f32le', '-'],
+                         check=True, capture_output=True).stdout
+    return np.frombuffer(raw, dtype='<f4').reshape(-1, 2).astype(np.float64)
+
+
+def kick_offset(audio: np.ndarray, cue_in: float, bpm: float, spans) -> float:
+    """Median seconds from the song's beat grid to its kick drums, over source spans.
+
+    The grid counts beats from the clip's in point. Kicks are the strongest
+    low-frequency onset within half a beat of each grid beat.
+    """
+    hop = SR // 2000
+    low = np.abs(sosfilt(butter(4, 100, 'low', fs=SR, output='sos'), audio.mean(axis=1)))
+    onset = np.diff(low[:len(low) // hop * hop].reshape(-1, hop).max(axis=1), prepend=0).clip(0)
+    beat = 60 / bpm
+    offsets = []
+    for a, b in spans:
+        for k in range(int(np.ceil((a - cue_in) / beat - 1e-6)), int(np.floor((b - cue_in) / beat + 1e-6))):
+            centre = cue_in + k * beat
+            lo, hi = int((centre - beat / 2) * 2000), int((centre + beat / 2) * 2000)
+            if lo >= 0 and hi <= len(onset):
+                offsets.append((lo + int(np.argmax(onset[lo:hi]))) / 2000 - centre)
+    return float(np.median(offsets)) if offsets else 0.0
 
 
 def envelope(audio: np.ndarray, buckets: int):
@@ -69,9 +102,7 @@ def plain_mix(session, positions, gains):
     placement = []
     for index, (clip, position) in enumerate(zip(session.clips, positions)):
         track = session.tracks[clip.track_id]
-        audio, rate = sf.read(track.path, always_2d=True)
-        assert rate == SR
-        audio = audio * 10 ** (gains[index] / 20)
+        audio = decode(Path(track.path)) * 10 ** (gains[index] / 20)
         stretch = session.target_bpm / track.bpm  # mix source seconds per timeline second
         # The first song is anchored where it hands over; later songs where they enter.
         anchor = positions[1]['start'] if index == 0 and len(positions) > 1 else position['start']
@@ -91,13 +122,16 @@ def plain_mix(session, positions, gains):
             start, window = positions[index + 1]['start'], positions[index + 1]['incoming']
             p = np.clip((t - start) / max(1, window - 1), 0, 1)
             gain *= np.cos(p * np.pi / 2)
-        if first == 0:
-            fade = min(len(gain), int(0.01 * SR))
-            gain[:fade] *= np.linspace(0, 1, fade)
         out[first:last] += audio[t + offset] * gain[:, None]
-        placement.append({'start': first / SR, 'end': last / SR, 'sourceStart': (first + offset) / SR,
-                          'sourceEnd': (last + offset) / SR})
-    return out[:total], placement
+        # Source times count from the clip's in point, like the BeatStitch version's.
+        placement.append({'start': first / SR, 'end': last / SR, 'sourceStart': (first + offset) / SR - clip.cue_in,
+                          'sourceEnd': (last + offset) / SR - clip.cue_in})
+    out = out[:total]
+    # The same opening and ending fades as the engine, plus its 5 ms edges.
+    n = np.arange(total)
+    edge = np.minimum(np.clip(n / (0.005 * SR), 0, 1), np.clip((total - 1 - n) / (0.005 * SR), 0, 1))
+    out *= (edge * finishing_envelope(session, positions, n))[:, None]
+    return out, placement
 
 
 def main():
@@ -107,7 +141,8 @@ def main():
     media.mkdir(parents=True)
     data.mkdir(parents=True, exist_ok=True)
 
-    session, _ = read_project(ROOT / 'assets/demo/Mix.djmix', lambda message: None)
+    project = Path(sys.argv[1]).expanduser() if len(sys.argv) > 1 else PROJECT
+    session, _ = read_project(project, lambda message: None)
     positions = studio_engine.layout(session)
     with tempfile.TemporaryDirectory(prefix='beatstitch-web-') as directory:
         work = Path(directory)
@@ -137,9 +172,18 @@ def main():
         clips = []
         source_envs = []
         detail_envs = []
+        kicks = []
         for index, (clip, position) in enumerate(zip(session.clips, positions)):
             track = session.tracks[clip.track_id]
-            audio, _ = sf.read(track.path, always_2d=True)
+            audio = decode(Path(track.path))
+            # Where the kicks really sit in each overlap, so the page's meter shows measured offsets.
+            per_sample = session.target_bpm / track.bpm / SR  # source seconds per timeline sample
+            spans = []
+            if index:
+                spans.append((clip.cue_in, clip.cue_in + position['incoming'] * per_sample))
+            if index + 1 < len(positions):
+                spans.append((clip.cue_out - positions[index + 1]['incoming'] * per_sample, clip.cue_out))
+            kicks.append(kick_offset(audio, clip.cue_in, track.bpm, spans))
             audio = audio[int(clip.cue_in * SR):int(np.ceil(clip.cue_out * SR))] * 10 ** (gains[index] / 20)
             source_envs.append(envelope(audio, int(round(len(audio) / SR * WAVE_RATE))))
             detail_envs.append(envelope(audio, int(round(len(audio) / SR * DETAIL_RATE)))[0])
@@ -148,9 +192,12 @@ def main():
         for index, (clip, position) in enumerate(zip(session.clips, positions)):
             track = session.tracks[clip.track_id]
             key = djmix.parse_key(track.key)
+            mix_key = djmix.key_name(djmix.transpose(key, clip.shift))
             clips.append({
                 'name': track.name, 'bpm': track.bpm, 'key': track.key, 'camelot': camelot(track.key),
-                'tonic': key[0], 'mode': key[1], 'color': CLIP_COLORS[index % len(CLIP_COLORS)],
+                'tonic': key[0], 'mode': key[1], 'shift': clip.shift, 'mixKey': mix_key, 'mixCamelot': camelot(mix_key),
+                # The app colors each song from its identity, so the page matches the screenshots.
+                'color': studio_theme.clip_color(clip.track_id), 'kick': round(kicks[index], 4),
                 'start': position['start'] / SR, 'end': position['end'] / SR,
                 'incoming': position['incoming'] / SR, 'blendBars': clip.blend_bars if index else 0,
                 'sourceDuration': clip.cue_out - clip.cue_in, 'plain': placement[index],
