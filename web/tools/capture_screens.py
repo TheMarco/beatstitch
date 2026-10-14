@@ -1,6 +1,8 @@
-"""Capture the website's product screenshots from the real app with the bundled demo open.
+"""Capture the website's product screenshots from the real app with the website's demo project open.
 
-Uses an isolated temporary data folder, so your library and projects are untouched:
+The project is web/tools/demo/demo-mix.djmix, the same one build_media.py renders, so
+its songs must be on this computer. Uses an isolated temporary data folder, so your
+library and projects are untouched:
 
     QT_QPA_PLATFORM=offscreen QT_SCALE_FACTOR=2 .venv/bin/python web/tools/capture_screens.py
 
@@ -16,6 +18,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+PROJECT = ROOT / 'web/tools/demo/demo-mix.djmix'
 sys.path.insert(0, str(ROOT))
 os.chdir(ROOT)
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
@@ -43,13 +46,17 @@ def main():
     images.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='beatstitch-shots-') as directory:
         work = Path(directory)
-        window = Studio(work / 'data')
+        # Open a copy, so the app's own saves never touch the repository's project.
+        project = work / PROJECT.name
+        project.write_bytes(PROJECT.read_bytes())
+        window = Studio(work / 'data', project)
         window.resize(1440, 900)
         window.show()
 
         def settle(seconds=60):
             deadline = time.monotonic() + seconds
-            while window.jobs and time.monotonic() < deadline:
+            # Jobs, and the visual waveforms that load after a project opens.
+            while (window.jobs or window.band_workers) and time.monotonic() < deadline:
                 QTest.qWait(20)
             for _ in range(40):
                 app.processEvents()
@@ -66,10 +73,8 @@ def main():
                            check=True)
             print('saved', name, image.width(), crop_height or image.height())
 
-        window.open_demo()
         settle()
-        if window.help_window:
-            window.help_window.close()
+        window.select_clip(window.session.clips[1].id)
         settle()
         # Waveform bands load in the background after the demo opens; let their banner clear.
         shot('app-arrangement', window, wait=6000)
