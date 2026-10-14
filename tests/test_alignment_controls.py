@@ -117,7 +117,7 @@ class AlignmentControlsTests(unittest.TestCase):
         self.controls.set_result(report, {'state': 'uncertain', 'offset_seconds': None, 'reason': 'No stable pulse.'})
         self.assertEqual(self.dialog.session.to_dict(), before)
         self.assertFalse(self.dialog.apply.isEnabled())
-        self.assertIn('No reliable automatic correction', self.controls.summary.text())
+        self.assertIn('Not aligned automatically', self.controls.summary.text())
 
     def test_unavailable_source_audio_does_not_claim_a_suggestion_was_applied(self):
         self.dialog.session.clips[2].cue_in = 0.

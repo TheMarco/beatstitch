@@ -153,6 +153,96 @@ def _wrap_delay(delay, beat_period):
     return float((delay + 0.5 * beat_period) % beat_period - 0.5 * beat_period)
 
 
+def estimate_beat_positions(outgoing, incoming, bpm, duration):
+    """Check actual beat rates before estimating a single timing offset.
+
+    Inputs are detector observations on the shared playback clock, not an
+    invented BPM grid. A changing gap is never repaired by a constant offset.
+    No downbeat or bar-phase assertion is made here.
+    """
+    nominal = _validate_positive('bpm', bpm)
+    length = _validate_positive('duration', duration)
+    if not 20 <= nominal <= 400 or length > 90:
+        raise ValueError('Beat positions need a supported BPM and bounded excerpt')
+    period = 60 / nominal
+    rows, fits = [], []
+    diagnostics = {'beat_period_seconds': period, 'duration_seconds': length,
+                   'method': 'detected beat positions'}
+    def uncertain(reason, code):
+        return {'state': 'uncertain', 'offset_seconds': None, 'reason': reason,
+                'reason_code': code, 'diagnostics': diagnostics}
+    for values in (outgoing, incoming):
+        beats = np.asarray(values, dtype=float)
+        if (beats.ndim != 1 or not np.isfinite(beats).all() or
+                np.any(beats < 0) or np.any(beats >= length) or np.any(np.diff(beats) <= 0)):
+            raise ValueError('Expected ordered finite beat observations inside the excerpt')
+        beats = beats[(beats >= .5 * period) & (beats < length - .5 * period)]
+        if len(beats) < 12 or beats[-1] - beats[0] < 8 * period:
+            return uncertain('Too few detected beats to check both tempo and alignment.', 'sparse_beats')
+        intervals = np.diff(beats)
+        if np.any((intervals < .7 * period) | (intervals > 1.3 * period)):
+            return uncertain('Detected beats are missing, doubled, or disagree with the expected pulse. '
+                             'Check the source BPM and listen.', 'ambiguous_beats')
+        numbers = np.arange(len(beats), dtype=float)
+        keep = np.ones(len(beats), dtype=bool)
+        # A detector can place a few beats poorly during a fill or fade. Retain
+        # their original sequence numbers and require at least 85% support;
+        # dropping an observation must never compress or invent beat intervals.
+        for _ in range(3):
+            slope, intercept = np.polyfit(numbers[keep], beats[keep], 1)
+            keep &= abs(beats - (intercept + slope * numbers)) <= .025
+            if np.mean(keep) < .85 or np.sum(keep) < 12:
+                return uncertain('Detected beat timing varies within this overlap. A single left/right move '
+                                 'cannot keep the whole blend aligned.', 'irregular_beats')
+        slope, intercept = np.polyfit(numbers[keep], beats[keep], 1)
+        residual = beats - (intercept + slope * numbers)
+        fits.append({'bpm': float(60 / slope), 'period_seconds': float(slope),
+                     'residual_p95_seconds': float(np.percentile(abs(residual[keep]), 95)),
+                     'beats': len(beats), 'supported_beats': int(np.sum(keep))})
+        rows.append(beats[keep])
+    diagnostics['measured_tempos'] = fits
+    if any(f['residual_p95_seconds'] > .035 for f in fits):
+        return uncertain('Detected beat timing varies within this overlap. A single left/right move '
+                         'cannot keep the whole blend aligned.', 'irregular_beats')
+    shared_span = min(row[-1] for row in rows) - max(row[0] for row in rows)
+    slip = shared_span * abs(fits[0]['period_seconds'] / fits[1]['period_seconds'] - 1)
+    diagnostics['predicted_slip_seconds'] = float(slip)
+    # The optional detector has 20 ms frame spacing. A fit can differ slightly
+    # with context near a fill; require more than two frames of accumulated
+    # slip before treating a small slope difference as a speed mismatch. The
+    # independent gap check below still rejects a changing alignment.
+    if slip > .050:
+        return uncertain(f"The actual beat rates differ: A {fits[0]['bpm']:.1f} BPM, "
+                         f"B {fits[1]['bpm']:.1f} BPM in this overlap. Correct the source BPM "
+                         'or supported tempo drift before aligning; moving B alone cannot fix the speed.',
+                         'tempo_mismatch')
+    delays = []
+    for hit in rows[0]:
+        nearest = rows[1][np.argmin(abs(rows[1] - hit))]
+        if abs(nearest - hit) < .5 * period:
+            delays.append((float(hit), float(nearest - hit)))
+    if len(delays) < 12:
+        return uncertain('Not enough matching detected beats to support a timing move.', 'sparse_matches')
+    times, gaps = np.asarray(delays).T
+    windows = [gaps[(times >= left) & (times < right)]
+               for left, right in zip(np.linspace(times[0], times[-1] + .001, 5)[:-1],
+                                      np.linspace(times[0], times[-1] + .001, 5)[1:])]
+    medians = [float(np.median(window)) for window in windows if len(window) >= 3]
+    diagnostics['window_delays_seconds'] = medians
+    if len(medians) < 3 or np.ptp(medians) > .035 or np.percentile(abs(gaps - np.median(gaps)), 95) > .04:
+        return uncertain('The beat gap changes through this overlap. A single timing move is insufficient.',
+                         'changing_gap')
+    offset = float(-np.median(gaps))
+    if abs(offset) > .5 * period - .015:
+        return uncertain('The detected gap is close to half a beat; its direction is ambiguous.', 'half_beat')
+    aligned = abs(offset) <= _ALIGNED_TOL_S
+    return {'state': 'aligned' if aligned else 'suggested', 'offset_seconds': 0. if aligned else offset,
+            'reason': ('Detected beats have matching speeds and already line up closely.' if aligned else
+                       'Detected beats have matching speeds. Try moving B '
+                       + ('later' if offset > 0 else 'earlier') + ' to line up their pulse.'),
+            'alignment_kind': 'detected beats', 'diagnostics': diagnostics}
+
+
 def _accent_correction(out_env, in_env, env_sr, beat, pulse_offset):
     """Require a distinct, repeated strongest kick in at least three full bars.
 

@@ -697,7 +697,7 @@ class Studio(QMainWindow):
         strip_row.addWidget(self.help_button("tempo", "Tempo, key and pitch"))
         tempo = QHBoxLayout()
         tempo.setSpacing(6)
-        tempo.addWidget(label("BPM", "field"))
+        tempo.addWidget(label("Source BPM", "field"))
         self.bpm = ValueBox(20, 300, step=.1, fine=.001, decimals=3, width=78)
         self.bpm.setAccessibleName("Source tempo in BPM")
         self.bpm.setToolTip("The song's own tempo. Drag (Shift for fine steps) or double-click to type.")
@@ -707,6 +707,8 @@ class Studio(QMainWindow):
         tempo.addWidget(self.use_bpm_btn)
         tempo.addStretch(1)
         body.addLayout(tempo)
+        self.bpm_hint = label('', 'hint', True)
+        body.addWidget(self.bpm_hint)
         key = QHBoxLayout()
         key.setSpacing(6)
         key.addWidget(label("Source key", "field"))
@@ -1687,6 +1689,8 @@ class Studio(QMainWindow):
         timing = track.timing
         from studio_timing import current_analysis as current_timing
         bpm_suggestion = current_timing(track).get("bpm")
+        self.bpm_hint.setText(f'Playback follows Project BPM ({self.session.target_bpm:g}). '
+                              'Source BPM describes the original recording; changing it corrects its tempo label.')
         idle = not self.jobs
         guidance = timing_guidance(timing, clip.stabilize, not idle, track=track)
         self.timing_result.setText(guidance.title)

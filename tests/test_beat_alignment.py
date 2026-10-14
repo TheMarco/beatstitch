@@ -4,7 +4,7 @@ import unittest
 
 import numpy as np
 
-from studio_beat_alignment import estimate_alignment
+from studio_beat_alignment import estimate_alignment, estimate_beat_positions
 
 SR = 22050
 
@@ -173,6 +173,65 @@ class TestBeatAlignment(unittest.TestCase):
             estimate_alignment(out, out, SR, 0)
         with self.assertRaises(ValueError):
             estimate_alignment(np.zeros((10, 3)), np.zeros((10, 3)), SR, 120.0)
+
+
+class DetectedBeatAlignmentTests(unittest.TestCase):
+    def test_speed_mismatch_is_actionable_and_does_not_offer_an_offset(self):
+        a = np.arange(.05, 15, 60 / 128)
+        b = np.arange(.08, 15, 60 / 132)
+        result = estimate_beat_positions(a, b, 128, 15)
+        self.assertEqual(result['reason_code'], 'tempo_mismatch')
+        self.assertIsNone(result['offset_seconds'])
+        self.assertIn('128.0 BPM', result['reason'])
+        self.assertIn('132.0 BPM', result['reason'])
+
+    def test_quantized_detected_beats_align_without_matching_kick_shapes(self):
+        a = np.round(np.arange(.03, 15, 60 / 128) / .02) * .02
+        b = a + .04
+        b = b[b < 15]
+        result = estimate_beat_positions(a, b, 128, 15)
+        self.assertEqual(result['state'], 'suggested')
+        self.assertAlmostEqual(result['offset_seconds'], -.04, places=6)
+        adjusted = b + result['offset_seconds']
+        self.assertEqual(estimate_beat_positions(a, adjusted, 128, 15)['state'], 'aligned')
+        json.dumps(result)
+
+    def test_small_rate_difference_requires_stable_gap_in_the_entire_blend(self):
+        a = np.arange(.02, 15, 60 / 128.2)
+        b = np.arange(.05, 15, 60 / 128.0)
+        result = estimate_beat_positions(a, b, 128, 15)
+        self.assertEqual(result['state'], 'suggested')
+        self.assertGreater(result['offset_seconds'], -.065)
+        self.assertLess(result['offset_seconds'], -.025)
+
+    def test_missing_double_and_half_beat_observations_stay_uncertain(self):
+        a = np.arange(.05, 15, .5)
+        for b in (a[::2], np.arange(.05, 15, .25), a + .25):
+            b = b[b < 15]
+            result = estimate_beat_positions(a, b, 120, 15)
+            self.assertEqual(result['state'], 'uncertain')
+            self.assertIsNone(result['offset_seconds'])
+
+    def test_nonlinear_drift_does_not_become_one_constant_shift(self):
+        a = np.arange(.05, 15, .5)
+        b = a + .08 * np.sin(a / 15 * 2 * np.pi)
+        result = estimate_beat_positions(a, b, 120, 15)
+        self.assertEqual(result['state'], 'uncertain')
+        self.assertIn(result['reason_code'], ('irregular_beats', 'changing_gap', 'tempo_mismatch'))
+
+    def test_a_few_uncertain_fill_observations_do_not_compress_the_sequence(self):
+        a = np.arange(.05, 15, .5)
+        b = a + .04
+        b[[8, 20]] += .045
+        result = estimate_beat_positions(a, b, 120, 15)
+        self.assertEqual(result['state'], 'suggested')
+        self.assertAlmostEqual(result['offset_seconds'], -.04, places=6)
+        self.assertEqual(result['diagnostics']['measured_tempos'][1]['supported_beats'], 27)
+
+    def test_sparse_and_invalid_observations(self):
+        self.assertEqual(estimate_beat_positions([], [], 128, 15)['reason_code'], 'sparse_beats')
+        with self.assertRaises(ValueError): estimate_beat_positions([1, .5], [1], 128, 15)
+        with self.assertRaises(ValueError): estimate_beat_positions([float('nan')], [1], 128, 15)
 
 
 if __name__ == "__main__":

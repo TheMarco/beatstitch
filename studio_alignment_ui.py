@@ -13,7 +13,7 @@ import djmix
 import studio_theme as T
 from studio_alignment_audio import (AlignmentMixer, AlignmentTransport, RATE, alignment_identity,
                                     cue_for_offset, offset_for_cue, prepare_alignment)
-from studio_beat_alignment import estimate_alignment, kick_markers
+from studio_beat_alignment import estimate_alignment, estimate_beat_positions, kick_markers
 from studio_blend_choices import draft_session
 
 
@@ -101,7 +101,7 @@ class KickView(QWidget):
             p.setPen(QPen(QColor(T.TEXT), 1)); p.drawLine(QPointF(x(self.cursor), 12), QPointF(x(self.cursor), 139))
         p.setPen(QColor(T.TEXT_3))
         p.drawText(QRectF(58, 138, width, 17), Qt.AlignmentFlag.AlignLeft,
-                   f'{a:.2f}–{b:.2f} sec · estimated kick hits · drag B to adjust')
+                   f'{a:.2f}–{b:.2f} sec · {self.data.get("marker_label", "estimated kick hits")} · drag B to adjust')
 
     def mousePressEvent(self, event):
         if not self.data or event.button() != Qt.MouseButton.LeftButton: return
@@ -164,6 +164,11 @@ class BeatAlignment(QWidget):
                              'Equally accented kicks cannot identify bar 1. '
                              'An uncertain check leaves the timing unchanged. Nothing enters your mix until Apply changes.')
         self.auto.clicked.connect(self.align); row.addWidget(self.auto)
+        self.detector = QPushButton('Add beat detector…')
+        self.detector.setToolTip('Download the optional beat detector to check actual beat speeds and positions. '
+                                 'A matching BPM label alone does not prove the beats run at the same speed. '
+                                 'The download is separate from the app; it runs locally and can be removed later.')
+        self.detector.clicked.connect(self.add_detector); row.addWidget(self.detector)
         self.listen = QPushButton('Hear beats'); self.listen.clicked.connect(self.toggle)
         self.listen.setToolTip('Loop both songs together at even volume before blend fades and bass handoff. '
                                'The check uses the project reference BPM. Moving B updates this audio immediately; '
@@ -174,6 +179,12 @@ class BeatAlignment(QWidget):
                               'This is a listening aid and never changes export.')
         self.focus.toggled.connect(lambda value: self.player.set_focus(value)); row.addWidget(self.focus)
         row.addStretch(); box.addLayout(row)
+        self.tempo_result = QLabel('Actual beat speeds have not been checked.')
+        self.tempo_result.setWordWrap(True); self.tempo_result.setProperty('role', 'hint')
+        self.tempo_result.setToolTip('Measured from beat-detector observations inside this overlap, after tempo and pitch processing. '
+                                     'Source BPM is the original recording’s tempo; Project BPM is its intended playback tempo. '
+                                     'Detection can be wrong or local tempo can drift. These measurements do not edit song labels.')
+        box.addWidget(self.tempo_result)
         self.details = QWidget()
         details = QVBoxLayout(self.details); details.setContentsMargins(0, 0, 0, 0); details.setSpacing(6)
         details.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -236,6 +247,9 @@ class BeatAlignment(QWidget):
         self.view.update()
 
     def refresh(self):
+        from studio_alignment_beats import available
+        self.detector.setVisible(not available())
+        self.detector.setEnabled(not self.editor.busy)
         if self.data:
             try:
                 actual_offset = offset_for_cue(self.editor.session, self.editor.index, self.data['cue'])
@@ -256,6 +270,7 @@ class BeatAlignment(QWidget):
         self.player.mixer = None
         self.view.data = None; self.view.update()
         self.summary.setText('Audio settings changed. Align beats checks the current draft; your last cue adjustment is retained.')
+        self.tempo_result.setText('Actual beat speeds have not been checked.')
         self.refresh()
 
     def monitor(self):
@@ -268,14 +283,17 @@ class BeatAlignment(QWidget):
         self.offset = offset_for_cue(self.editor.session, self.editor.index, report['cue'])
         self.view.set_data(report); self.refresh(); self.monitor()
         self.player.load_report(report); self.player.set_focus(self.focus.isChecked()); self.monitor()
+        self.show_tempos(result)
         if result['state'] == 'suggested':
             if not self.move_to(self.offset + result['offset_seconds']):
                 self.summary.setText('The suggested move could not be made. ' + self.editor.status.text()
                                      + ' Timing is unchanged; compare the visible hits and try another move.')
         elif result['state'] == 'aligned':
-            self.summary.setText('The repeated kick hits already line up closely. No new timing correction was made. Listen and check bar accents too.')
+            self.summary.setText(result['reason'] + ' No new timing correction was made. Listen and check bar accents too.')
         else:
-            self.summary.setText('No reliable automatic correction. ' + result['reason'] + ' Use the visible hits and listen while moving B.')
+            self.summary.setText('Not aligned automatically. ' + result['reason'] +
+                                 (' Compare the detected beats and listen while moving B.'
+                                  if result.get('reason_code') not in ('tempo_mismatch', 'irregular_beats', 'changing_gap') else ''))
         self.editor.player.pause()
         self.editor.details_scroll.ensureWidgetVisible(self.view, 20, 90)
         self.player.play()
@@ -296,6 +314,23 @@ class BeatAlignment(QWidget):
             out = mixer.sample(report['sides'][0]['full'], n)
             inc = mixer.sample(report['sides'][1]['full'], n - offset * RATE)
             result = estimate_alignment(out, inc, RATE, report['bpm'])
+            from studio_alignment_beats import observations
+            beats = observations(report, progress, e.cache_dir)
+            if beats is not None:
+                length = report['frames'] / RATE
+                incoming = np.asarray(beats[1]) + offset
+                incoming = incoming[(incoming >= 0) & (incoming < length)]
+                observed_result = estimate_beat_positions(beats[0], incoming, report['bpm'], length)
+                # Reliable observed pulse positions can resolve different kick
+                # shapes. A detected speed mismatch must never become an offset.
+                if (observed_result['state'] != 'uncertain' or
+                        observed_result.get('reason_code') in ('tempo_mismatch', 'irregular_beats', 'changing_gap') or
+                        result['state'] == 'uncertain'):
+                    result = observed_result
+                else:
+                    report['markers'] = [np.asarray(kick_markers(side['full'], RATE, report['bpm']))
+                                         - report['margin'] / RATE for side in report['sides']]
+                    report.pop('marker_label', None)
             return report, result
         def finished(value):
             e.set_busy(False)
@@ -306,19 +341,36 @@ class BeatAlignment(QWidget):
                     self.clear(); e.status.setText('The draft or source changed. Align beats again.'); return
                 if old_data:
                     self.result = result
+                    self.show_tempos(result)
                     if result['state'] == 'suggested':
                         if not self.move_to(self.offset + result['offset_seconds']):
                             self.summary.setText('The suggested move could not be made. ' + e.status.text() + ' Timing is unchanged.')
-                    else: self.summary.setText(result['reason'] + ' Check the visible hits and listen.')
+                    elif result['state'] == 'aligned': self.summary.setText(result['reason'] + ' Check bar accents too.')
+                    else: self.summary.setText('Not aligned automatically. ' + result['reason'])
                     self.monitor(); self.player.play()
                 else: self.set_result(report, result)
-                e.status.setText('Beat check ready. Before / Adjusted switches continuously. Listen to the actual blend before Apply changes.')
+                e.status.setText(('Beat check finished; no automatic alignment was made. '
+                                 if result['state'] == 'uncertain' else 'Beat check ready. ') +
+                                'Before / Adjusted switches continuously. Listen to the actual blend before Apply changes.')
             except Exception as error: failed(str(error))
         def failed(message):
             self.clear(); e.failed(message)
         e.cancel = e.start_job(work, finished, rendering=True, cancellable=True,
                                failed_callback=failed, progress_callback=e.status.setText,
                                title='Aligning the beats', reason='Checking repeated kick hits near this blend. The result stays a draft.')
+
+    def add_detector(self):
+        from studio_downloads import ensure_models
+        if ensure_models(self.editor, ['beats'], self.align): self.align()
+
+    def show_tempos(self, result):
+        fits = result.get('diagnostics', {}).get('measured_tempos', [])
+        if len(fits) == 2:
+            self.tempo_result.setText(f"Measured in this overlap: A {fits[0]['bpm']:.2f} BPM · "
+                                      f"B {fits[1]['bpm']:.2f} BPM. Project target: {self.data['bpm']:g} BPM.")
+        else:
+            self.tempo_result.setText('Actual beat speeds could not be confirmed. '
+                                      'Matching source labels or project BPM does not prove the beat rates match.')
 
     def move_to(self, offset):
         e = self.editor

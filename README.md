@@ -371,6 +371,13 @@ undoable edit; Discard draft leaves the mix untouched. This editor's preview
 context stops before neighboring blends so only the two named songs are heard.
 
 **Align beats…** opens that pair and checks repeated low-frequency kick attacks.
+With the optional beat detector installed it also measures both actual playback
+beat rates, identifies a speed mismatch, and uses detected beat positions when
+different kick shapes defeat the simpler check. Its measurements are displayed
+in the editor and reused while moving B or reopening an unchanged pair. A
+finished uncertain check says **Not aligned automatically** and makes no cue move.
+**Source BPM** describes the original recording; **Project BPM** controls intended
+playback speed. Different-speed recordings need their own correct source labels.
 An agreeing estimate tries the smallest beat-phase correction in the draft;
 clear repeated strong kick accents can extend the suggestion by whole beats.
 ambiguous or drifting observations leave its cue unchanged. A dedicated view
