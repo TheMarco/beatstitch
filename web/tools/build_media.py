@@ -12,7 +12,7 @@ but keeps each song at its original tempo and pitch, lines up the first downbeat
 every blend by hand and uses a plain full-band crossfade. Both are level-matched
 before encoding.
 Screenshots and brand images are separate steps: web/tools/capture_screens.py and
-web/tools/build_brand.py.
+web/tools/render_brand.py.
 """
 from __future__ import annotations
 

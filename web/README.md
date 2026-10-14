@@ -20,7 +20,7 @@ From the repository root, with the app's environment (FFmpeg and Rubber Band on 
 ```sh
 .venv/bin/python web/tools/build_media.py
 QT_QPA_PLATFORM=offscreen QT_SCALE_FACTOR=2 .venv/bin/python web/tools/capture_screens.py
-.venv/bin/python web/tools/build_brand.py
+.venv/bin/python web/tools/render_brand.py
 ```
 
 `build_media.py` renders `tools/demo/demo-mix.djmix` with the real engine, builds
@@ -35,8 +35,19 @@ Vlieg: Lose Yourself In The Latent Space into Friday Night LFG, with an 8-bar bl
 and the second song raised two semitones. The songs are not in the repository, so
 both scripts need them at the paths stored in the project. Pass another project to
 `build_media.py` to use different songs, then update the song names in `index.html`.
-`build_brand.py` cuts the logo master in `tools/brand/` into the navigation logo,
-favicons, share image and the three emblem layers the hero record is built from.
+
+## The logo
+
+The mark is pure CSS (`.mark` in `styles.css`): two masked gradient halves with
+grooves, a sheen and a bevel, and two stitch capsules. Sizes come from `--mark-size`;
+inside the mark 1cqw is 1% of its width, so every size draws the same geometry, and
+marks of 96px or less drop the grooves. The seam angle, gap, hole and stitch distance
+are custom properties on `.mark`. The hero record is the same mark, turned by
+`app.js`; in the Without version its halves move apart and the stitches let go.
+
+`tools/brand/brand.html` shows the mark at every size when served locally.
+`render_brand.py` renders it to `img/favicon.png`, `img/apple-touch-icon.png` and
+`img/og.png`, since those can't be CSS.
 
 ## Before publishing
 

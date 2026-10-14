@@ -29,7 +29,7 @@
 
   <header class="nav" id="nav">
     <div class="wrap nav-inner">
-      <a class="nav-logo" href="#top" aria-label="BeatStitch home"><img src="img/beatstitch-logo.webp" alt="BeatStitch" width="140" height="40"></a>
+      <a class="nav-logo lockup" href="#top" aria-label="BeatStitch home"><span class="mark" aria-hidden="true"><span class="mark-half mark-purple"></span><span class="mark-half mark-amber"></span><span class="mark-stitch"></span><span class="mark-stitch"></span></span><span class="wordmark">BeatStitch</span></a>
       <ul class="nav-links">
         <li><a href="#listen">Listen</a></li>
         <li><a href="#how">How it works</a></li>
@@ -59,10 +59,11 @@
 
           <div class="deck" id="deck">
             <div class="deck-glow" aria-hidden="true"></div>
-            <div class="deck-disc" id="deck-disc" aria-hidden="true">
-              <img class="disc-half disc-purple" src="img/emblem-purple.webp" alt="" width="718" height="718" decoding="async" fetchpriority="high">
-              <img class="disc-half disc-amber" src="img/emblem-amber.webp" alt="" width="718" height="718" decoding="async" fetchpriority="high">
-              <img class="disc-stitches" src="img/emblem-stitches.webp" alt="" width="718" height="718" decoding="async" fetchpriority="high">
+            <div class="deck-disc mark" id="deck-disc" aria-hidden="true">
+              <span class="mark-half mark-purple"></span>
+              <span class="mark-half mark-amber"></span>
+              <span class="mark-stitch"></span>
+              <span class="mark-stitch"></span>
             </div>
             <button class="deck-play" type="button" id="deck-play" aria-label="Play the demo mix" data-playing="false">
               <svg class="ring" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="48.5" pathLength="100" stroke-dasharray="0 100"/></svg>
@@ -309,7 +310,7 @@
 
     <section class="section download" id="download" aria-labelledby="download-title">
       <div class="wrap">
-        <img class="download-mark" src="img/emblem-full.webp" alt="" width="140" height="140" loading="lazy" decoding="async">
+        <span class="mark download-mark" aria-hidden="true"><span class="mark-half mark-purple"></span><span class="mark-half mark-amber"></span><span class="mark-stitch"></span><span class="mark-stitch"></span></span>
         <h2 id="download-title">BeatStitch is free.</h2>
         <p class="lede">Every feature, no account and no trial. The app's code is open source under GPL-3.0-or-later.</p>
         <div class="platforms" id="platforms">
@@ -329,7 +330,7 @@
 
   <footer class="footer">
     <div class="wrap footer-inner">
-      <img src="img/beatstitch-logo.webp" alt="BeatStitch" width="112" height="32">
+      <div class="lockup"><span class="mark" aria-hidden="true"><span class="mark-half mark-purple"></span><span class="mark-half mark-amber"></span><span class="mark-stitch"></span><span class="mark-stitch"></span></span><span class="wordmark">BeatStitch</span></div>
       <div>
         <p>BeatStitch by Marco van Hylckama Vlieg. <a href="https://github.com/TheMarco/beatstitch">Source code on GitHub</a></p>
         <p>Built on Rubber Band, FFmpeg, Qt, Beat This!, OpenKeyScan, PANNs, EDMFormer, MusicFM, MuQ and Spleeter. The demo mix uses two songs by Marco van Hylckama Vlieg. The listening examples are original synthesized audio made for BeatStitch. Barlow is used under the SIL Open Font License.</p>
