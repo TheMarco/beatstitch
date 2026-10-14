@@ -29,7 +29,19 @@
 
   <header class="nav" id="nav">
     <div class="wrap nav-inner">
-      <a class="nav-logo lockup" href="#top" aria-label="BeatStitch home"><span class="mark" aria-hidden="true"><span class="mark-half mark-purple"></span><span class="mark-half mark-amber"></span><span class="mark-stitch"></span><span class="mark-stitch"></span></span><span class="wordmark">BeatStitch</span></a>
+      <div class="nav-brand">
+        <a class="nav-logo lockup" href="#top" aria-label="BeatStitch home"><span class="mark" aria-hidden="true"><span class="mark-half mark-purple"></span><span class="mark-half mark-amber"></span><span class="mark-stitch"></span><span class="mark-stitch"></span></span><span class="wordmark">BeatStitch</span></a>
+        <button class="alpha-toggle" type="button" popovertarget="alpha-note">Alpha</button>
+        <div class="alpha-note" id="alpha-note" popover role="dialog" aria-labelledby="alpha-title">
+          <h2 id="alpha-title">BeatStitch is alpha software</h2>
+          <p>It's very early in development, so you'll probably run into bugs: a wrong BPM or key, a blend that sounds off, maybe a crash. Your original audio files are never changed.</p>
+          <p>Please try it anyway. When something goes wrong, open an issue on GitHub with what you did, what you expected and what happened, plus your operating system. I'm working through reports as they come in, and each one helps make BeatStitch as cool as it can be.</p>
+          <div class="alpha-actions">
+            <a class="btn btn-primary" href="https://github.com/TheMarco/beatstitch/issues/new">Report an issue</a>
+            <button class="btn btn-quiet" type="button" popovertarget="alpha-note" popovertargetaction="hide">Close</button>
+          </div>
+        </div>
+      </div>
       <ul class="nav-links">
         <li><a href="#listen">Listen</a></li>
         <li><a href="#how">How it works</a></li>
