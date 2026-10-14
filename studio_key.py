@@ -94,9 +94,9 @@ def guidance(track):
         else:
             detail = result['reason']
     else:
-        detail = 'Detect key offers an estimate without replacing this label. Restore detected accepts it; choose any source key or Unknown yourself. The library menu calls these Check key and Use estimate.'
+        detail = 'Detect key fills an unknown label unless you explicitly chose Unknown. Existing labels are kept. Restore detected (Use detected key in the library) accepts a new estimate. Choose any source key or Unknown yourself.'
         if getattr(track, 'key_analysis', {}).get('state') == 'unavailable':
-            detail = track.key_analysis.get('reason', detail)
+            detail = 'Previous check: ' + track.key_analysis.get('reason', detail) + ' Choose Detect key to retry.'
     return title, detail + ' Detection is imperfect. This label does not prove the notes in every overlap fit.'
 
 

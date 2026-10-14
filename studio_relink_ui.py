@@ -32,15 +32,21 @@ class RelinkDialog(QDialog):
                            'All uses of this source song will reconnect together; one Undo restores the previous location.'))
         self.track = QComboBox(); self.track.setAccessibleName('Source song to reconnect')
         self.track.setToolTip('Missing songs appear first. Each entry represents one source, including all its clips.')
-        ordered = sorted(self.snapshot.tracks.values(), key=lambda t: (Path(t.path).is_file(), t.name.casefold()))
+        identities = set(identity) if isinstance(identity, (list, tuple, set)) else None
+        self.identities = identities or set(self.snapshot.tracks)
+        ordered = sorted((t for t in self.snapshot.tracks.values() if t.id in self.identities),
+                         key=lambda t: (Path(t.path).is_file(), t.name.casefold()))
         for source in ordered:
             self.track.addItem(('Missing · ' if not Path(source.path).is_file() else '') + source.name, source.id)
-        if identity: self.track.setCurrentIndex(max(0, self.track.findData(identity)))
+        if isinstance(identity, str): self.track.setCurrentIndex(max(0, self.track.findData(identity)))
         box.addWidget(self.track)
         self.original = text(); box.addWidget(self.original)
         self.choose = QPushButton('Choose audio file…'); self.choose.clicked.connect(self.choose_file)
         self.choose.setToolTip('Choose the same recording and version. A matching filename alone does not prove it is the right audio.')
         box.addWidget(self.choose, alignment=Qt.AlignmentFlag.AlignLeft)
+        self.find_folder = QPushButton('Find selected originals in a folder…'); self.find_folder.clicked.connect(self.choose_folder)
+        self.find_folder.setToolTip('Search for every selected original and verify its saved file hash. Matching filenames alone are never enough. Reconnect verified matches together, with one Undo.')
+        box.addWidget(self.find_folder, alignment=Qt.AlignmentFlag.AlignLeft)
         self.candidate = text('No replacement chosen.'); box.addWidget(self.candidate)
         self.wave = BrowserPreview({}); self.wave.setFixedHeight(130)
         self.wave.setToolTip('Real waveform of the chosen source. Listen and seek using the controls below.')
@@ -68,6 +74,7 @@ class RelinkDialog(QDialog):
 
     def reset_candidate(self):
         self.result = None; self.confirm.setChecked(False); self.confirm.hide()
+        self.batch_result = None; self.apply.setText('Reconnect audio')
         self.audition.set_track(None); self.wave.set_track(None)
         source = self.snapshot.tracks.get(self.track.currentData())
         self.original.setText(f'Previous location:\n{source.path}' if source else 'There are no source songs in this project.')
@@ -94,6 +101,7 @@ class RelinkDialog(QDialog):
     def set_busy(self, value):
         self.busy = value
         self.track.setEnabled(not value); self.choose.setEnabled(not value)
+        self.find_folder.setEnabled(not value)
         self.close_button.setText('Stop and close' if value else 'Cancel')
         self.refresh_apply(); self.refresh_output()
 
@@ -128,8 +136,36 @@ class RelinkDialog(QDialog):
 
     def apply_relink(self):
         if not self.apply.isEnabled(): return
+        if self.batch_result is not None:
+            if self.studio.apply_relinks(self.batch_result, self.revision): self.accept()
+            else: self.status.setText(self.studio.relink_error)
+            return
         if self.studio.apply_relink(self.result, self.revision): self.accept()
         else: self.status.setText(self.studio.relink_error)
+
+    def choose_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, 'Find the selected original recordings')
+        if folder: self.check_folder(Path(folder))
+
+    def check_folder(self, folder):
+        from studio_media import find_relinks
+        self.reset_candidate(); self.set_busy(True)
+        def work(progress, emit):
+            return find_relinks(self.snapshot, self.identities, folder, self.studio.data / 'library-cache', progress)
+        def finished(result):
+            if self.closed: return
+            self.batch_result = result['matches']; self.set_busy(False)
+            self.apply.setText(f'Reconnect {len(self.batch_result)} verified source(s)')
+            self.apply.setEnabled(bool(self.batch_result))
+            self.status.setText(f'{len(self.batch_result)} original recording(s) verified by file contents. '
+                                + '\n'.join(result['issues'])
+                                + '\nThe mix is unchanged. Reconnect applies all verified locations in one Undo action.')
+        def failed(message):
+            if self.closed: return
+            self.set_busy(False); self.status.setText(message + ' No locations have changed.')
+        self.cancel = self.studio.job(work, finished, rendering=True, cancellable=True,
+                                      title='Finding original source files', failed_callback=failed,
+                                      progress_callback=self.status.setText)
 
     def done(self, result):
         self.closed = True

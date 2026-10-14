@@ -131,6 +131,46 @@ def create_portable_copy(session, destination, progress=lambda message: None):
     return {'project': str(destination / 'Mix.djmix'), 'folder': str(destination), 'bytes': total, 'files': count}
 
 
+def find_relinks(session, identities, folder, cache, progress=lambda message: None):
+    from studio_process import check_cancelled
+    wanted, matches, issues = {}, [], []
+    for identity in identities:
+        track = session.tracks[identity]
+        known = track.fingerprint
+        if not valid_fingerprint(known) and Path(track.path).is_file():
+            known = fingerprint(track.path, progress)
+        if not valid_fingerprint(known):
+            issues.append(track.name + ': no saved content identity; choose and review its recording individually.')
+            continue
+        wanted.setdefault(known['source'][1], []).append((identity, known['sha256']))
+    found = {}
+    for path in Path(folder).rglob('*'):
+        check_cancelled()
+        if not path.is_file(): continue
+        try:
+            candidates = wanted.get(path.stat().st_size, [])
+            if not candidates: continue
+            actual = fingerprint(path, progress)['sha256']
+            for identity, expected in candidates:
+                if actual == expected: found.setdefault(identity, path)
+        except OSError as error:
+            issues.append(path.name + ': ' + str(error))
+    for index, identity in enumerate(identities):
+        check_cancelled()
+        if identity not in found:
+            if any(identity == item[0] for items in wanted.values() for item in items):
+                issues.append(session.tracks[identity].name + ': no identical original found.')
+            continue
+        progress(f'Verifying {index + 1} of {len(identities)}: {session.tracks[identity].name}')
+        try:
+            draft = prepare_relink(session, identity, found[identity], cache, progress)
+            if draft['verified']: matches.append(draft)
+        except (OSError, djmix.MixError) as error:
+            if str(error) == 'Operation cancelled.': raise
+            issues.append(session.tracks[identity].name + ': ' + str(error))
+    return {'matches': matches, 'issues': issues}
+
+
 def prepare_relink(session, identity, candidate, cache, progress=lambda message: None):
     original = session.tracks[identity]
     candidate = Path(candidate).resolve()

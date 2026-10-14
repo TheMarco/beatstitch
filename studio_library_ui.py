@@ -43,9 +43,21 @@ class LibraryTools(QWidget):
         self.add = QPushButton('Add selected to mix'); self.add.clicked.connect(self.add_selected)
         self.add.setAccessibleName('Add selected songs to the end of the mix')
         column.addWidget(self.add)
+        actions = QHBoxLayout(); actions.setSpacing(4)
+        self.detect = QPushButton('Detect keys'); self.detect.clicked.connect(studio.check_library_keys)
+        self.detect.setToolTip('Detect keys for every selected song. Fill unknown labels; keep existing choices. If needed, download the optional 19 MB key detector first. Valid cached estimates are reused.')
+        actions.addWidget(self.detect)
+        self.remove = QPushButton('Remove songs'); self.remove.clicked.connect(lambda: studio.remove_library_selected())
+        self.remove.setToolTip('Remove selected songs from the library, collections and mix. Original audio files stay on disk. One Undo restores everything. You can also press Delete in the song list.')
+        actions.addWidget(self.remove)
+        column.addLayout(actions)
         self.hint = QLabel(); self.hint.setWordWrap(True); self.hint.setProperty('role', 'small')
-        column.addWidget(self.hint)
-        for control in (self.collection, self.manage, self.filter, self.add):
+        result_row = QHBoxLayout(); result_row.addWidget(self.hint, 1)
+        self.results = QPushButton('Results…'); self.results.clicked.connect(studio.show_library_batch_results)
+        self.results.setToolTip('Read the latest batch result for every selected song and retry unfinished checks.')
+        self.results.setProperty('helpTopic', 'library'); result_row.addWidget(self.results)
+        column.addLayout(result_row)
+        for control in (self.collection, self.manage, self.filter, self.add, self.detect, self.remove):
             control.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
             control.setProperty('helpTopic', 'library')
             control.setAccessibleDescription(control.toolTip())
@@ -79,12 +91,30 @@ class LibraryTools(QWidget):
             key_text = (f'Matches {djmix.key_name(model.context)} in the mix: same, relative or neighboring keys. '
                         'Candidates keep their original pitch.' if model.context else
                         'Select a mix song with a known key to find compatible songs.')
+        unknown = [self.studio.session.tracks[i] for i in identities if not self.studio.session.tracks[i].key]
+        if unknown:
+            from studio_model_store import available
+            if available('key'):
+                explanation = f'{len(unknown)} selected song(s) have an unknown key. Detect keys checks the selection and fills missing labels.'
+            else:
+                explanation = 'Key detection needs the optional 19 MB download. Click Detect keys to install it and check the selection.'
+            if any(t.key_origin == 'manual' for t in unknown):
+                explanation += ' A manually chosen Unknown is kept; Use detected key accepts its estimate.'
+            key_text += ('\n' if key_text else '') + explanation
         self.key_info.setText(key_text)
         self.key_info.setVisible(bool(key_text))
         busy = self.studio.importing or self.studio.rendering
         self.add.setText(f'Add selected to mix ({len(identities)})' if identities else 'Add selected to mix')
         self.add.setEnabled(bool(identities) and not busy)
         self.manage.setEnabled(not busy)
+        self.detect.setText(f'Detect keys ({len(identities)})' if identities else 'Detect keys')
+        self.detect.setEnabled(bool(identities) and not self.studio.jobs)
+        self.remove.setEnabled(bool(identities) and not self.studio.jobs)
+        arranged = any(c.track_id in identities for c in self.studio.session.clips)
+        self.remove.setText('Remove + mix' if arranged else 'Remove songs')
+        self.remove.setAccessibleName('Remove selected songs from library and mix' if arranged else 'Remove selected songs from library')
+        self.results.setVisible(bool(getattr(self.studio, 'last_library_batch', None)))
+        self.results.setEnabled(not self.studio.jobs)
         modifier = 'Cmd' if sys.platform == 'darwin' else 'Ctrl'
         tip = 'Append selected songs in the order currently shown in the library. One Undo removes the whole batch. You can deliberately add a song more than once.'
         self.add.setToolTip(tip); self.add.setAccessibleDescription(tip)

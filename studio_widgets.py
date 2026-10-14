@@ -2019,7 +2019,7 @@ class LibraryModel(QAbstractTableModel):
             if column == 1:
                 return f"{track.bpm:.1f}" if track.bpm else ""
             if column == 2:
-                return f"{camelot(track.key)} {display_key(track.key, True)}" if track.key else ""
+                return f"{camelot(track.key)} {display_key(track.key, True)}" if track.key else "Unknown"
             return clock(track.duration)
         if role == Qt.ItemDataRole.ToolTipRole:
             lines = [track.name, track.status]
@@ -2092,7 +2092,7 @@ class LibraryDelegate(QStyledItemDelegate):
             painter.setPen(QColor(T.TEXT if track.bpm else T.BAD_TEXT))
             painter.drawText(text_rect, align, f"{track.bpm:.1f}" if track.bpm else "Needs BPM")
         elif column == 2:
-            text = f"{camelot(track.key)} {display_key(track.key, True)}" if track.key else "?"
+            text = f"{camelot(track.key)} {display_key(track.key, True)}" if track.key else "Unknown"
             painter.setPen(QColor(T.TEXT_2 if track.key else T.TEXT_3))
             painter.drawText(text_rect, align, text)
             if model.relation(track):
@@ -2109,6 +2109,7 @@ class LibraryDelegate(QStyledItemDelegate):
 class LibraryTable(QTableView):
     addRequested = Signal(str)
     addManyRequested = Signal(list)
+    removeRequested = Signal()
     filesDropped = Signal(list)
 
     def __init__(self, model: LibraryModel, parent=None):
@@ -2184,7 +2185,17 @@ class LibraryTable(QTableView):
         selection.setCurrentIndex(model.index(model.ids.index(current), 0) if current else QModelIndex(),
                                   QItemSelectionModel.SelectionFlag.NoUpdate)
 
+    def event(self, event):
+        if event.type() == QEvent.Type.ShortcutOverride and event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+            event.accept()
+            return True
+        return super().event(event)
+
     def keyPressEvent(self, event):
+        if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+            self.removeRequested.emit()
+            event.accept()
+            return
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and self.selected_ids():
             self.addManyRequested.emit(self.selected_ids())
             return

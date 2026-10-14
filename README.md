@@ -1,4 +1,4 @@
-# BeatStitch
+# BeatStitch 0.1.0
 
 A native **Qt / PySide6 desktop application** for arranging EDM mixes. No browser,
 webview, server, or online audio service is required. The code supports macOS,
@@ -549,7 +549,7 @@ Detailed real waveforms decode in small chunks and retain only compact band
 envelopes, so loading a long song does not hold its full decoded audio in memory.
 They use the same filters and scaling as before, and existing cached waveforms
 are reused. Sources over about five and a half hours retain their source overview
-instead of a detailed band waveform. **Cancel** in the processing bar interrupts running FFmpeg and
+instead of a detailed band waveform. **Cancel processing** in the blocking progress window interrupts running FFmpeg and
 Rubber Band processes and waits for their cleanup. Analysis inside Python stops
 at its next cancellation checkpoint; an individual model calculation may still
 take a moment. A cancelled job cannot publish its unfinished waveform cache.

@@ -88,6 +88,11 @@ class AboutDialog(QDialog):
         self.logo.setAccessibleName('BeatStitch: the purple and amber spliced groove logo')
         self.logo.setStyleSheet('background: #101114; border-radius: 8px;')
         column.addWidget(self.logo)
+        from studio_version import VERSION
+        self.version_label = QLabel('Version ' + VERSION)
+        self.version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.version_label.setAccessibleName('BeatStitch version ' + VERSION)
+        column.addWidget(self.version_label)
         title = QLabel('Created by Marco van Hylckama Vlieg')
         title.setWordWrap(True)
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)

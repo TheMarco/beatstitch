@@ -35,8 +35,8 @@ REFERENCE_TOPICS = (
             'The three small detectors total about **125 MB** and are recommended for a first mix. You can select fewer, '
             'close the window and keep working, or add another feature later. A feature button can offer the particular pack it needs.\n\n'
             '## During a download\n\n'
-            'Progress shows the feature, stage and transferred bytes. You may hide the window and keep editing or listening; '
-            'a banner in the main window keeps the download visible. **Cancel download** stops safely. '
+            'The same blocking progress window used for audio processing shows the feature, stage and transferred bytes. '
+            'Wait for it to finish, or use **Cancel processing** to stop safely. The app stays blocked until work actually stops. '
             '**Retry** reuses complete verified files and resumes partial bytes when the server supports it. '
             'If verification fails, the bad partial file is discarded and Retry gets a fresh copy. '
             'An internet connection and extra temporary disk space are needed for installation. The app explains low-space errors.\n\n'
@@ -720,9 +720,34 @@ REFERENCE_TOPICS = (
             "or twice as slow as the song, correct the **BPM** box in the **Song settings** panel by ear; "
             "see [Tempo](help:tempo).\n"
             "\n"
-            "For a song not yet in the arrangement, right-click it and choose **Analyze BPM and key again**. "
-            "Once arranged, edit BPM and key in the clip panel; the separate **Analyze** button checks timing "
-            "while preserving those choices."
+            "Select one or several songs and click **Detect keys**, or right-click and choose "
+            "**Analyze BPM and key again**. If the optional key detector is missing, the app offers its 19 MB download first. "
+            "Detection fills unknown labels and reuses current cached estimates. Existing key labels and an explicitly "
+            "chosen Unknown are kept; **Use detected key(s)** accepts the latest estimate instead. "
+            "A remaining Unknown has a reason in the song's tooltip and the analysis result. "
+            "Rechecking songs already in the mix keeps their BPM and cue positions; edit those deliberately in Song settings. "
+            "The separate **Analyze** button checks timing while preserving those choices.\n\n"
+            "## Removing songs\n\n"
+            "Select songs and click **Remove songs**, use their right-click menu, or press Delete while the library has focus. "
+            "If they are used in the mix, the button says **Remove + mix** and also removes those clips. "
+            "Collection memberships are removed too. Original audio files stay on disk. One Undo restores the whole batch.\n\n"
+            "## Batch checks and settings\n\n"
+            "Right-click a multi-selection for **More checks for selected songs**: tempo drift, beats and musical cues, "
+            "voice/drum passages and optional advanced builds/drops. Current caches are reused. These observations "
+            "do not choose new mix cues or turn on correction automatically. **Results** lists every song, including "
+            "errors, inconclusive findings and songs not reached before cancellation; **Retry unfinished** checks just those songs.\n\n"
+            "The source-label submenu assigns a common BPM or key label deliberately. The mix-settings submenu "
+            "sets common pitch shifts, overlaps, supported tempo stabilization, level balance, bass swaps or transition "
+            "effects for the selected songs' mix clips. Source key labels describe the recording; pitch shifts change "
+            "audio when it is prepared. Pitch shifts keep major/minor character. Changes can be undone as a batch.\n\n"
+            "**Reconnect source audio** also accepts a multi-selection. **Find selected originals in a folder** "
+            "verifies file contents and offers all exact matches together. A matching filename is insufficient. "
+            "Older songs with missing originals and no saved file identity require individual listening and confirmation.\n\n"
+            "## While work is running\n\n"
+            "A blocking progress window shows the current task and progress. Other app controls remain unavailable "
+            "until work and result application finish. When supported, **Cancel processing** requests a safe stop. "
+            "The window remains open while tasks stop and resources are released. Closing that window or pressing "
+            "Escape cannot bypass running work. Completed model downloads and valid analysis caches are kept."
         ),
     },
     {
@@ -1215,9 +1240,9 @@ REFERENCE_TOPICS = (
             "when available, or within the current prepared blend. Outside prepared audio, playback pauses at "
             "your chosen mix position; press **Play mix** when you want the whole mix prepared. "
             "A cached blend stops at its preview boundary; Play mix is the full-arrangement transport.\n"
-            "\nDuring work, a banner below the transport names the task, explains why it is needed, and shows "
+            "\nDuring work, a blocking progress window names the task and shows "
             "the current stage, such as reusing cached audio, preparing an uncached song or assembling the mix. "
-            "Cancel stops an audio job safely. Loading visual waveforms is identified separately from audio processing. "
+            "Cancel processing requests a safe stop. Controls stay blocked until processing, cleanup and result application finish. Loading visual waveforms is identified separately from audio processing. "
             "Adding a song reuses unchanged prepared songs; first-time full-mix playback can still need passages "
             "that a short blend preview never prepared.\n"
             "\n"
@@ -1330,7 +1355,7 @@ REFERENCE_TOPICS = (
             "temporarily above the limit. Working space for a render can also exceed the cache allowance. Large audio "
             "jobs check free drive space first. If space is too low, clear unused cache files or export to another drive.\n\n"
             "Real waveforms load in small chunks. Sources longer than about five and a half hours keep the source "
-            "overview instead of the detailed frequency-band display. **Cancel** in the processing bar interrupts external audio processing "
+            "overview instead of the detailed frequency-band display. **Cancel processing** in the progress window interrupts external audio processing "
             "and cleans up its process. An analysis calculation may need a moment to reach its next stopping point; "
             "wait for the job to finish stopping before starting another. Completed cached work remains reusable."
         ),

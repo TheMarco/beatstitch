@@ -31,7 +31,7 @@ def fingerprint(path, progress=lambda message: None):
 
 def rebind_analysis(track, previous, current):
     """Move only annotations known to belong to the verified bytes."""
-    for field in ('timing', 'structure', 'beat_grid', 'content', 'song_sections'):
+    for field in ('timing', 'structure', 'beat_grid', 'content', 'song_sections', 'key_analysis', 'opening_tempo'):
         value = getattr(track, field)
         if value and value.get('source') == previous:
             value['source'] = list(current)

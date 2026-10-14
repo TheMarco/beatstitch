@@ -48,6 +48,33 @@ class RelinkTests(unittest.TestCase):
         self.w.show_relink(self.identity); d = self.w.relink_dialog
         d.check_file(self.moved); self.settle(); return d
 
+    def test_folder_search_verifies_multiple_sources_and_applies_one_undo(self):
+        folder = self.root / 'relocated'; folder.mkdir(); self.moved.rename(folder / 'Renamed.wav')
+        second_path = self.root / 'Second.wav'
+        sf.write(second_path, .1 * np.sin(np.arange(12 * 8000) * 2 * np.pi * 660 / 8000), 8000)
+        second = load_track(second_path, self.root / 'library-cache'); second.bpm = 120
+        self.w.session.tracks[second.id] = second; second_path.rename(folder / 'Renamed second.wav')
+        self.w.refresh(); before = copy.deepcopy(self.w.session.to_dict())
+        self.w.show_relink([self.identity, second.id]); dialog = self.w.relink_dialog
+        self.assertEqual(dialog.track.count(), 2)
+        dialog.check_folder(folder); self.settle()
+        self.assertEqual(len(dialog.batch_result), 2)
+        self.assertEqual(self.w.session.to_dict(), before)
+        dialog.apply_relink()
+        self.assertEqual(len(self.w.history), 1)
+        self.assertTrue(all(Path(t.path).parent == folder for t in self.w.session.tracks.values()))
+        self.w.undo(); self.assertEqual(self.w.session.to_dict(), before)
+
+    def test_folder_search_never_accepts_matching_filename_with_wrong_audio(self):
+        folder = self.root / 'wrong'; folder.mkdir()
+        sf.write(folder / 'Song.wav', .1 * np.sin(np.arange(12 * 8000) * 2 * np.pi * 880 / 8000), 8000)
+        before = copy.deepcopy(self.w.session.to_dict())
+        self.w.show_relink([self.identity]); dialog = self.w.relink_dialog
+        dialog.check_folder(folder); self.settle()
+        self.assertEqual(dialog.batch_result, [])
+        self.assertFalse(dialog.apply.isEnabled())
+        self.assertEqual(self.w.session.to_dict(), before)
+
     def test_verified_apply_undo_and_redo_preserve_clip_edits(self):
         track = self.w.session.tracks[self.identity]
         track.content = {'source': copy.deepcopy(track.fingerprint['source']), 'windows': []}

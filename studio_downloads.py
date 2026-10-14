@@ -168,7 +168,8 @@ class DownloadsDialog(QDialog):
         self.selection_changed()
         self.stop.setVisible(self.busy and not (self.worker and self.worker.removing))
         self.stop.setEnabled(self.busy and not self.cancel.is_set())
-        self.close_button.setText('Hide · keep downloading' if self.busy else 'Keep working without downloads')
+        self.close_button.setText('Processing…' if self.busy else 'Keep working without downloads')
+        self.close_button.setEnabled(not self.busy)
 
     def request(self, selected, on_ready=None):
         if not self.busy:

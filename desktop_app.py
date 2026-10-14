@@ -245,6 +245,8 @@ class Studio(QMainWindow):
         self.storage.prune()
 
     def eventFilter(self, watched, event):
+        if getattr(getattr(self, 'processing_dialog', None), 'active', False):
+            return super().eventFilter(watched, event)
         # Destructive arrangement shortcuts must not act on a different focused panel.
         if (event.type() == QEvent.Type.ShortcutOverride and event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace)
                 and event.modifiers() == Qt.KeyboardModifier.NoModifier
@@ -497,6 +499,7 @@ class Studio(QMainWindow):
         self.library.filesDropped.connect(lambda paths: self.import_paths(self.audio_files([Path(p) for p in paths])))
         self.library.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.library.customContextMenuRequested.connect(self.library_menu)
+        self.library.removeRequested.connect(self.remove_library_selected)
         self.library.selectionModel().currentChanged.connect(lambda *_: self.library_selected())
         self.library.selectionModel().selectionChanged.connect(lambda *_: self.library_tools.update_selection())
         column.addWidget(self.library, 1)
@@ -722,7 +725,7 @@ class Studio(QMainWindow):
         body.addWidget(self.key_hint)
         key_actions = QHBoxLayout()
         self.check_key_btn = button('Detect key', self.check_selected_key)
-        self.check_key_btn.setToolTip('Estimate the source key without changing its current label, BPM, cues or pitch. Your own key choices are kept.')
+        self.check_key_btn.setToolTip('Detect the source key and fill an unknown label. Existing labels and a manually chosen Unknown are kept. BPM, cues and audio pitch stay unchanged.')
         self.use_key_btn = button('Restore detected', self.use_estimated_key)
         self.use_key_btn.setToolTip('Accept the displayed key estimate as one undoable label change. Audio pitch does not change. You can choose a different key or Unknown at any time.')
         for control in (self.key, self.check_key_btn, self.use_key_btn):
@@ -1313,6 +1316,7 @@ class Studio(QMainWindow):
 
     def snapshot(self):
         return {"clips": copy.deepcopy(self.session.clips), "tempo": self.session.target_bpm,
+                "library_tracks": dict(self.session.tracks),
                 "planning": copy.deepcopy(self.session.planning),
                 "collections": copy.deepcopy(self.session.collections),
                 'fades': (self.session.fade_in_bars, self.session.fade_out_bars),
@@ -1322,10 +1326,18 @@ class Studio(QMainWindow):
                 'locations': {k: (t.path, t.duration, t.cue_in, t.cue_out, copy.deepcopy(t.fingerprint),
                                   t.waveform, t.structure, t.content, t.song_sections) for k, t in self.session.tracks.items()},
                 "metadata": {k: (t.bpm, t.key, t.status, t.estimated, copy.deepcopy(t.timing), copy.deepcopy(t.beat_grid),
-                                  t.key_origin, copy.deepcopy(t.key_analysis))
+                                  t.key_origin, copy.deepcopy(t.key_analysis), copy.deepcopy(t.opening_tempo))
                              for k, t in self.session.tracks.items()}}
 
     def restore(self, state):
+        # Only explicit library edits change membership. Undoing a mix edit
+        # must still keep songs imported since that edit.
+        for identity in state.get('library_change_ids', ()):
+            track = state.get('library_tracks', {}).get(identity)
+            if track is None:
+                self.session.tracks.pop(identity, None)
+            else:
+                self.session.tracks[identity] = track
         self.session.clips = state["clips"]
         self.session.target_bpm = state["tempo"]
         self.session.planning = copy.deepcopy(state.get('planning', {}))
@@ -1337,14 +1349,14 @@ class Studio(QMainWindow):
         for identity, values in state["metadata"].items():
             if identity in self.session.tracks:
                 track = self.session.tracks[identity]
-                track.bpm, track.key, track.status, track.estimated, track.timing, track.beat_grid, track.key_origin, track.key_analysis = values
+                track.bpm, track.key, track.status, track.estimated, track.timing, track.beat_grid, track.key_origin, track.key_analysis, track.opening_tempo = values
         for identity, values in state.get('locations', {}).items():
             if identity in self.session.tracks:
                 track = self.session.tracks[identity]
                 if track.path != values[0]: self.invalidate_source_display(identity)
                 track.path, track.duration, track.cue_in, track.cue_out, track.fingerprint, track.waveform, track.structure, track.content, track.song_sections = values
 
-    def edit(self, mutate, force=False, action="Edit mix"):
+    def edit(self, mutate, force=False, action="Edit mix", library_ids=()):
         """Apply one undoable change. Invalid results are rolled back and explained inline."""
         if self.updating or (self.rendering and not force):
             return False
@@ -1353,12 +1365,16 @@ class Studio(QMainWindow):
             mutate()
             layout(self.session)
         except djmix.MixError as error:
+            if library_ids:
+                state['library_change_ids'] = list(library_ids)
             self.restore(state)
             self.refresh()
             self.notify(str(error), "error")
             return False
         if state == self.snapshot():
             return False
+        if library_ids:
+            state['library_change_ids'] = list(library_ids)
         state["action"] = action
         self.history.append(state)
         self.history = self.history[-50:]
@@ -1371,7 +1387,8 @@ class Studio(QMainWindow):
             return
         previous = self.history.pop()
         action = previous.get("action", "Edit mix")
-        self.future.append({**self.snapshot(), "action": action})
+        self.future.append({**self.snapshot(), "action": action,
+                            'library_change_ids': previous.get('library_change_ids', [])})
         self.restore(previous)
         self.after_history(f"Undid: {action}.")
 
@@ -1380,7 +1397,8 @@ class Studio(QMainWindow):
             return
         following = self.future.pop()
         action = following.get("action", "Edit mix")
-        self.history.append({**self.snapshot(), "action": action})
+        self.history.append({**self.snapshot(), "action": action,
+                             'library_change_ids': following.get('library_change_ids', [])})
         self.restore(following)
         self.after_history(f"Redid: {action}.")
 
@@ -1639,7 +1657,7 @@ class Studio(QMainWindow):
         self.use_key_btn.setToolTip('Restore ' + detected[0]['key'] + ' as the source label. Your manual correction does not erase the estimate. Audio pitch is unchanged.'
                                    if detected else 'No usable saved estimate. Choose Detect key first; then Restore detected to accept its result.')
         self.check_key_btn.setEnabled(not self.jobs and Path(track.path).is_file())
-        self.check_key_btn.setToolTip('Estimate the source key without replacing this label.' if self.check_key_btn.isEnabled()
+        self.check_key_btn.setToolTip('Detect the source key. Fill an unknown label; keep existing labels and a manually chosen Unknown.' if self.check_key_btn.isEnabled()
                                      else 'Wait for the current task to finish.' if self.jobs else 'Reconnect this song’s source file before checking its key.')
         self.use_key_btn.setEnabled(not self.jobs and key_result.get('state') == 'estimated'
                                    and (track.key_origin != 'detected' or track.key != key_result['candidates'][0]['key']))
@@ -1884,7 +1902,7 @@ class Studio(QMainWindow):
 
     # Background work -----------------------------------------------------------------------
 
-    def job(self, function, finished, *, importing=False, rendering=False, cancellable=False, item=None,
+    def job(self, function, finished, *, importing=False, rendering=False, cancellable=True, item=None,
             failed_callback=None, progress_callback=None, title=None, reason=None):
         cancel = threading.Event()
         worker = Worker(function, cancel, self.storage.work_lock(), hold_cache=True)
@@ -1899,27 +1917,37 @@ class Studio(QMainWindow):
                 self.update_job_flags()
 
         def deliver(result):
-            settle()
-            finished(result)
+            outcome['result'] = result
 
         def failed(message):
-            settle()
-            if failed_callback:
-                failed_callback(message)
-            elif message == "Operation cancelled.":
-                self.say("Stopped.")
-            else:
-                self.notify(message, "error")
+            outcome['error'] = message
 
         def done():
+            self.finalizing_tasks = getattr(self, 'finalizing_tasks', 0) + 1
             settle()
-            worker.cache_lock.release()
-            self.update_storage_pins()
-            self.storage.prune()
-            self.refresh()
+            try:
+                if 'error' in outcome:
+                    message = outcome['error']
+                    if failed_callback: failed_callback(message)
+                    elif message == 'Operation cancelled.': self.say('Stopped.')
+                    else: self.notify(message, 'error')
+                elif 'result' in outcome:
+                    finished(outcome['result'])
+            except Exception as error:
+                self.notify('Could not apply the processing result: ' + str(error), 'error')
+            finally:
+                worker.cache_lock.release()
+            try:
+                self.update_storage_pins()
+                self.storage.prune()
+                self.refresh()
+            finally:
+                self.finalizing_tasks -= 1
+                self.update_job_flags()
             if not self.jobs and self.closing:
                 self.close()
 
+        outcome = {}
         worker.signals.progress.connect(lambda message: self.job_progress(worker, message))
         if progress_callback:
             worker.signals.progress.connect(progress_callback)
@@ -1963,16 +1991,42 @@ class Studio(QMainWindow):
             self.job_reason.setText('Mix audio is unchanged. File → Downloads & features shows details.')
             self.job_reason.show()
             self.job_text.set_text(self.downloads_window.banner)
+        elif getattr(self, 'finalizing_tasks', 0):
+            self.job_title.setText('Finishing processing')
+            self.job_text.set_text('Applying results. Please wait…')
+        self.update_processing_dialog()
+
+    def update_processing_dialog(self):
+        from studio_busy import ProcessingDialog
+        downloading = bool(self.downloads_window and self.downloads_window.busy)
+        active = bool(self.jobs or self.band_workers or downloading or getattr(self, 'finalizing_tasks', 0))
+        self.centralWidget().setEnabled(not active)
+        self.menuBar().setEnabled(not active)
+        if not getattr(self, 'processing_dialog', None):
+            if not active: return
+            self.processing_dialog = ProcessingDialog(self)
+        cancellable = (any(flags[3] for flags in self.jobs.values()) or bool(self.band_workers)
+                       or (downloading and not self.downloads_window.worker.removing))
+        stopping = (any(flags[0].is_set() for flags in self.jobs.values())
+                    or (bool(self.band_workers) and self.band_cancel.is_set())
+                    or (downloading and self.downloads_window.cancel.is_set()))
+        self.processing_dialog.update_state(active, self.job_title.text(), self.job_text.text(),
+                                            cancellable=cancellable, stopping=stopping,
+                                            download=self.downloads_window.progress if downloading and not self.jobs else None)
 
     def cancel_job(self):
         for cancel, _, _, cancellable in self.jobs.values():
             if cancellable:
                 cancel.set()
         if self.downloads_window and self.downloads_window.busy:
-            self.downloads_window.request_cancel()
+            if not self.downloads_window.worker.removing: self.downloads_window.request_cancel()
+        if self.band_workers:
+            self.band_cancel.set()
         self.update_job_banner()
 
     def load_bands(self):
+        if not self.band_workers and self.band_cancel.is_set() and not self.closing:
+            self.band_cancel = threading.Event()
         order = [c.track_id for c in self.session.clips] + list(self.session.tracks)
         wanted = []
         for identity in dict.fromkeys(order):
@@ -1999,9 +2053,14 @@ class Studio(QMainWindow):
         self.update_job_flags()
         worker.signals.item.connect(self.receive_bands)
         def finished():
+            self.finalizing_tasks = getattr(self, 'finalizing_tasks', 0) + 1
             self.band_workers.discard(worker)
-            self.update_job_flags()
-            self.storage.prune()
+            for identity, _ in wanted: self.band_pending.discard(identity)
+            try:
+                self.storage.prune()
+            finally:
+                self.finalizing_tasks -= 1
+                self.update_job_flags()
             if self.closing and not self.jobs and not self.band_workers:
                 self.close()
         worker.signals.finished.connect(finished)
@@ -2149,22 +2208,174 @@ class Studio(QMainWindow):
         return self.job(work, finished, importing=True, cancellable=cancellable,
                         failed_callback=failed_callback, progress_callback=progress_callback)
 
-    def analyze_selected(self):
-        identity = self.library.current_id()
-        if not identity:
+    def analyze_selected(self, identities=None):
+        self.analyze_library_tracks(self.library.selected_ids() if identities is None else identities, tempo=True)
+
+    def check_library_keys(self):
+        self.analyze_library_tracks(self.library.selected_ids())
+
+    def analyze_library_tracks(self, identities, *, tempo=False, kind=None):
+        from studio_library_batch import OPERATIONS, observe
+        from studio_key import analyze_key, remember_analysis, accept_estimate, current_analysis
+        from studio_cache import source_signature
+        from studio_process import check_cancelled
+        identities = list(dict.fromkeys(i for i in identities if i in self.session.tracks))
+        if self.jobs or not identities:
             return
-        if any(c.track_id == identity for c in self.session.clips):
-            self.say("This song is in the mix. Edit its BPM and key in the clip panel to keep your cue choices.")
+        kind = kind or ('tempo' if tempo else 'keys')
+        title, packs = OPERATIONS[kind]
+        if packs and not self.require_models(list(packs), lambda: self.analyze_library_tracks(identities, tempo=tempo, kind=kind)):
             return
-        track = copy.deepcopy(self.session.tracks[identity])
+        tempo = kind == 'tempo'
+        tracks = [copy.deepcopy(self.session.tracks[i]) for i in identities]
+        completed = []
 
         def work(progress, emit):
-            progress("Analyzing " + track.name)
-            result = estimate_track(track, self.data / "timing-cache", progress)
-            cache_track(result, self.data / "library-cache")
-            emit(result)
+            for index, track in enumerate(tracks):
+                check_cancelled()
+                prefix = f'{index + 1} of {len(tracks)} · {track.name}: '
+                report = lambda message, prefix=prefix: progress(prefix + message)
+                signature = None
+                try:
+                    signature = source_signature(track.path)
+                    report(title)
+                    result = (estimate_track(track, self.data / 'timing-cache', report) if tempo else
+                              analyze_key(Path(track.path), self.data / 'library-cache/keys', report) if kind == 'keys' else
+                              observe(track, kind, self.data, report))
+                    emit((track.id, track.path, signature, result, None))
+                except Exception as error:
+                    if str(error) == 'Operation cancelled.':
+                        raise
+                    emit((track.id, track.path, signature, None, str(error)))
 
-        self.job(work, lambda _: self.say("Analysis complete. The values stay editable."), importing=True)
+        def finished(_, stopped=False):
+            errors, ready, detected, filled = [], [], 0, 0
+            rows = {t.id: {'identity': t.id, 'name': t.name, 'state': 'Not run', 'detail': 'Not processed; retry when ready.'} for t in tracks}
+            for identity, path, signature, result, error in completed:
+                current = self.session.tracks.get(identity)
+                if current is None or current.path != path:
+                    continue
+                try:
+                    if signature is not None and signature != source_signature(current.path):
+                        raise djmix.MixError('Source changed during analysis. Reconnect or check it again.')
+                    if error:
+                        errors.append(f'{current.name}: {error}')
+                        rows[identity].update(state='Failed', detail=error)
+                    ready.append((current, result, error))
+                except (OSError, djmix.MixError) as failure:
+                    errors.append(f'{current.name}: {failure}')
+                    rows[identity].update(state='Failed', detail=str(failure))
+
+            def apply():
+                nonlocal detected, filled
+                for current, result, error in ready:
+                    if error:
+                        if kind in ('keys', 'tempo'):
+                            current.key_analysis = {'state': 'unavailable', 'reason': error[:1200]}
+                        continue
+                    if kind not in ('keys', 'tempo'):
+                        if kind == 'timing':
+                            if current.bpm != next(t.bpm for t in tracks if t.id == current.id):
+                                rows[current.id].update(state='Failed', detail='BPM changed during analysis; check timing again.')
+                                errors.append(current.name + ': BPM changed during analysis.')
+                                continue
+                            current.timing = result
+                            if result.get('state') != 'drift':
+                                for clip in self.session.clips:
+                                    if clip.track_id == current.id: clip.stabilize = False
+                            guide = timing_guidance(result, track=current)
+                            detail = guide.title + '. ' + guide.explanation
+                        else:
+                            setattr(current, {'beats': 'structure', 'content': 'content', 'sections': 'song_sections'}[kind], result)
+                            detail = 'Observations saved. Review them in the song’s cue/passage editor; mix cues and audio stay unchanged.'
+                        rows[current.id].update(state='Ready', detail=detail)
+                        continue
+                    observation = result.key_analysis if tempo else result
+                    if tempo:
+                        # Rechecking arranged songs must not move their cues or
+                        # replace the source BPM used by the current mix.
+                        arranged = any(c.track_id == current.id for c in self.session.clips)
+                        if not arranged and current.estimated:
+                            current.bpm, current.cue_in, current.cue_out = result.bpm, result.cue_in, result.cue_out
+                            current.status = result.status
+                        current.timing, current.structure, current.opening_tempo = result.timing, result.structure, result.opening_tempo
+                    remember_analysis(current, observation)
+                    fresh = current_analysis(current)
+                    if fresh.get('state') == 'estimated':
+                        detected += 1
+                        # An unknown legacy/pending label isn't a user choice.
+                        # An explicitly chosen Unknown remains protected.
+                        label_filled = not current.key and current.key_origin != 'manual'
+                        if label_filled:
+                            accept_estimate(current)
+                            filled += 1
+                        detail = f'Detected {fresh["candidates"][0]["key"]}. '
+                        detail += 'Label filled.' if label_filled else f'Kept {current.key or "manually chosen Unknown"}. Use detected key accepts a different estimate.'
+                        rows[current.id].update(state='Ready', detail=detail)
+                    else:
+                        errors.append(f'{current.name}: {observation.get("reason", "No reliable key estimate.")}')
+                        rows[current.id].update(state='Uncertain', detail=observation.get('reason', 'No reliable key estimate.'))
+
+            action = title + f' · {len(tracks)} song(s)'
+            if ready and self.edit(apply, force=True, action=action):
+                self.touched.update(t.id for t, _, _ in ready)
+                for current, _, _ in ready:
+                    try:
+                        cache_track(current, self.data / 'library-cache')
+                    except OSError as error:
+                        errors.append(f'{current.name}: could not save analysis cache: {error}')
+            summary = ('Stopped. ' if stopped else '') + f'Checked {len(completed)} of {len(tracks)} song(s). '
+            summary += (f'{detected} key estimate(s); filled {filled} unknown label(s).' if kind in ('keys', 'tempo') else 'Per-song results are ready.')
+            if kind in ('keys', 'tempo') and detected > filled:
+                summary += ' Existing labels kept.'
+            if tempo:
+                summary += ' BPM and cues of songs already in the mix were kept.'
+            self.last_library_batch = {'kind': kind, 'rows': list(rows.values())}
+            if detected and self.library_tools.filter.currentData() == 'analysis':
+                # Completed songs would otherwise disappear from "Needs BPM
+                # or key", making a successful check look like a deletion.
+                self.library_tools.filter.setCurrentIndex(self.library_tools.filter.findData('all'))
+                self.library.select_ids(identities)
+                if identities[0] in self.library_model.ids:
+                    self.library.scrollTo(self.library_model.index(self.library_model.ids.index(identities[0]), 0))
+            self.library_tools.update_selection()
+            if errors:
+                self.notify(summary + f' {len(errors)} issue(s): ' + errors[0]
+                            + (' More details in Results.' if len(errors) > 1 else ''), 'error', [('Results', self.show_library_batch_results)])
+            else:
+                self.say(summary)
+
+        self.job(work, finished, item=completed.append, importing=True, cancellable=True,
+                 failed_callback=lambda message: finished(None, stopped=True) if message == 'Operation cancelled.'
+                 else self.notify(message, 'error'),
+                 title=title + f' · {len(tracks)} song(s)',
+                 reason='One song at a time; valid caches are reused. Existing mix cues and manual choices are kept.')
+
+    def show_library_batch_results(self):
+        from studio_library_batch import show_results
+        self.library_batch_results = show_results(self)
+
+    def remove_library_selected(self, identities=None):
+        if self.jobs:
+            return
+        identities = self.library.selected_ids() if identities is None else identities
+        identities = {i for i in identities if i in self.session.tracks}
+        if not identities:
+            return
+        clips = sum(c.track_id in identities for c in self.session.clips)
+        def mutate():
+            self.session.clips[:] = [c for c in self.session.clips if c.track_id not in identities]
+            for identity in identities:
+                self.session.tracks.pop(identity)
+            for members in self.session.collections.values():
+                members[:] = [i for i in members if i not in identities]
+        if self.edit(mutate, action=f'Remove {len(identities)} song(s) from library', library_ids=identities):
+            if not self.selected_clip():
+                self.selected_id = self.session.clips[-1].id if self.session.clips else ''
+                self.refresh()
+            self.notify(f'Removed {len(identities)} song(s) from the library'
+                        + (f' and {clips} mix clip(s)' if clips else '')
+                        + '. Original audio files are kept.', 'info', [('Undo', self.undo)])
 
     def library_menu(self, point):
         index = self.library.indexAt(point)
@@ -2174,38 +2385,82 @@ class Studio(QMainWindow):
             self.library.selectRow(index.row())
         identity = self.library.current_id()
         track = self.session.tracks[identity]
-        single = len(self.library.selected_ids()) == 1
-        arranged = any(c.track_id == identity for c in self.session.clips)
+        identities = self.library.selected_ids()
+        single = len(identities) == 1
+        arranged = any(c.track_id in identities for c in self.session.clips)
         menu = QMenu(self)
+        menu.setToolTipsVisible(True)
         add = menu.addAction(f'Add {len(self.library.selected_ids())} selected song(s) to the end of the mix')
         add.setEnabled(not self.rendering and not self.importing)
         analyze = menu.addAction("Analyze BPM and key again")
-        analyze.setEnabled(single and not arranged and not self.importing and not self.rendering)
-        check_key = menu.addAction('Check key (keep current label)')
-        check_key.setEnabled(single and not self.jobs and Path(track.path).is_file())
-        use_key = menu.addAction('Use estimated key')
+        analyze.setEnabled(not self.jobs)
+        analyze.setToolTip('Check every selected song. Source BPM and cues already used in the mix, and your key labels, are kept.')
+        check_key = menu.addAction('Detect key' if single else f'Detect keys for {len(identities)} selected songs')
+        check_key.setEnabled(not self.jobs)
+        check_key.setToolTip('Fill unknown keys for every selected song. Keep existing labels. If needed, download the optional 19 MB key detector first.')
+        use_key = menu.addAction('Use detected key' if single else 'Use detected keys for selected songs')
         from studio_key import current_analysis as current_key_analysis
-        key_result = current_key_analysis(track)
-        use_key.setEnabled(single and not self.jobs and key_result.get('state') == 'estimated'
-                           and (track.key_origin != 'detected' or track.key != key_result['candidates'][0]['key']))
+        usable = []
+        for i in identities:
+            source = self.session.tracks[i]; estimate = current_key_analysis(source)
+            if estimate.get('state') == 'estimated' and (source.key_origin != 'detected' or source.key != estimate['candidates'][0]['key']):
+                usable.append(i)
+        use_key.setEnabled(bool(usable) and not self.jobs)
+        use_key.setToolTip(f'Accept the detected key for {len(usable)} selected song(s) with a current estimate. This can replace a manual label; audio pitch is unchanged.')
+        from studio_library_batch import OPERATIONS, labels, clip_value, reveal_sources
+        checks = menu.addMenu('More checks for selected songs')
+        for kind in ('timing', 'beats', 'content', 'sections'):
+            action = checks.addAction(OPERATIONS[kind][0])
+            action.setEnabled(not self.jobs)
+            action.setToolTip('Run this check for every selected song, reuse current cached results and keep the mix unchanged.'
+                              + (' Optional advanced download: 3.07 GB.' if kind == 'sections' else ''))
+            action.triggered.connect(lambda checked=False, kind=kind: self.analyze_library_tracks(identities, kind=kind))
+        source_labels = menu.addMenu('Set source labels for selected songs')
+        for text, key in [('Set source BPM…', False), ('Set source key…', True)]:
+            action = source_labels.addAction(text); action.setEnabled(not self.jobs)
+            action.triggered.connect(lambda checked=False, key=key: labels(self, identities, key))
+        settings = menu.addMenu('Mix settings for selected songs')
+        settings.setEnabled(arranged and not self.jobs)
+        for text, field, value in [('Set pitch shifts…', 'pitch', None), ('Clear pitch shifts', 'pitch', 0),
+                                   ('Set overlap length…', 'blend_bars', None),
+                                   ('Enable supported tempo stabilization', 'stabilize', True),
+                                   ('Disable tempo stabilization', 'stabilize', False),
+                                   ('Enable level balance', 'balance_levels', True), ('Disable level balance', 'balance_levels', False),
+                                   ('Enable bass swap', 'bass_swap', True), ('Disable bass swap', 'bass_swap', False),
+                                   ('Use filter-out transitions', 'transition_effect', 'filter'),
+                                   ('Use echo-out transitions', 'transition_effect', 'echo'),
+                                   ('Clear transition effects', 'transition_effect', 'none')]:
+            action = settings.addAction(text)
+            action.setToolTip(('Apply to incoming blends of the selected songs. The first song has no incoming blend. '
+                               if field in ('blend_bars', 'transition_effect', 'bass_swap', 'balance_levels') else
+                               'Apply the same choice to all mix clips using these source songs. ')
+                              + 'One Undo restores the batch.')
+            action.triggered.connect(lambda checked=False, field=field, value=value: clip_value(self, identities, field, value))
         relink = menu.addAction('Reconnect this source audio…')
-        relink.setEnabled(single and not self.jobs)
+        relink.setEnabled(not self.jobs)
+        relink.setToolTip('Review the selected sources together. Find and verify relocated originals in a chosen folder.')
+        menu.addSeparator()
+        remove = menu.addAction('Remove selected songs from library and mix' if arranged else 'Remove selected songs from library')
+        remove.setEnabled(not self.jobs)
+        remove.setToolTip('Remove the selected library entries, their collection memberships and any mix clips. Original audio files stay on disk. One Undo restores the batch. (Delete)')
         menu.addSeparator()
         reveal = menu.addAction(REVEAL)
-        reveal.setEnabled(single)
+        reveal.setEnabled(not self.jobs)
         chosen = menu.exec(self.library.viewport().mapToGlobal(point))
         if chosen is add:
             self.add_tracks(self.library.selected_ids(), len(self.session.clips))
         elif chosen is analyze:
-            self.analyze_selected()
+            self.analyze_selected(identities)
         elif chosen is check_key:
-            self.check_selected_key(identity)
+            self.analyze_library_tracks(identities)
         elif chosen is use_key:
-            self.use_estimated_key(identity)
+            self.use_estimated_keys(usable)
+        elif chosen is remove:
+            self.remove_library_selected(identities)
         elif chosen is relink:
-            self.show_relink(identity)
+            self.show_relink(identities)
         elif chosen is reveal:
-            self.reveal(Path(track.path))
+            reveal_sources(self, identities)
 
     @staticmethod
     def reveal(path: Path):
@@ -2358,37 +2613,10 @@ class Studio(QMainWindow):
             self.say('Source key label corrected; audio pitch is unchanged. Choose Play in key to change what you hear.')
 
     def check_selected_key(self, identity=None):
-        from studio_key import analyze_key, remember_analysis
-        from studio_cache import source_signature
         clip = self.selected_clip()
         if not isinstance(identity, str):
             identity = clip.track_id if clip else self.library.current_id()
-        if self.jobs or identity not in self.session.tracks:
-            return
-        if not self.require_models(['key'], lambda: self.check_selected_key(identity)):
-            return
-        track = copy.deepcopy(self.session.tracks[identity])
-
-        def work(progress, emit):
-            return analyze_key(Path(track.path), self.data / 'library-cache' / 'keys', progress)
-
-        def finished(result):
-            current = self.session.tracks.get(identity)
-            try:
-                if not current or result['source'] != source_signature(current.path):
-                    raise djmix.MixError('The source changed. Check its key again before accepting an estimate.')
-                if self.edit(lambda: remember_analysis(current, result), force=True,
-                             action=f'Check {current.name} key'):
-                    self.touched.add(identity)
-                if result['state'] == 'estimated':
-                    self.say(f'Detected {result["candidates"][0]["key"]}. Current label kept. Choose Restore detected to accept it.')
-                else:
-                    self.say(result['reason'])
-            except (djmix.MixError, OSError) as error:
-                self.notify(str(error), 'error')
-
-        self.job(work, finished, importing=True, cancellable=True, title='Detecting the source key',
-                 reason='Checking the original recording. Your source label and pitch choice stay unchanged.')
+        self.analyze_library_tracks([identity])
 
     def use_estimated_key(self, identity=None):
         from studio_key import accept_estimate
@@ -2397,9 +2625,21 @@ class Studio(QMainWindow):
             identity = clip.track_id if clip else self.library.current_id()
         if self.jobs or identity not in self.session.tracks:
             return
-        track = self.session.tracks[identity]
-        if self.edit(lambda: accept_estimate(track), action=f'Use {track.name} estimated key'):
-            self.touched.add(identity)
+        self.use_estimated_keys([identity])
+
+    def use_estimated_keys(self, identities):
+        from studio_key import accept_estimate
+        if self.jobs or not identities:
+            return
+        tracks = [self.session.tracks[i] for i in identities if i in self.session.tracks]
+        def mutate():
+            for track in tracks:
+                accept_estimate(track)
+        if self.edit(mutate, action=f'Use detected keys for {len(tracks)} song(s)'):
+            self.touched.update(t.id for t in tracks)
+            for track in tracks:
+                try: cache_track(track, self.data / 'library-cache')
+                except OSError as error: self.notify(str(error), 'error')
             self.say('Estimated key label accepted. Audio pitch is unchanged; preview your blends to check it.')
 
     def set_transpose(self, semitones):
@@ -2925,25 +3165,33 @@ class Studio(QMainWindow):
         self.portable_dialog.open()
 
     def apply_relink(self, result, revision):
+        return self.apply_relinks([result], revision)
+
+    def apply_relinks(self, results, revision):
         from studio_cache import source_signature
         self.relink_error = ''
-        identity = result['identity']
-        current = self.session.tracks.get(identity)
-        if self.jobs or self.revision != revision or current is None or current.path != result['original_path']:
+        if self.jobs or self.revision != revision or not results:
             self.relink_error = 'The mix changed. Reopen the source reconnection dialog to review its current settings.'
             return False
         try:
-            if source_signature(result['draft'].tracks[identity].path) != result['fingerprint']['source']:
-                raise djmix.MixError('The chosen audio changed after verification. Choose it again.')
+            for result in results:
+                identity = result['identity']; current = self.session.tracks.get(identity)
+                if current is None or current.path != result['original_path']:
+                    raise djmix.MixError('The mix changed. Reopen the source reconnection dialog.')
+                if source_signature(result['draft'].tracks[identity].path) != result['fingerprint']['source']:
+                    raise djmix.MixError('The chosen audio changed after verification. Choose it again.')
         except (OSError, djmix.MixError) as error:
             self.relink_error = str(error); return False
         def mutate():
-            self.session.tracks[identity] = copy.deepcopy(result['draft'].tracks[identity])
-            for clip in self.session.clips:
-                if clip.id in result['reset_correction']: clip.stabilize = False
-        changed = self.edit(mutate, action='Reconnect audio for ' + current.name)
+            for result in results:
+                identity = result['identity']
+                self.session.tracks[identity] = copy.deepcopy(result['draft'].tracks[identity])
+                for clip in self.session.clips:
+                    if clip.id in result['reset_correction']: clip.stabilize = False
+        changed = self.edit(mutate, action=f'Reconnect audio for {len(results)} source song(s)')
         if changed:
-            self.invalidate_source_display(identity); self.touched.add(identity)
+            for result in results:
+                self.invalidate_source_display(result['identity']); self.touched.add(result['identity'])
             self.load_bands(); self.refresh()
             self.say('Source audio reconnected. Clip edits are preserved; Undo restores the previous location.')
         else:
@@ -3748,11 +3996,15 @@ def configure_application_identity(app):
     data = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppLocalDataLocation))
     app.setApplicationName("BeatStitch")
     app.setApplicationDisplayName("BeatStitch")
+    from studio_version import VERSION
+    app.setApplicationVersion(VERSION)
     return data
 
 
 def main():
+    from studio_version import VERSION
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--version', action='version', version='BeatStitch ' + VERSION)
     parser.add_argument("--library", type=Path)
     parser.add_argument("--project", type=Path)
     parser.add_argument("--data-dir", type=Path)

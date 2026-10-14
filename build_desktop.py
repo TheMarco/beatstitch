@@ -12,6 +12,21 @@ import tempfile
 import uuid
 
 import djmix
+from studio_version import VERSION, VERSION_PARTS, BUILD_NUMBER
+
+
+def write_windows_version(root):
+    path = Path(root) / 'windows-version.txt'
+    version = (*VERSION_PARTS, 0)
+    path.write_text(
+        "VSVersionInfo(ffi=FixedFileInfo(filevers=" + repr(version) + ", prodvers=" + repr(version)
+        + ", mask=0x3f, flags=0x0, OS=0x40004, fileType=0x1, subtype=0x0, date=(0,0)), "
+        "kids=[StringFileInfo([StringTable('040904B0', ["
+        f"StringStruct('FileVersion', '{VERSION}'), StringStruct('ProductVersion', '{VERSION}'), "
+        "StringStruct('FileDescription', 'BeatStitch'), StringStruct('ProductName', 'BeatStitch'), "
+        "StringStruct('OriginalFilename', 'BeatStitch.exe')])]), VarFileInfo([VarStruct('Translation', [1033,1200])])])",
+        encoding='utf-8')
+    return path
 
 
 def macos_bundle_only_spec(path):
@@ -228,6 +243,8 @@ def main():
                  '--hidden-import', 'transformers.models.wav2vec2_conformer.modeling_wav2vec2_conformer']
     if sys.platform=='darwin':
         args+=['--osx-bundle-identifier','local.djstudio.app']
+    elif sys.platform == 'win32':
+        args += ['--version-file', str(write_windows_version(root / 'build'))]
     args += audio_tool_options()
     args.append(str(root/'desktop_app.py'))
     environment=os.environ.copy()
@@ -241,6 +258,20 @@ def main():
         packaged_root = destination / 'BeatStitch/_internal'
         packaged_executable = destination / 'BeatStitch' / ('BeatStitch.exe' if sys.platform == 'win32' else 'BeatStitch')
     add_packaged_credits(packaged_root / 'assets/about', packaged_executable)
+    import platform
+    import datetime
+    revision = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=root, capture_output=True, text=True)
+    commit = revision.stdout.strip() if revision.returncode == 0 else None
+    (packaged_root / 'build-info.json').write_text(json.dumps({
+        'app_version': VERSION, 'build_number': BUILD_NUMBER, 'source_commit': commit,
+        'platform': sys.platform, 'architecture': platform.machine(),
+        'built_at': datetime.datetime.now(datetime.timezone.utc).isoformat()}, indent=2) + '\n')
+    if sys.platform == 'darwin':
+        import plistlib
+        plist = destination / 'BeatStitch.app/Contents/Info.plist'
+        info = plistlib.loads(plist.read_bytes())
+        info.update(CFBundleShortVersionString=VERSION, CFBundleVersion=str(BUILD_NUMBER))
+        plist.write_bytes(plistlib.dumps(info))
     if cocoa_plugin is not None:
         from macos_qt_patch import apply_patch
         apply_patch(destination / 'BeatStitch.app', root, cocoa_plugin)

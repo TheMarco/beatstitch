@@ -68,6 +68,8 @@ jobs:
           python -m pip install -r requirements-desktop.txt -r requirements-key.txt pyinstaller==6.22.3
       - name: Install optional worker dependencies
         run: python -m pip install -r requirements-sections.txt -r requirements-separation.txt
+      - name: Read application release version
+        run: python -c "import os; from studio_version import VERSION; open(os.environ['GITHUB_ENV'],'a').write('BEATSTITCH_VERSION='+VERSION+'\n')"
       - name: Prepare original practice audio (no bundled model weights)
         run: |
           python build_demo_assets.py
@@ -84,7 +86,7 @@ jobs:
       - name: Check packaging, key-runtime compatibility, mix guide and offline help
         run: python -m unittest tests.test_windows_audio_tools tests.test_package_check tests.test_lightweight_packaging tests.test_model_downloads tests.test_model_download_ui tests.test_key_detection tests.test_first_mix tests.test_help tests.test_optional_package_check tests.test_section_model_download tests.test_spleeter tests.test_release_source_bundle tests.test_about -v
       - name: Check timing freshness, preview controls and listening guidance
-        run: python -m unittest tests.test_timing_freshness tests.test_timing_comparison tests.test_preview_navigation tests.test_transition_audio tests.test_listening tests.test_recommendations tests.test_content tests.test_demo.DemoAssetsTests -v
+        run: python -m unittest tests.test_library tests.test_processing tests.test_relink tests.test_timing_freshness tests.test_timing_comparison tests.test_preview_navigation tests.test_transition_audio tests.test_listening tests.test_recommendations tests.test_content tests.test_demo.DemoAssetsTests -v
       - name: Build and exercise the model-free package
         run: python build_desktop.py --check
       - name: Exercise an actual in-app download on Windows
@@ -103,20 +105,20 @@ jobs:
         if: success() && runner.os == 'Windows'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: BeatStitch-windows-x64
+          name: BeatStitch-${{ env.BEATSTITCH_VERSION }}-windows-x64
           path: dist/BeatStitch/
-          compression-level: 0
+          compression-level: 6
           retention-days: 3
           if-no-files-found: error
       - name: Archive the tested Linux app with executable permissions
         if: success() && runner.os == 'Linux'
-        run: tar -czf dist/BeatStitch-linux-x64.tar.gz -C dist BeatStitch
+        run: tar -czf dist/BeatStitch-${BEATSTITCH_VERSION}-linux-x64.tar.gz -C dist BeatStitch
       - name: Keep the tested Linux app
         if: success() && runner.os == 'Linux'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: BeatStitch-linux-x64
-          path: dist/BeatStitch-linux-x64.tar.gz
+          name: BeatStitch-${{ env.BEATSTITCH_VERSION }}-linux-x64
+          path: dist/BeatStitch-${{ env.BEATSTITCH_VERSION }}-linux-x64.tar.gz
           compression-level: 0
           retention-days: 3
           if-no-files-found: error

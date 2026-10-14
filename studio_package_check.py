@@ -167,7 +167,8 @@ def run_checks(destination, *, allow_source=False):
         not_tested += INFERENCE_NOT_TESTED
     elif packs is None:
         not_tested.append('Other model inference and optional section/separation packs')
-    report = {'version': 1, 'status': 'running', 'frozen': frozen,
+    from studio_version import VERSION
+    report = {'version': 1, 'app_version': VERSION, 'status': 'running', 'frozen': frozen,
               'platform': sys.platform, 'os': platform.platform(), 'architecture': platform.machine(),
               'model_packs': packs if packs != 'invalid' else None,
               'bundled_models': (packs.get('bundled_models') if isinstance(packs, dict) else None),

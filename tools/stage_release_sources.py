@@ -2,6 +2,9 @@
 import argparse,hashlib,json,re,shutil,subprocess,tarfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
+import sys
+sys.path.insert(0,str(ROOT))
+from studio_version import VERSION
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--source-root',type=Path,required=True)
 parser.add_argument('--app',type=Path,required=True)
@@ -54,7 +57,7 @@ shutil.copyfile(ROOT/'outputs/spleeter-research/spleeter-2.4.2.tar.gz',inputs/'s
 shutil.copyfile(ROOT/'vendor/spleeter/LICENSE',inputs/'SPLEETER-LICENSE')
 shutil.copyfile(ROOT/'vendor/spleeter/ABOUT.txt',inputs/'SPLEETER-MODEL-PROVENANCE.txt')
 components.append(dict(id='spleeter',version='2.4.2 / model v1.4.0',license='MIT code and pretrained weights',source_url='https://github.com/deezer/spleeter',artifacts=[artifact(inputs/'spleeter-2.4.2.tar.gz','source_archive'),artifact(inputs/'SPLEETER-LICENSE','license'),artifact(inputs/'SPLEETER-MODEL-PROVENANCE.txt','build_recipe'),artifact(inputs/'download_separation_model.py','build_recipe'),artifact(inputs/'studio_spleeter_checkpoint.py','build_recipe')]))
-components.append(dict(id='beatstitch',version='release snapshot 2026-10-13',license='GPL-3.0-or-later; third-party notices apply separately',source_url='https://github.com/TheMarco/dj-studio',artifacts=[artifact(snapshot,'source_archive'),artifact(inputs/'LICENSE','license'),artifact(inputs/'LICENSE_NOTICE.txt','license'),artifact(inputs/'README.md','build_recipe'),artifact(inputs/'REBUILD.txt','build_recipe'),artifact(inputs/'build_desktop.py','build_recipe'),artifact(input_manifest,'build_recipe')]))
+components.append(dict(id='beatstitch',version=VERSION,license='GPL-3.0-or-later; third-party notices apply separately',source_url='https://github.com/TheMarco/dj-studio',artifacts=[artifact(snapshot,'source_archive'),artifact(inputs/'LICENSE','license'),artifact(inputs/'LICENSE_NOTICE.txt','license'),artifact(inputs/'README.md','build_recipe'),artifact(inputs/'REBUILD.txt','build_recipe'),artifact(inputs/'build_desktop.py','build_recipe'),artifact(input_manifest,'build_recipe')]))
 # Exact source, patch and scripts for the locally modified Qt Cocoa binary.
 patch_folder=inputs/'qt-cocoa';patch_folder.mkdir(exist_ok=True)
 for name in ('README.md','manifest.json','upstream.patch','CMakeLists.txt'):
