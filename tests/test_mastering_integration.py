@@ -31,7 +31,7 @@ class MasteringIntegrationTests(unittest.TestCase):
         self.assertFalse(session.mastering_enabled)
         session.mastering_enabled = True
         saved = session.to_dict()
-        self.assertEqual(saved['version'], 16)
+        self.assertEqual(saved['version'], 17)
         self.assertTrue(Session.from_dict(json.loads(json.dumps(saved))).mastering_enabled)
         saved['version'] = 14; saved.pop('mastering_enabled')
         self.assertFalse(Session.from_dict(saved).mastering_enabled)

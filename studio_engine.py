@@ -61,6 +61,11 @@ class Clip:
     protected_moments: list[dict] = field(default_factory=list)
     balance_levels: bool = False
     transition_effect: str = 'none'
+    fades_linked: bool = True
+    incoming_fade_bars: float | None = None
+    outgoing_fade_bars: float | None = None
+    incoming_fade_curve: str = 'smooth'
+    outgoing_fade_curve: str = 'smooth'
 
     @property
     def shift(self):
@@ -83,11 +88,11 @@ class Session:
     listening_notes: list[dict] = field(default_factory=list)
 
     def to_dict(self):
-        return {"version": 16, **asdict(self)}
+        return {"version": 17, **asdict(self)}
 
     @classmethod
     def from_dict(cls, value):
-        if value.get("version") not in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16):
+        if value.get("version") not in range(1, 18):
             raise djmix.MixError("Unsupported project version.")
         result = cls(name=str(value["name"]), target_bpm=float(value["target_bpm"]),
                      tracks={k: Track(**v) for k, v in value["tracks"].items()},
@@ -266,6 +271,8 @@ def layout(session: Session, *, check_protection=True) -> list[dict]:
             raise djmix.MixError(f"Invalid in/out points for {track.name}.")
         if not isinstance(clip.blend_bars, int) or not 1 <= clip.blend_bars <= 32:
             raise djmix.MixError("Blend length must be between 1 and 32 bars.")
+        from studio_fades import validate as validate_fades
+        validate_fades(clip)
         if not isinstance(clip.semitones, int) or not -12 <= clip.semitones <= 12:
             raise djmix.MixError("Pitch adjustment must be between -12 and +12 semitones.")
         if not isinstance(clip.balance_levels, bool):
@@ -371,9 +378,12 @@ def suggest_order(session: Session) -> list[Clip]:
     return ordered
 
 
-def _weights(n: np.ndarray, start: int, length: int, incoming: bool, bass_swap: bool, target: float):
+def _weights(n: np.ndarray, start: int, length: int, incoming: bool, bass_swap: bool, target: float, clip=None):
     progress = np.clip((n - start) / max(1, length - 1), 0, 1)
     high = np.sin(progress * np.pi / 2) if incoming else np.cos(progress * np.pi / 2)
+    if clip is not None:
+        from studio_fades import gain
+        high = gain(progress, incoming, clip)
     if not bass_swap:
         return high, high
     width = min(length, round(240 / target * djmix.SR))
@@ -533,10 +543,13 @@ def render_session(session: Session, destination: Path, *, region=None,
                         pos, clip = positions[index], session.clips[index]
                         incoming = ([offset - pos['start'], pos['incoming'], clip.bass_swap]
                                     if index and offset < pos['start'] + pos['incoming'] else None)
+                        from studio_fades import token as fade_token
+                        if incoming is not None and fade_token(clip): incoming.append(fade_token(clip))
                         outgoing = None
                         if index + 1 < len(positions) and stop > positions[index + 1]['start']:
                             nxt = positions[index + 1]
                             outgoing = [nxt['start'] - offset, nxt['incoming'], session.clips[index + 1].bass_swap]
+                            if fade_token(session.clips[index + 1]): outgoing.append(fade_token(session.clips[index + 1]))
                             effect = effect_token(session.clips[index + 1])
                             if effect: outgoing.append(effect)
                         ingredient = [families[index], offset - pos['start'], incoming, outgoing]
@@ -567,11 +580,11 @@ def render_session(session: Session, destination: Path, *, region=None,
                         ref_pos = reference_positions[index]
                         lo, hi = np.ones(len(active)), np.ones(len(active))
                         if index:
-                            a, b = _weights(musical, ref_pos["start"], ref_pos["incoming"], True, clip.bass_swap, session.target_bpm)
+                            a, b = _weights(musical, ref_pos["start"], ref_pos["incoming"], True, clip.bass_swap, session.target_bpm, clip)
                             lo *= a; hi *= b
                         if index + 1 < len(positions):
                             nxt, next_clip = reference_positions[index + 1], session.clips[index + 1]
-                            a, b = _weights(musical, nxt["start"], nxt["incoming"], False, next_clip.bass_swap, session.target_bpm)
+                            a, b = _weights(musical, nxt["start"], nxt["incoming"], False, next_clip.bass_swap, session.target_bpm, next_clip)
                             lo *= a; hi *= b
                         contribution = low[active-left+cache_offset] * lo[:, None] + high[active-left+cache_offset] * hi[:, None]
                         if index in effects:

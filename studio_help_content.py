@@ -785,9 +785,14 @@ REFERENCE_TOPICS = (
             "\n"
             "## Reordering\n"
             "\n"
-            "Drag clips to reorder them, or select a clip and use the left and right arrow buttons in the "
+            "Drag the small grip at the left of a clip's title bar to reorder songs, or select a clip and use the left and right arrow buttons in the "
             "Clip box (**Move earlier in the mix**, **Move later in the mix**). **Remove** takes the clip "
             "out of the mix; the song stays in your library."
+            "\n\n## Moving a song along the timeline\n\n"
+            "Drag the body of a song left or right to change when it enters. It snaps to bars and changes its "
+            "incoming overlap; later songs follow so the mix stays connected. Available audio, neighboring blends "
+            "and protected passages limit the movement. The first song anchors the start of the mix. "
+            "The preview moves visually without processing audio. Release to keep one undoable edit; Escape cancels."
             "\n\n## Choosing what plays\n\n"
             "**Start** and **End** are times in the original song, before stretching. Start includes the incoming "
             "blend; End includes the outgoing blend. For example, Start 0:30 skips the first 30 seconds of the source. "
@@ -1063,11 +1068,27 @@ REFERENCE_TOPICS = (
     {
         "id": "transitions",
         "title": "Transitions",
-        "keywords": "transition blend editor preview solo outgoing incoming loop bass swap overlap order chevron verdict cue end alternatives current draft comparison A/B pitch matched loudness balance levels quieter louder volume jump review all keep change next unchecked remaining filter echo outgoing finish effects listening notes checklist beats harmony voices melodies fits unsure",
+        "keywords": "transition crossfade fade shape curve linear exponential fast slow smooth linked independent handles blend editor preview solo outgoing incoming loop bass swap overlap order chevron verdict cue end alternatives current draft comparison A/B pitch matched loudness balance levels quieter louder volume jump review all keep change next unchecked remaining filter echo outgoing finish effects listening notes checklist beats harmony voices melodies fits unsure",
         "body": (
             '**Kicks landing apart despite matching BPM?** Choose **Align beats…** in the Transition box. '
             'It checks the beats, offers a timing draft and shows the actual kick hits for live comparison. '
             'See [Line up the beats](help:beat-alignment).\n\n'
+            '## Editing the crossfade\n\n'
+            '**Overlap** is how long both songs play together. **Fades…** opens the fade controls and real waveforms. '
+            'The incoming fade rises from the beginning of the overlap; the outgoing fade falls into its end. '
+            'A shorter incoming fade reaches full volume sooner. A shorter outgoing fade starts later.\n\n'
+            '**Link fades** is on by default. Editing either side mirrors its length and shape on the other. '
+            'Turn linking off to edit each side independently. Lengths use bars, in one-beat (0.25 bar) steps, '
+            'and cannot exceed the overlap. Shorter fades can leave both songs at full level together; listen for volume bumps.\n\n'
+            '**Smooth (equal power)** is the original fade. **Linear** changes evenly. **Fast** changes volume early; '
+            '**Slow** makes most of the change later. The white curves show the chosen shapes. '
+            'Drag their white handles in the arrangement or blend editor to adjust length without typing. '
+            'Escape cancels a drag; each completed arrangement drag is one Undo step. '
+            'Editor changes stay in the draft until **Apply changes**. **Reset fades** restores the original linked smooth fades.\n\n'
+            'When **Swap bass at the middle** is on, the bass follows its separate dashed handoff; the solid fade curves '
+            'control the rest of the sound. Turn bass swap off to fade the whole sound together. '
+            'Compare **Current / Draft** before applying. Dragging and choosing settings do not prepare audio; '
+            'Listen prepares the changed blend and reuses unchanged stretched/pitch-shifted source audio.\n\n'
             "## Which blend am I hearing?\n"
             "\n"
             "The Transition box title reads like **Transition 2 → 3**: the arrow means the blend from song 2 "

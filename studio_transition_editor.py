@@ -22,6 +22,8 @@ from studio_transition_effects import EFFECTS
 from studio_overlap_content import analyze_pair_voices, vocal_cue_choices
 from studio_overlap_content_ui import OverlapVoices
 from studio_crowding_ui import OverlapCrowding
+from studio_fades import apply_settings as apply_fades, panel_values as fade_values, set_duration as set_fade_duration
+from studio_fades_ui import FadesPanel
 
 
 class TransitionEditor(QDialog):
@@ -48,6 +50,7 @@ class TransitionEditor(QDialog):
         self.resize(980, 730)
         self.player = BlendTransport(self)
         self.alignment_mode = False
+        self.fade_mode = False
         self.full_listen_label = 'Listen'
         self.normal_details = []
         self.devices = QMediaDevices(self)
@@ -91,6 +94,14 @@ class TransitionEditor(QDialog):
         self.view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.view.setFixedHeight(200)
         box.addWidget(self.view, 1)
+        self.fades = FadesPanel()
+        self.fades.setMaximumWidth(16777215)
+        self.fades.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        self.fades.in_combo.setMaximumWidth(240)
+        self.fades.out_combo.setMaximumWidth(240)
+        box.addWidget(self.fades)
+        self.fades.changed.connect(self.change_fades)
+        self.view.fadeChanged.connect(self.drag_fade)
         self.view.seekRequested.connect(lambda seconds: self.seek_to(round(float(
             self.tempo_curve.to_output(self.start / djmix.SR + seconds) - self.output_origin) * 1000)))
         from studio_alignment_ui import BeatAlignment
@@ -266,6 +277,7 @@ class TransitionEditor(QDialog):
     def focus_alignment(self):
         """The direct entry point shows one task, with full-blend listening retained."""
         if self.alignment_mode: return
+        if self.fade_mode: self.show_all_controls()
         self.alignment_mode = True
         def hide_others(layout):
             for index in range(layout.count()):
@@ -283,9 +295,29 @@ class TransitionEditor(QDialog):
         self.play.setText('Pause' if self.player.playing else self.full_listen_label)
         self.more_blend_controls.show()
 
+    def focus_fades(self):
+        """Keep real waveforms and their controls visible together."""
+        self.show_all_controls()
+        self.fade_mode = True
+        self.view.setMinimumHeight(180)
+        self.view.setMaximumHeight(700)
+        def hide_others(layout):
+            for i in range(layout.count()):
+                item = layout.itemAt(i); widget = item.widget()
+                if widget is not None and widget not in (self.view, self.fades):
+                    self.normal_details.append((widget, not widget.isHidden()))
+                    widget.hide()
+                elif item.layout() is not None:
+                    hide_others(item.layout())
+        hide_others(self.details_scroll.widget().layout())
+        self.setWindowTitle(f'Fades {self.index} → {self.index + 1}')
+        self.more_blend_controls.show()
+        self.details_scroll.verticalScrollBar().setValue(0)
+
     def show_all_controls(self):
         for widget, visible in self.normal_details: widget.setVisible(visible)
-        self.normal_details.clear(); self.alignment_mode = False
+        self.normal_details.clear(); self.alignment_mode = self.fade_mode = False
+        self.view.setFixedHeight(200)
         self.more_blend_controls.hide()
         self.full_listen_label = 'Listen'; self.play.setText('Pause' if self.player.playing else 'Listen')
         self.hear_label.setText('Hear')
@@ -313,6 +345,8 @@ class TransitionEditor(QDialog):
         self.crowding.refresh()
         self.alignment.refresh()
         self.view.set_data(self.session, self.index, self.bands, self.start / djmix.SR, self.end / djmix.SR)
+        clip = self.session.clips[self.index]
+        self.fades.set_values(clip.blend_bars, **fade_values(clip))
         self.seek.blockSignals(True)
         from studio_tempo_curve import session_curve, render_span
         self.tempo_curve = session_curve(self.session)
@@ -371,6 +405,24 @@ class TransitionEditor(QDialog):
         self.refresh_draft()
         self.status.setText('Draft changed. Listen to hear it, then Apply changes to keep it.')
 
+    def change_fades(self, values):
+        if self.busy: return
+        clip = self.session.clips[self.index]
+        before = sound_settings(clip)
+        apply_fades(clip, values)
+        if before == sound_settings(clip):
+            self.apply.setEnabled(clip != self.original)
+            self.close_button.setText('Discard draft' if clip != self.original else 'Close')
+            self.status.setText('Fades linked. Editing either row changes both.' if clip.fades_linked else
+                                'Fades unlinked. Adjust either row independently; the sound is unchanged so far.')
+            return
+        self.change_draft()
+
+    def drag_fade(self, incoming, bars):
+        if self.busy: return
+        set_fade_duration(self.session.clips[self.index], incoming, bars)
+        self.change_draft()
+
     def position_changed(self, milliseconds):
         if not self.seek.isSliderDown():
             self.seek.blockSignals(True)
@@ -388,6 +440,7 @@ class TransitionEditor(QDialog):
 
     def set_busy(self, busy):
         self.busy = busy
+        self.fades.setEnabled(not busy)
         self.voices.setEnabled(not busy)
         self.crowding.setEnabled(not busy)
         self.alignment.setEnabled(not busy)

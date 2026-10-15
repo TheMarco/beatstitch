@@ -37,7 +37,7 @@ def echo_timing(frames, tempo):
 
 
 def write_effect(path, low, high, offset, frames, kind, bass_swap, tempo, progress,
-                 *, curve=None, reference_start=0, reference_frames=None):
+                 *, curve=None, reference_start=0, reference_frames=None, clip=None):
     """Start each filter at the same overlap boundary, including for cropped previews.
 
     Echo keeps only one beat (half a beat for a one-bar overlap) in memory.
@@ -61,7 +61,7 @@ def write_effect(path, low, high, offset, frames, kind, bass_swap, tempo, progre
             if left % (16 * djmix.BLOCK) == 0: progress('Preparing ' + EFFECTS[kind][0].lower())
             right = min(frames, left + djmix.BLOCK); n = np.arange(left, right)
             beats = musical(n)
-            lo, hi = _weights(beats, 0, reference_frames, False, bass_swap, tempo)
+            lo, hi = _weights(beats, 0, reference_frames, False, bass_swap, tempo, clip)
             selection = slice(offset + left, offset + right)
             dry = low[selection] * lo[:, None] + high[selection] * hi[:, None]
             filtered, state = sosfilt(sos, dry, axis=0, zi=state)
@@ -116,6 +116,8 @@ def plan(session, positions, prepared, families, overlaps, work, cache, progress
             frames = end - start
             key = [VERSION, families[outgoing], start - positions[outgoing]['start'], frames,
                    clip.transition_effect, clip.bass_swap, session.target_bpm]
+            from studio_fades import token as fade_token
+            if fade_token(clip, False): key.append(fade_token(clip, False))
             if not curve.identity:
                 a = references[index]['start'] / djmix.SR
                 b = (references[index]['start'] + references[index]['incoming']) / djmix.SR
@@ -133,7 +135,7 @@ def plan(session, positions, prepared, families, overlaps, work, cache, progress
                     write_effect(pending, low, high, start - left + offset, frames,
                                  clip.transition_effect, clip.bass_swap, session.target_bpm, progress,
                                  curve=curve, reference_start=references[index]['start'],
-                                 reference_frames=references[index]['incoming'])
+                                 reference_frames=references[index]['incoming'], clip=clip)
                     os.replace(pending, path)
                 finally: pending.unlink(missing_ok=True)
                 processed += 1

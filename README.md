@@ -1,10 +1,16 @@
-# BeatStitch 0.1.1
+# BeatStitch 0.1.3
 
 A native **Qt / PySide6 desktop application** for arranging EDM mixes. No browser,
 webview, server, or online audio service is required. The code supports macOS,
 Windows, and Linux. Native interaction has been exercised on macOS; packaged audio
 checks and both optional analysis workers also pass on Windows Server 2022 and
 Ubuntu 24.04 x86-64 runners.
+
+Crossfades have independent incoming/outgoing lengths and Smooth, Linear, Fast
+and Slow curves under **Fades…**. Fades stay linked by default. Drag white fade
+handles to change lengths; drag a song's body to move its entry time, snapping
+to bars while later songs follow. The small title-bar grip reorders songs.
+Drags preview visually and commit as one Undo step, without processing audio.
 
 The original application code is **GPL-3.0-or-later**; see [LICENSE](LICENSE)
 and [the licensing notice](LICENSE_NOTICE.txt). The planned public edition is

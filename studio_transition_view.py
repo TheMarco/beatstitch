@@ -8,10 +8,11 @@ real library peaks as a fallback); this module never synthesizes any.
 from __future__ import annotations
 
 import math
+import copy
 
 import numpy as np
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import QWidget
 
 import djmix
@@ -19,7 +20,8 @@ import studio_theme as T
 from studio_engine import layout
 from studio_timing import corrected_time, mapping
 from studio_waveform import BINS_PER_SECOND
-from studio_widgets import band_columns, clock, paint_bands, paint_envelope
+from studio_widgets import band_columns, clock, paint_bands, paint_envelope, gain_curves
+from studio_fades import duration as fade_duration, set_duration as set_fade_duration
 
 
 def _linear_to_corrected(track, clip, target_bpm, clip_start, project_seconds):
@@ -76,6 +78,7 @@ class TransitionView(QWidget):
 
     seekRequested = Signal(float)
     overlapChanged = Signal(int)
+    fadeChanged = Signal(bool, float)
 
     _PAD = 10
     _RULER = 40
@@ -86,7 +89,9 @@ class TransitionView(QWidget):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setAccessibleName("Transition blend editor")
         self.setAccessibleDescription("Two-song blend editor. No transition loaded.")
-        self.setMouseTracking(False)
+        self.setMouseTracking(True)
+        self._fade_clip = None
+        self._fade_drag = None
         self._target = None
         self._index = None
         self._start = 0.0
@@ -146,6 +151,8 @@ class TransitionView(QWidget):
         self._overlap_end = self._incoming_start + positions[index]["incoming"] / djmix.SR
         self._blend_bars = int(incoming.blend_bars)
         self._bass_swap = bool(incoming.bass_swap)
+        self._fade_clip = copy.copy(incoming)
+        self._fade_drag = None
         out, inc = lanes
         self.setAccessibleDescription(
             f"Blend from {out['name']} into {inc['name']}, {self._blend_bars} bars at "
@@ -216,6 +223,7 @@ class TransitionView(QWidget):
             self._paint_wave(painter, lane, wave)
         self._paint_overlap(painter, lanes_top, lanes_bottom)
         self._paint_grid(painter, lanes_top, lanes_bottom)
+        self._paint_fades(painter)
         for lane, (label, _) in zip(self._lanes, self._lane_rects()):
             self._paint_label(painter, lane, label)
         self._paint_bass(painter, lanes_top, lanes_bottom)
@@ -262,6 +270,36 @@ class TransitionView(QWidget):
         painter.setBrush(T.color(T.ACCENT, .10))
         for _, wave in self._lane_rects():
             painter.drawRect(QRectF(self._x(lo), wave.top(), self._x(hi) - self._x(lo), wave.height()))
+
+    def fade_handles(self):
+        if self._fade_clip is None: return []
+        result = []
+        for lane, (_, wave) in zip(self._lanes, self._lane_rects()):
+            incoming = lane['role'] == 'In'
+            seconds = fade_duration(self._fade_clip, incoming) * 240 / self._target
+            moment = self._incoming_start + seconds if incoming else self._overlap_end - seconds
+            result.append((QRectF(self._x(moment) - 6, wave.top() - 4, 12, 12), incoming))
+        return result
+
+    def _paint_fades(self, painter):
+        if self._fade_clip is None: return
+        progress = np.linspace(0., 1., 128)
+        moments = self._incoming_start + progress * (self._overlap_end - self._incoming_start)
+        for lane, (_, wave) in zip(self._lanes, self._lane_rects()):
+            incoming = lane['role'] == 'In'
+            low, high = gain_curves(progress, incoming, self._bass_swap, self._blend_bars, self._fade_clip)
+            painter.save()
+            painter.setClipRect(wave)
+            for values, style, alpha in ((high, Qt.PenStyle.SolidLine, .9), (low, Qt.PenStyle.DashLine, .5)):
+                if style == Qt.PenStyle.DashLine and not self._bass_swap: continue
+                painter.setPen(QPen(T.color('#FFFFFF', alpha), 1.3, style))
+                painter.drawPolyline(QPolygonF([QPointF(self._x(t), wave.bottom() - 2 - g * (wave.height() - 4))
+                                                for t, g in zip(moments, values)]))
+            painter.restore()
+        for rect, _ in self.fade_handles():
+            painter.setPen(QPen(QColor('#FFFFFF'), 1.3))
+            painter.setBrush(QColor(T.BASE))
+            painter.drawEllipse(rect.adjusted(1, 1, -1, -1))
 
     def _paint_label(self, painter, lane, rect):
         painter.setFont(T.font(T.SIZE_BODY, tabular=True))
@@ -342,12 +380,52 @@ class TransitionView(QWidget):
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self._end > self._start:
             self.setFocus(Qt.FocusReason.MouseFocusReason)
+            for rect, incoming in self.fade_handles():
+                if rect.contains(event.position()):
+                    self._fade_drag = (incoming, event.position().x(), copy.copy(self._fade_clip))
+                    event.accept()
+                    return
             self.seekRequested.emit(self._clamped_local(self._project(event.position().x()) - self._start))
             event.accept()
             return
         super().mousePressEvent(event)
 
+    def mouseMoveEvent(self, event):
+        if self._fade_drag is not None:
+            incoming, x, original = self._fade_drag
+            delta = (self._project(event.position().x()) - self._project(x)) * self._target / 240
+            value = max(.25, min(original.blend_bars,
+                        round((fade_duration(original, incoming) + (delta if incoming else -delta)) * 4) / 4))
+            self._fade_clip = copy.copy(original)
+            set_fade_duration(self._fade_clip, incoming, value)
+            self.update()
+            event.accept()
+            return
+        handle = any(rect.contains(event.position()) for rect, _ in self.fade_handles())
+        self.setCursor(Qt.CursorShape.SizeHorCursor if handle else Qt.CursorShape.ArrowCursor)
+        self.setToolTip('Drag the white fade handle to change its length. Snaps to beats; Escape cancels.' if handle else
+                        'Click to seek. White handles edit fades; curve choices are below.')
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self._fade_drag is not None:
+            incoming, _, original = self._fade_drag
+            value = fade_duration(self._fade_clip, incoming)
+            self._fade_drag = None
+            self._fade_clip = original
+            self.update()
+            if value != fade_duration(original, incoming): self.fadeChanged.emit(incoming, value)
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
     def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape and self._fade_drag is not None:
+            self._fade_clip = self._fade_drag[2]
+            self._fade_drag = None
+            self.update()
+            event.accept()
+            return
         if not self._end > self._start or self._target is None:
             super().keyPressEvent(event)
             return

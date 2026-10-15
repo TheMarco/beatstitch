@@ -51,6 +51,8 @@ def prepare_blend(session, index, cache_dir, progress=lambda message: None):
     key = [1, RENDER_VERSION, cache.engine, session.target_bpm, ingredients,
            incoming['incoming'], session.clips[index].bass_swap,
            start - incoming['start'], end - incoming['start']]
+    from studio_fades import token as fade_token
+    if fade_token(session.clips[index]): key.append(fade_token(session.clips[index]))
     if session.clips[index].balance_levels:
         from studio_level_balance import VERSION
         key.append(['level-balance', VERSION])

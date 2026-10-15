@@ -43,6 +43,8 @@ def audio_recipe(session, region=None, *, include_mastering=True):
             raise djmix.MixError(f'{track.name} changed. Analyze its timing again.')
         incoming = ([pos['start'] - start, pos['incoming'], clip.bass_swap]
                     if index and left < pos['start'] + pos['incoming'] else None)
+        from studio_fades import token as fade_token
+        if incoming is not None and fade_token(clip): incoming.append(fade_token(clip))
         if incoming is not None and clip.balance_levels:
             from studio_level_balance import VERSION
             incoming.append(['level-balance', VERSION])
@@ -51,6 +53,7 @@ def audio_recipe(session, region=None, *, include_mastering=True):
             nxt = positions[index + 1]
             if right > nxt['start']:
                 outgoing = [nxt['start'] - start, nxt['incoming'], session.clips[index + 1].bass_swap]
+                if fade_token(session.clips[index + 1]): outgoing.append(fade_token(session.clips[index + 1]))
                 from studio_transition_effects import token as effect_token
                 effect = effect_token(session.clips[index + 1])
                 if effect: outgoing.append(effect)

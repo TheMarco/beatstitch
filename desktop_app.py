@@ -569,6 +569,8 @@ class Studio(QMainWindow):
         self.timeline.seekRequested.connect(self.seek_timeline)
         self.timeline.transitionSelected.connect(self.select_transition)
         self.timeline.overlapChanged.connect(self.drag_overlap)
+        self.timeline.fadeChanged.connect(self.drag_fade)
+        self.timeline.editStatus.connect(self.say)
         return pane
 
     def box(self, title=None, width=None, name="box"):
@@ -895,6 +897,10 @@ class Studio(QMainWindow):
                                    "level balance, extra effects and both drum-only labels off. Keeps song cues and pitch. You can undo this.")
         lengths.addWidget(self.reset_blend)
         details.addLayout(lengths)
+        self.fades_btn = button('Fades…', self.edit_fades)
+        self.fades_btn.setToolTip('Change incoming and outgoing fade lengths and curves. Link them for one control, '
+                                  'or unlink to edit separately. White waveform handles change fade lengths directly.')
+        details.addWidget(self.fades_btn)
         drums = QHBoxLayout()
         drums.setSpacing(4)
         explain = ("Turn on only if the whole overlap has no pitched bass, vocals, melody or tonal tails. "
@@ -1509,6 +1515,7 @@ class Studio(QMainWindow):
         self.say(message)
 
     def changed(self):
+        self.timeline.edits.cancel()
         self.sync_position()
         self.revision += 1
         if not self.refresh_prepared_audio():
@@ -1716,6 +1723,9 @@ class Studio(QMainWindow):
         self.overlap_decrease.setEnabled(incoming.blend_bars > self.blend_bars.minimum())
         self.overlap_increase.setEnabled(incoming.blend_bars < self.blend_bars.maximum())
         self.bass.setChecked(incoming.bass_swap)
+        from studio_fades import panel_values
+        fades = panel_values(incoming)
+        self.fades_btn.setText('Fades… · ' + ('Linked' if fades['linked'] else 'Independent'))
         self.outro_drums.setChecked(outgoing.outro_percussive)
         self.intro_drums.setChecked(incoming.intro_percussive)
 
@@ -2803,6 +2813,20 @@ class Studio(QMainWindow):
             self.select_clip(self.session.clips[index].id)
             self.set_transition_value("in", "blend_bars", bars)
 
+    def drag_fade(self, index, incoming, bars):
+        if self.rendering or not 0 < index < len(self.session.clips): return
+        from studio_fades import set_duration
+        self.select_clip(self.session.clips[index].id)
+        self.edit(lambda: set_duration(self.session.clips[index], incoming, bars),
+                  action=f'Change {index} → {index + 1} {"incoming" if incoming else "outgoing"} fade length')
+
+    def edit_fades(self):
+        self.edit_blend()
+        if self.transition_editor is not None:
+            dialog = self.transition_editor
+            dialog.focus_fades()
+            dialog.fades.in_spin.setFocus()
+
     def reset_transition(self):
         index = self.transition_index()
         if self.rendering or not index:
@@ -2812,6 +2836,8 @@ class Studio(QMainWindow):
 
         def mutate():
             incoming.blend_bars, incoming.bass_swap = bars, True
+            from studio_fades import reset as reset_fades
+            reset_fades(incoming)
             incoming.balance_levels = False
             incoming.transition_effect = 'none'
             outgoing.outro_percussive = incoming.intro_percussive = False

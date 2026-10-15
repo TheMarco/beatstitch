@@ -134,9 +134,12 @@ def peak_columns(waveform, start: float, end: float, count: int):
     return values[positions.astype(int)] * .8
 
 
-def gain_curves(progress, incoming: bool, bass_swap: bool, length_bars: float):
+def gain_curves(progress, incoming: bool, bass_swap: bool, length_bars: float, clip=None):
     """Mirror of studio_engine._weights for display: (low, high) gains for 0..1 progress."""
     high = np.sin(progress * np.pi / 2) if incoming else np.cos(progress * np.pi / 2)
+    if clip is not None:
+        from studio_fades import gain
+        high = gain(progress, incoming, clip)
     if not bass_swap:
         return high, high
     width = min(1.0, 1.0 / max(1e-6, length_bars))
@@ -661,6 +664,8 @@ class Timeline(_WaveformFocus, QAbstractScrollArea):
     seekRequested = Signal(float)
     transitionSelected = Signal(int)
     overlapChanged = Signal(int, int)
+    fadeChanged = Signal(int, bool, float)
+    editStatus = Signal(str)
     viewChanged = Signal()
 
     PAD, LOCATORS, RULER, TIME_RULER, HEADERS, MIX, CLIP_HEADER = 10, 16, 34, 18, 132, 48, 17
@@ -680,6 +685,8 @@ class Timeline(_WaveformFocus, QAbstractScrollArea):
         self.drag_origin = self.drag_clip = None
         self.ruler_drag = None
         self.overlap_drag = None
+        from studio_timeline_edits import TimelineEdits
+        self.edits = TimelineEdits(self)
         self.positions = []
         self._labels = []
         self._static = None
@@ -1083,14 +1090,14 @@ class Timeline(_WaveformFocus, QAbstractScrollArea):
             parts.append("Stabilized")
         meta = "   ".join(parts)
         meta_width = metrics.horizontalAdvance(meta)
-        room = visible.width() - 14
+        room = visible.width() - 30
         show_meta = room - meta_width > min(120, name_metrics.horizontalAdvance(track.name) + 12)
         name_room = room - (meta_width + 12 if show_meta else 0)
         in_pair = self.transition > 0 and index in (self.transition - 1, self.transition)
         name = (("Out · " if index < self.transition else "In · ") if in_pair else "") + track.name
         painter.setPen(QColor(DARK_TEXT))
         painter.setFont(name_font)
-        painter.drawText(QRectF(visible.left() + 6, visible.top(), max(0, name_room), self.CLIP_HEADER),
+        painter.drawText(QRectF(visible.left() + 22, visible.top(), max(0, name_room), self.CLIP_HEADER),
                          Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
                          name_metrics.elidedText(name, Qt.TextElideMode.ElideRight, max(0, name_room)))
         if show_meta:
@@ -1099,6 +1106,11 @@ class Timeline(_WaveformFocus, QAbstractScrollArea):
             painter.drawText(QRectF(visible.right() - 6 - meta_width - 2, visible.top(), meta_width + 2, self.CLIP_HEADER),
                              Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, meta)
         painter.restore()
+        grip = self.edits.reorder_grip(index)
+        painter.setPen(QPen(T.color(DARK_TEXT, .65), 1))
+        for shift in (-3, 0, 3):
+            painter.drawLine(QPointF(grip.left() + 3, grip.center().y() + shift),
+                             QPointF(grip.right() - 3, grip.center().y() + shift))
         painter.setPen(QPen(QColor("#F2F2F2"), 1.5) if selected else
                        QPen(QColor(T.ACCENT), 1.5) if in_pair else QPen(T.mix(base, "#000000", .55), 1))
         painter.setBrush(Qt.BrushStyle.NoBrush)
@@ -1118,7 +1130,7 @@ class Timeline(_WaveformFocus, QAbstractScrollArea):
             if right - left < 6:
                 continue
             progress = np.linspace(0, 1, 64)
-            low, high = gain_curves(progress, incoming, owner.bass_swap, length / bar_frames)
+            low, high = gain_curves(progress, incoming, owner.bass_swap, length / bar_frames, owner)
             xs = left + progress * (right - left)
             curves = [(high, QPen(T.color("#FFFFFF", .85), 1.3))]
             if owner.bass_swap:
@@ -1128,6 +1140,11 @@ class Timeline(_WaveformFocus, QAbstractScrollArea):
                 painter.setBrush(Qt.BrushStyle.NoBrush)
                 painter.drawPolyline(QPolygonF([QPointF(x, wave.bottom() - 2 - g * (wave.height() - 4))
                                                 for x, g in zip(xs, gains)]))
+        for handle, transition, incoming in self.edits.fade_handles():
+            if index != (transition if incoming else transition - 1): continue
+            painter.setPen(QPen(QColor('#FFFFFF'), 1.3))
+            painter.setBrush(QColor(T.BASE))
+            painter.drawEllipse(handle.adjusted(1, 1, -1, -1))
 
     def _paint_mix(self, painter, width):
         _, _, mix_top, _ = self.lanes()
@@ -1177,6 +1194,7 @@ class Timeline(_WaveformFocus, QAbstractScrollArea):
             if rect.contains(point):
                 self.transitionSelected.emit(index)
                 return
+        if self.edits.press_fade(event): return
         if self.overlap_handle().contains(point):
             index = self.transition
             self.overlap_drag = (index, point.x(), self.session.clips[index].blend_bars,
@@ -1189,6 +1207,7 @@ class Timeline(_WaveformFocus, QAbstractScrollArea):
         if point.y() < self.RULER:
             self.ruler_drag = (point, self.time_at(point.x()), self.scale, False)
             return
+        if self.edits.press_clip(event): return
         self.drag_origin, self.drag_clip = point, None
         for index, position in enumerate(self.positions):
             if self.clip_rect(position, index).contains(point):
@@ -1199,6 +1218,7 @@ class Timeline(_WaveformFocus, QAbstractScrollArea):
 
     def mouseMoveEvent(self, event):
         point = event.position()
+        if self.edits.move(event): return
         if self.overlap_drag:
             index, origin, original, _, maximum = self.overlap_drag
             bars = max(1, min(maximum, round(original + (origin - point.x()) / (240 / self.session.target_bpm * self.scale))))
@@ -1217,6 +1237,7 @@ class Timeline(_WaveformFocus, QAbstractScrollArea):
             return
         if not event.buttons():
             self.viewport().setToolTip(self.toolTip())
+            if self.edits.hover(point): return
             if point.x() >= self.area_width():
                 self.viewport().setCursor(Qt.CursorShape.ArrowCursor)
             elif self.overlap_handle().contains(point):
@@ -1229,6 +1250,8 @@ class Timeline(_WaveformFocus, QAbstractScrollArea):
                 self.viewport().setCursor(Qt.CursorShape.SizeVerCursor)
             elif any(self.clip_rect(p, i).contains(point) for i, p in enumerate(self.positions)):
                 self.viewport().setCursor(Qt.CursorShape.OpenHandCursor)
+                self.viewport().setToolTip('Drag this song left or right to change its entry time. Snaps to bars; '
+                                           'later songs follow. Drag the small title-bar grip to reorder songs.')
             else:
                 self.viewport().setCursor(Qt.CursorShape.ArrowCursor)
             return
@@ -1257,6 +1280,7 @@ class Timeline(_WaveformFocus, QAbstractScrollArea):
             drag.exec(Qt.DropAction.MoveAction)
 
     def mouseReleaseEvent(self, event):
+        if self.edits.release(event): return
         if self.overlap_drag:
             index, _, original, bars, _ = self.overlap_drag
             self.overlap_drag = None
@@ -1271,6 +1295,9 @@ class Timeline(_WaveformFocus, QAbstractScrollArea):
                 self.seekRequested.emit(moment)
 
     def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape and self.edits.cancel():
+            event.accept()
+            return
         if event.key() == Qt.Key.Key_Escape and self.overlap_drag:
             self.overlap_drag = None
             self.viewport().update()

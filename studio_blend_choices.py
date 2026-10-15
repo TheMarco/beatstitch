@@ -18,12 +18,15 @@ from studio_render_cache import audio_recipe, prepare_listening
 from studio_storage import managed_cache, require_space
 from studio_transition_audio import BlendMixer, BlendTransport
 
+from studio_fades import FIELDS as FADE_FIELDS, token as fade_token
+
 DRAFT_FIELDS = ('blend_bars', 'bass_swap', 'transpose', 'semitones', 'balance_levels', 'transition_effect',
-                'cue_in', 'intro_percussive')
+                'cue_in', 'intro_percussive', *FADE_FIELDS)
 
 
 def sound_settings(clip):
-    return clip.blend_bars, clip.bass_swap, clip.shift, clip.balance_levels, clip.transition_effect, clip.cue_in
+    return (clip.blend_bars, clip.bass_swap, clip.shift, clip.balance_levels, clip.transition_effect,
+            clip.cue_in, tuple(fade_token(clip) or ()))
 
 
 def draft_session(session, index, draft):
@@ -99,6 +102,10 @@ def change_summary(session, index, draft):
     pitch = f'{draft.shift:+d} st' if draft.shift else 'original key'
     bass = 'bass handoff at the middle' if draft.bass_swap else 'bass crossfade throughout'
     text = f'{draft.blend_bars} bars ({seconds:.1f} sec), {bass}, incoming song at {pitch}.'
+    from studio_fades import panel_values
+    fades = panel_values(draft)
+    text += (f' Outgoing fade: {fades["out_bars"]:g} bars, {fades["out_curve"]}. '
+             f'Incoming fade: {fades["in_bars"]:g} bars, {fades["in_curve"]}.')
     text += ' Gentle level balance inside this blend.' if draft.balance_levels else ' Whole-song levels, no extra blend balancing.'
     from studio_transition_effects import EFFECTS
     if draft.transition_effect != 'none': text += ' Outgoing finish: ' + EFFECTS[draft.transition_effect][0] + '.'
