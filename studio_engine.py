@@ -449,7 +449,9 @@ def render_session(session: Session, destination: Path, *, region=None,
         selections[i] = [min(selections[i][0], a), max(selections[i][1], b)]
     # Stage on the destination volume so final replacement is atomic.
     with tempfile.TemporaryDirectory(prefix="dj-render-", dir=destination.parent) as directory:
-        work = Path(directory)
+        # NumPy resolves memmap filenames, including Windows 8.3 aliases.
+        # Keep scratch paths in that same form so cleanup retains live buffers.
+        work = Path(directory).resolve()
         prepared, arrays, families = [], [], {}
         try:
             for index, (clip, position) in enumerate(zip(session.clips, positions)):

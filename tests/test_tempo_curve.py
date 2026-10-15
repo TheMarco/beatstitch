@@ -4,6 +4,7 @@ import copy
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 import soundfile as sf
@@ -85,6 +86,31 @@ class CurveClockTests(unittest.TestCase):
 
 @unittest.skipUnless(djmix.tool_path('rubberband'), 'Rubber Band required')
 class CurveProcessingTests(unittest.TestCase):
+    def test_uncached_render_keeps_live_bands_when_output_directory_has_an_alias(self):
+        from tests.test_finishing import project
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); target = root / 'real'; target.mkdir()
+            alias = root / 'alias'
+            try:
+                alias.symlink_to(target, target_is_directory=True)
+            except OSError:
+                self.skipTest('Directory symlinks unavailable; the uncached ramp test covers Windows short paths')
+            session = project(root)
+            for clip in session.clips:
+                clip.cue_out = 6; clip.blend_bars = 1
+            maps = []; raw_audio = djmix.raw_audio; unlink = Path.unlink
+            def opened(path):
+                array = raw_audio(path); maps.append(array); return array
+            def remove(path, *args, **kwargs):
+                self.assertFalse(any(not array._mmap.closed and Path(array.filename) == path.resolve()
+                                     for array in maps), 'Removed a live mapped audio buffer')
+                return unlink(path, *args, **kwargs)
+            with patch('djmix.raw_audio', side_effect=opened), patch.object(Path, 'unlink', remove):
+                result = render_session(session, alias / 'mix.wav')
+            self.assertTrue(maps)
+            self.assertTrue(all(array._mmap.closed for array in maps))
+            self.assertAlmostEqual(result['duration'], 6, places=4)
+
     def test_later_ramp_edit_keeps_earlier_sources_preview_and_assembly(self):
         from tests.test_finishing import project
         from studio_tempo_curve import session_curve

@@ -88,7 +88,8 @@ class MasteringControlsTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        with patch.object(Studio, 'load_bands'): self.w = Studio(self.root / 'data')
+        bands = patch.object(Studio, 'load_bands'); bands.start(); self.addCleanup(bands.stop)
+        self.w = Studio(self.root / 'data')
         self.w.session = project(self.root); self.w.refresh()
         self.addCleanup(self.close_host)
 
