@@ -10,6 +10,7 @@ import time
 import unittest
 from unittest.mock import patch
 import urllib.error
+import urllib.parse
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
@@ -133,7 +134,12 @@ class WebsiteReleaseTests(unittest.TestCase):
         for platform in ('darwin', 'win32', 'linux'):
             entry = updates.package(info, platform)
             self.assertIsNotNone(entry, platform)
-            self.assertTrue(entry['url'].endswith('/' + entry['name']), entry['url'])
+            address = urllib.parse.urlparse(entry['url'])
+            query = urllib.parse.parse_qs(address.query)
+            drive = (address.hostname == 'drive.usercontent.google.com' and address.path == '/download'
+                     and bool(query.get('id')) and query.get('export') == ['download']
+                     and query.get('confirm') == ['t'])
+            self.assertTrue(entry['url'].endswith('/' + entry['name']) or drive, entry['url'])
         page = (ROOT / 'web/index.html').read_text()
         shown = re.findall(r'data-release>([^<]*)<', page)
         self.assertEqual(len(shown), 2)

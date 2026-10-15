@@ -72,7 +72,7 @@ Downloads folder, resuming saved bytes and verifying the size and SHA-256 listed
 in `latest.json`. It never overwrites another file, and installing stays manual.
 Only `main()` schedules the check, so tests and screenshot captures never reach
 the network. To publish a release, update `web/latest.json` with the
-GitHub release asset URLs, sizes and checksums, and the two `data-release`
+direct archive URLs, sizes and checksums, and the two `data-release`
 versions in `web/index.html`. `tests.test_updates` keeps the three consistent.
 
 The isolated **detector-confidence pilot** uses the 25 songs supplied in
