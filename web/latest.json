@@ -1,20 +1,20 @@
 {
-  "version": "0.1.3",
+  "version": "0.1.4",
   "downloads": {
     "mac": {
-      "url": "https://drive.usercontent.google.com/download?id=1eLuXvqT-OtKxaIEddAalpEHu6K2SBWrv&export=download&confirm=t",
-      "size": 346812388,
-      "sha256": "e29010022f39ce904fe4eea75127a208e7b7e70f128caf74067eb9e5d7edc895"
+      "url": "https://drive.usercontent.google.com/download?id=1WrDLwCm96wrsfvaoCLlTOb7S9P-tUXcx&export=download&confirm=t",
+      "size": 346375387,
+      "sha256": "befff27838c919cd8af43ae46065816922fda04d5070547a2c3fcedf3c62d123"
     },
     "windows": {
-      "url": "https://drive.usercontent.google.com/download?id=1ecOEGPZsY3sdp3quKXBfRfdzkCrSbigf&export=download&confirm=t",
-      "size": 408533797,
-      "sha256": "e8b9a7dee8bae60879e35b98ff794dec3b57943c1643ac1849748fd4ca51d8a9"
+      "url": "https://drive.usercontent.google.com/download?id=13d9ZhqEbepJh_3DSVFfhhahBVN2hTXBe&export=download&confirm=t",
+      "size": 403816860,
+      "sha256": "802f32b5a4b7b09b289102bc67aa41a9cbcc4360a6756abdeacf33572a9b04ef"
     },
     "linux": {
-      "url": "https://drive.usercontent.google.com/download?id=1uce9P3Eguv_SbCVaF68zQ1rZmEwtFl7B&export=download&confirm=t",
-      "size": 610411939,
-      "sha256": "7b2ac2873d3503e13c997be13d5a4536f87d026e190d909a2a6903c560823c7e"
+      "url": "https://drive.usercontent.google.com/download?id=1jBQslyrEjbI1ZgTswZYtvt8fz5Ybywqx&export=download&confirm=t",
+      "size": 610909351,
+      "sha256": "bdb79d273421181d99970d0474eadeefd65d963fd32e35bdc364b72ac734950e"
     }
   }
 }
