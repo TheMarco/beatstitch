@@ -114,7 +114,9 @@ def add_packaged_credits(destination, executable):
     archive = CArchiveReader(str(executable)).open_embedded_archive('PYZ.pyz')
     roots = {name.split('.')[0] for name in archive.toc}
     mapping = metadata.packages_distributions()
-    distributions = {name for root in roots for name in mapping.get(root, [])}
+    # A leftover dist-info folder without METADATA maps its module to None; look the
+    # module's own name up instead, which finds the installed copy.
+    distributions = {name or root for root in roots for name in mapping.get(root, [])}
     catalog = json.loads((destination / 'catalog.json').read_text(encoding='utf-8'))
     seen = {entry['id'].removeprefix('python:') for entry in catalog['entries']
             if entry['id'].startswith('python:')}
