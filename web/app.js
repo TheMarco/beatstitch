@@ -36,6 +36,10 @@
     return `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
   }
 
+  function escapeHtml(text) {
+    return String(text).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
+  }
+
   function setText(element, text) {
     if (element && element.textContent !== text) element.textContent = text;
   }
@@ -859,7 +863,7 @@
       requestTick();
     } else if (type === 'progress') {
       ui.ring.setAttribute('stroke-dasharray', `${(value * 100).toFixed(1)} 100`);
-      setText(ui.hint, `Loading the mix, ${Math.round(value * 100)}%`);
+      setText(ui.hint, 'Loading the mix'); // the ring shows progress; a changing percentage would be read out on every chunk
     } else if (type === 'error') {
       ui.error.textContent = audioError(value);
       ui.error.hidden = false;
@@ -1306,11 +1310,11 @@
       const here = songsIn(code);
       const moved = shiftedFrom(code);
       const lines = neighbors(code).map(([c, why]) => {
-        const songs = songsIn(c).map(clip => clip.name).join(', ');
+        const songs = escapeHtml(songsIn(c).map(clip => clip.name).join(', '));
         return `<li><span><b>${c}</b> ${keyOf(c).long}${songs ? `<br><span style="color:var(--text-3)">${songs}</span>` : ''}</span><span>${why}</span></li>`;
       }).join('');
       info.innerHTML = `<h4>${code}</h4><p>${key.long}</p><ul>${lines}</ul>` +
-        `<p class="wheel-songs">${demoText(here, moved)}</p>`;
+        `<p class="wheel-songs">${escapeHtml(demoText(here, moved))}</p>`;
     }
     select(selected, false);
   })();

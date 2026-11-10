@@ -9,12 +9,16 @@
   <meta property="og:title" content="BeatStitch">
   <meta property="og:description" content="Stitch your songs into one continuous mix. Free for Mac, Windows and Linux, and it all runs on your computer.">
   <meta property="og:type" content="website">
-  <meta property="og:image" content="img/og.png">
+  <meta property="og:url" content="https://beatstitch.ai-created.com/">
+  <meta property="og:image" content="https://beatstitch.ai-created.com/img/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
   <meta name="twitter:card" content="summary_large_image">
+  <link rel="canonical" href="https://beatstitch.ai-created.com/">
   <link rel="icon" href="img/favicon.png" type="image/png">
   <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
-  <link rel="preload" href="fonts/Barlow-SemiBold.ttf" as="font" type="font/ttf" crossorigin>
-  <link rel="preload" href="fonts/Barlow-Regular.ttf" as="font" type="font/ttf" crossorigin>
+  <link rel="preload" href="fonts/Barlow-SemiBold.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/Barlow-Regular.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -108,8 +112,8 @@
             <canvas id="timeline-canvas"></canvas>
           </div>
           <div class="blend-bar">
-            <div class="blend-now" aria-live="polite">
-              <strong id="blend-title">Ready</strong>
+            <div class="blend-now">
+              <strong id="blend-title" aria-live="polite">Ready</strong>
               <span id="blend-detail">Lose Yourself In The Latent Space and Friday Night LFG at 128 BPM with an 8-bar blend.</span>
             </div>
             <div class="phase idle" id="phase">

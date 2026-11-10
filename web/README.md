@@ -53,8 +53,8 @@ are custom properties on `.mark`. The hero record is the same mark, turned by
 
 The macOS, Windows and Linux cards in the download section link to the installers on
 Google Drive (search `data-os` in `index.html`). The hero button takes its label and
-link from the card that matches the visitor's OS and falls back to macOS. `og:image`
-is relative; make it absolute once the site has a domain.
+link from the card that matches the visitor's OS and falls back to macOS. `og:image`,
+`og:url` and the canonical link name `beatstitch.ai-created.com`; change them if the domain changes.
 
 `latest.json` tells the app which version is newest and where to download it. For a
 release, update it with direct archive URLs, sizes and SHA-256 checksums, and change

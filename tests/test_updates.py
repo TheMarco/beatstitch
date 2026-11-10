@@ -144,6 +144,12 @@ class WebsiteReleaseTests(unittest.TestCase):
         shown = re.findall(r'data-release>([^<]*)<', page)
         self.assertEqual(len(shown), 2)
         self.assertEqual(set(shown), {info['version']})
+        # The page's download cards must point at the same Drive files as the feed.
+        for key in ('mac', 'windows', 'linux'):
+            file_id = urllib.parse.parse_qs(urllib.parse.urlparse(info['downloads'][key]['url']).query)['id'][0]
+            card = re.search(rf'data-os="{key}" href="([^"]*)"', page)
+            self.assertIsNotNone(card, key)
+            self.assertIn(f'/d/{file_id}/', card.group(1), key)
 
 
 class MenuTests(unittest.TestCase):
