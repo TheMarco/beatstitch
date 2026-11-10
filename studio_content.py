@@ -117,7 +117,7 @@ def analyze_content(path, duration, cache_dir, progress=lambda _: None):
         with tempfile.TemporaryDirectory(prefix='.pending-passages-', dir=cache_dir) as temporary:
             work = Path(temporary); decoded = work / 'source.wav'
             progress('Reading audio for passage analysis')
-            djmix.ffmpeg('-i', str(path), '-t', str(duration + .1), '-ar', str(RATE), '-ac', '2',
+            djmix.ffmpeg('-i', str(path), '-map', '0:a:0', '-t', str(duration + .1), '-ar', str(RATE), '-ac', '2',
                          '-c:a', 'pcm_f32le', str(decoded))
             windows = []
             with sf.SoundFile(decoded) as source, torch.inference_mode():

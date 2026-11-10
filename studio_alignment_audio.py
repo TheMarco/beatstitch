@@ -107,7 +107,7 @@ reference beats coincide, the shared tempo curve carries both together.
                     if points is None:
                         raw = djmix.prepare(Path(track.path), {'start': float(source[0]), 'end': float(source[1]),
                                             'frames': int(local_b - local_a)}, track.duration, track.bpm,
-                                            session.target_bpm, clip.shift, True, work, str(i), gain)
+                                            session.target_bpm, clip.shift, True, work, str(i), gain, original=False)
                     else:
                         extended = copy.deepcopy(clip)
                         extended.cue_in, extended.cue_out = map(float, source)

@@ -1148,7 +1148,7 @@ class Studio(QMainWindow):
                             [('Try again', lambda: self.download_update(version, entry)), ('Open download page', self.open_download_page)])
 
         self.job(work, finished, cancellable=True, failed_callback=failed, title=f'Downloading BeatStitch {version}',
-                 reason=f'Saving to {folder}. Your mix is unchanged.')
+                 reason=f'Saving to {folder}. Your mix is unchanged.', uses_cache=False)
 
     @staticmethod
     def open_download_page():
@@ -2015,9 +2015,11 @@ class Studio(QMainWindow):
     # Background work -----------------------------------------------------------------------
 
     def job(self, function, finished, *, importing=False, rendering=False, cancellable=True, item=None,
-            failed_callback=None, progress_callback=None, title=None, reason=None):
+            failed_callback=None, progress_callback=None, title=None, reason=None, uses_cache=True):
         cancel = threading.Event()
-        worker = Worker(function, cancel, self.storage.work_lock(), hold_cache=True)
+        # Work that never touches the audio cache (an app-update download) must not hold the
+        # cross-process work lock, or playback and analysis wait for it to finish.
+        worker = Worker(function, cancel, self.storage.work_lock() if uses_cache else None, hold_cache=True)
         worker.ui_title = title or ('Preparing audio' if rendering else 'Analyzing audio' if importing else 'Audio task')
         worker.ui_reason = reason or ''
         worker.ui_progress = 'Starting…'
@@ -2048,7 +2050,8 @@ class Studio(QMainWindow):
             except Exception as error:
                 self.notify('Could not apply the processing result: ' + str(error), 'error')
             finally:
-                worker.cache_lock.release()
+                if worker.cache_lock is not None:
+                    worker.cache_lock.release()
             try:
                 self.update_storage_pins()
                 self.storage.prune()
@@ -2112,8 +2115,19 @@ class Studio(QMainWindow):
         from studio_busy import ProcessingDialog
         downloading = bool(self.downloads_window and self.downloads_window.busy)
         active = bool(self.jobs or self.band_workers or downloading or getattr(self, 'finalizing_tasks', 0))
+        # Disabling the window clears keyboard focus; afterwards Qt would hand it to the first
+        # focusable control (the project BPM box), so Space and Delete stop reaching the timeline.
+        was_active = getattr(self, '_busy_active', False)
+        if active and not was_active:
+            self._busy_focus = QApplication.focusWidget()
+        self._busy_active = active
         self.centralWidget().setEnabled(not active)
         self.menuBar().setEnabled(not active)
+        if was_active and not active:
+            import shiboken6
+            focus, self._busy_focus = getattr(self, '_busy_focus', None), None
+            if focus is not None and shiboken6.isValid(focus) and focus.window() is self and focus.isVisible():
+                focus.setFocus(Qt.FocusReason.OtherFocusReason)
         if not getattr(self, 'processing_dialog', None):
             if not active: return
             self.processing_dialog = ProcessingDialog(self)

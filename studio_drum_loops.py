@@ -128,8 +128,9 @@ def prepare_loop(track, choice, repeats, cache_dir, progress=lambda _: None):
     with tempfile.TemporaryDirectory(prefix='.pending-loop-', dir=cache_dir) as temporary:
         work = Path(temporary)
         progress('Reading the selected loop and its natural context')
-        djmix.ffmpeg('-ss', str(lo / djmix.SR), '-i', track.path, '-t', str((hi - lo) / djmix.SR),
-                     '-ar', str(djmix.SR), '-ac', '2', '-c:a', 'pcm_f32le', str(work / 'source.wav'))
+        # Seek after -i: input seeking lands tens of ms off, or short, in AAC/M4A sources.
+        djmix.ffmpeg('-i', track.path, '-ss', str(lo / djmix.SR), '-t', str((hi - lo) / djmix.SR),
+                     '-map', '0:a:0', '-ar', str(djmix.SR), '-ac', '2', '-c:a', 'pcm_f32le', str(work / 'source.wav'))
         audio, rate = sf.read(work / 'source.wav', dtype='float32', always_2d=True)
         if rate != djmix.SR or len(audio) != hi - lo:
             raise djmix.MixError('The decoded passage has an unexpected length. Check the source and choose again.')

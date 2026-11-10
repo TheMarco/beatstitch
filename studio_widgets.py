@@ -349,6 +349,9 @@ class ValueBox(QDoubleSpinBox):
             self.edit()
         elif event.text() and event.text() in "0123456789.-+:":
             self.edit(event.text())
+        elif key in (Qt.Key.Key_Backspace, Qt.Key.Key_Delete):
+            # The spin box's line edit is hidden; editing it here would silently drop a digit.
+            event.ignore()
         else:
             super().keyPressEvent(event)
 

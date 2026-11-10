@@ -274,7 +274,8 @@ def raw_audio(path: Path) -> np.memmap:
 
 
 def prepare(source: Path, selection: dict, duration: float, bpm: float, target: float,
-            shift: int, formants: bool, work: Path, label: str, gain_db: float) -> Path:
+            shift: int, formants: bool, work: Path, label: str, gain_db: float,
+            original: bool = True) -> Path:
     # Render with context on both sides so the actual cue is inside the analysis window.
     padded_start = max(0, selection["start"] - 2)
     padded_end = min(duration, selection["end"] + 2)
@@ -295,7 +296,11 @@ def prepare(source: Path, selection: dict, duration: float, bpm: float, target: 
            "-ar", str(SR), "-ac", "2", "-f", "f32le", str(raw))
     found = raw.stat().st_size // 8
     # Allow at most two frames of sample-rounding discrepancy, never hide missing audio.
-    if abs(found - selection["frames"]) > 2:
+    # A selection that runs to the reported end of the source is the exception: Ogg Opus and
+    # ADTS AAC report a duration up to ~80 ms longer than they decode, and nothing is missing.
+    at_source_end = selection["end"] >= duration - 0.001
+    short = selection["frames"] - found
+    if abs(short) > 2 and not (at_source_end and 0 < short <= SR // 4):
         raise MixError(f"Track {label} render length mismatch: expected {selection['frames']}, got {found} frames.")
     if found < selection["frames"]:
         with raw.open("ab") as handle:
@@ -304,11 +309,12 @@ def prepare(source: Path, selection: dict, duration: float, bpm: float, target: 
         with raw.open("r+b") as handle:
             handle.truncate(selection["frames"] * 8)
     # Original excerpts get the same static track gain for fair listening comparisons.
-    original_float = work / f"{label}-original.wav"
-    ffmpeg("-i", str(source), "-ss", f"{selection['start']:.12f}", "-t",
-           f"{selection['end']-selection['start']:.12f}", "-map", "0:a:0",
-           "-ar", str(SR), "-ac", "2", "-af", f"volume={gain_db:.12f}dB",
-           "-c:a", "pcm_f32le", str(original_float))
+    if original:
+        original_float = work / f"{label}-original.wav"
+        ffmpeg("-i", str(source), "-ss", f"{selection['start']:.12f}", "-t",
+               f"{selection['end']-selection['start']:.12f}", "-map", "0:a:0",
+               "-ar", str(SR), "-ac", "2", "-af", f"volume={gain_db:.12f}dB",
+               "-c:a", "pcm_f32le", str(original_float))
     return raw
 
 

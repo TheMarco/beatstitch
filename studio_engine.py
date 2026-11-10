@@ -500,7 +500,7 @@ def render_session(session: Session, destination: Path, *, region=None,
                         raw = prepare_timing(track, clip, session.target_bpm, work, str(index), gain)
                     else:
                         raw = djmix.prepare(Path(track.path), selection, track.duration, track.bpm,
-                                            session.target_bpm, clip.shift, True, work, str(index), gain)
+                                            session.target_bpm, clip.shift, True, work, str(index), gain, original=False)
                     low, high = djmix.split_bands(raw, work, str(index))
                     cache_offset = local_start if warped else 0; processed += 1
                 arrays.extend([low, high])

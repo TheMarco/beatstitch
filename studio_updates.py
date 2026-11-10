@@ -50,7 +50,8 @@ def platform_key(platform=sys.platform):
 def package(release, platform=sys.platform):
     """The download for this computer, or None when the release doesn't offer a valid one."""
     key = platform_key(platform)
-    entry = (release.get('downloads') or {}).get(key) if key else None
+    downloads = release.get('downloads')
+    entry = downloads.get(key) if key and isinstance(downloads, dict) else None
     if not isinstance(entry, dict):
         return None
     url, size, sha256 = entry.get('url'), entry.get('size'), entry.get('sha256')

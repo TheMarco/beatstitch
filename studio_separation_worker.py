@@ -3,12 +3,22 @@ import json
 import os
 from pathlib import Path
 import sys
+import time
 
 
-def publish(path, value):
+def publish(path, value, attempts=1):
+    """Replace path atomically. On Windows the replace fails while the app has the file open
+    to read it, so progress (attempts=1) is skipped that once and results are retried."""
     pending = path.with_suffix('.pending')
     pending.write_text(json.dumps(value, allow_nan=False), encoding='utf-8')
-    pending.replace(path)
+    for attempt in range(attempts):
+        try:
+            pending.replace(path)
+            return
+        except PermissionError:
+            if attempts > 1 and attempt == attempts - 1:
+                raise
+            time.sleep(.05)
 
 
 def infer(work):
@@ -51,8 +61,8 @@ def main(arguments=None):
     work = Path(arguments[0])
     try: result = infer(work)
     except Exception as error:
-        publish(work / 'result.json', {'error': f'{type(error).__name__}: {error}'[:1200]}); return 1
-    publish(work / 'result.json', result); return 0
+        publish(work / 'result.json', {'error': f'{type(error).__name__}: {error}'[:1200]}, attempts=100); return 1
+    publish(work / 'result.json', result, attempts=100); return 0
 
 
 if __name__ == '__main__': raise SystemExit(main())

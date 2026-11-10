@@ -4,14 +4,24 @@ import json
 import os
 from pathlib import Path
 import sys
+import time
 from types import SimpleNamespace
 from unittest.mock import patch
 
 
-def publish(path, value):
+def publish(path, value, attempts=1):
+    """Replace path atomically. On Windows the replace fails while the app has the file open
+    to read it, so progress (attempts=1) is skipped that once and results are retried."""
     pending = path.with_suffix('.pending')
     pending.write_text(json.dumps(value, allow_nan=False), encoding='utf-8')
-    pending.replace(path)
+    for attempt in range(attempts):
+        try:
+            pending.replace(path)
+            return
+        except PermissionError:
+            if attempts > 1 and attempt == attempts - 1:
+                raise
+            time.sleep(.05)
 
 
 def infer(source, work):
@@ -80,7 +90,7 @@ def infer(source, work):
     # A hard duration cap also bounds a source whose metadata understates length.
     audio = work / 'source.wav'
     djmix.run([djmix.tool_path('ffmpeg'), '-nostdin', '-v', 'error', '-y', '-i', str(source),
-               '-t', str(MAX_DURATION + 1), '-vn', '-ac', '1', '-ar', '24000', '-c:a', 'pcm_f32le', str(audio)])
+               '-map', '0:a:0', '-t', str(MAX_DURATION + 1), '-ac', '1', '-ar', '24000', '-c:a', 'pcm_f32le', str(audio)])
     if djmix.probe(audio)['duration'] > MAX_DURATION:
         raise ValueError('Decoded source exceeds the 30-minute section-analysis limit.')
     progress(desc='Loading build/drop model · ' + ('Apple GPU' if device == 'mps' else 'CPU'))
@@ -113,9 +123,9 @@ def main(arguments=None):
     try:
         result = infer(source, work)
     except Exception as error:
-        publish(work / 'result.json', {'error': f'{type(error).__name__}: {error}'[:1200]})
+        publish(work / 'result.json', {'error': f'{type(error).__name__}: {error}'[:1200]}, attempts=100)
         return 1
-    publish(work / 'result.json', result)
+    publish(work / 'result.json', result, attempts=100)
     return 0
 
 

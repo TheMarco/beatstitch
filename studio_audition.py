@@ -159,7 +159,8 @@ class TimingComparison(QDialog):
         self.player.load(Path(report['folder']))
         self.player.set_volume(volume)
         self.refresh_output()
-        self.finished.connect(lambda _: self.player.close())
+        # The parent keeps a closed dialog alive, and with it the decoded A/B audio (~100 MB each).
+        self.finished.connect(lambda _: (self.player.close(), self.deleteLater()))
 
     def refresh_output(self):
         device = QMediaDevices.defaultAudioOutput() if self.output_preference == 'system' else next(

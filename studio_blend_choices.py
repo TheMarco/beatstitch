@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+from dataclasses import replace
 import json
 import os
 from pathlib import Path
@@ -35,7 +36,8 @@ def draft_session(session, index, draft):
     original = session.clips[index]
     if (draft.id, draft.track_id) != (original.id, original.track_id):
         raise djmix.MixError('The selected song changed. Reopen this blend.')
-    result = copy.deepcopy(session)
+    # Called per mouse move while aligning beats: copy the clips, share the read-only library.
+    result = replace(session, clips=[replace(clip) for clip in session.clips])
     for name in DRAFT_FIELDS:
         setattr(result.clips[index], name, getattr(draft, name))
     layout(result)

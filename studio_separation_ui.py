@@ -28,7 +28,7 @@ class SeparationDialog(QDialog):
         self.setWindowTitle('Reduce competing musical parts')
         self.setWindowModality(Qt.WindowModality.WindowModal); self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.resize(880, 710); self.setMinimumSize(760, 650)
-        self.player = ChoiceTransport(self); self.player.set_loop(True); self.player.set_volume(studio.volume.value())
+        self.player = ChoiceTransport(self); self.player.set_loop(True); self.player.set_volume(studio.volume.value() / 100)
         self.devices = QMediaDevices(self)
         box = QVBoxLayout(self); box.setContentsMargins(22, 18, 22, 18); box.setSpacing(11)
         title = QLabel('Make more room in this blend'); title.setProperty('role', 'title'); box.addWidget(title)

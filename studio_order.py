@@ -181,7 +181,8 @@ def propose_order(session, options=None, progress=lambda _: None, beam_width=192
     def duration_cost(duration):
         if options.target_seconds is None:
             return 0
-        duration = float(curve.to_output(duration))
+        if not curve.identity:  # called per search state; skip the array round trip when tempo is constant
+            duration = float(curve.to_output(duration))
         return 4 * abs(duration - options.target_seconds) / max(30, .05 * options.target_seconds)
 
     def total_cost(order, duration):
@@ -243,8 +244,18 @@ def propose_order(session, options=None, progress=lambda _: None, beam_width=192
         raise djmix.MixError('No valid order fits those locks, protected passages and overlaps. Change an opener/closer, '
                              'shorten an overlap, or review the protections before trying again.')
     candidates.sort(key=lambda item: (item[0], sum(a != b for a, b in zip(item[1], original)), tuple(number[x] for x in item[1])))
-    _, order = candidates[0]
-    draft, label_changes = draft_for_order(session, order, options)
+    # The search checks overlaps and protections only. Building the draft also checks the mix's
+    # opening and ending fades against the new first and last songs, so fall back to the next
+    # best order instead of failing when the cheapest one has no room for them.
+    first_error = None
+    for _, order in candidates:
+        try:
+            draft, label_changes = draft_for_order(session, order, options)
+            break
+        except djmix.MixError as error:
+            first_error = first_error or error
+    else:
+        raise first_error
     duration = float(curve.to_output(layout(draft)[-1]['end'] / djmix.SR))
     return {'draft': draft, 'order': list(order), 'duration': duration,
             'current_duration': float(curve.to_output(positions[-1]['end'] / djmix.SR)),

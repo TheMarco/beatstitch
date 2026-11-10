@@ -119,7 +119,7 @@ class LoopExtensionDialog(QDialog):
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.resize(920, 760); self.setMinimumSize(760, 650)
         self.player = ChoiceTransport(self); self.devices = QMediaDevices(self)
-        self.player.set_volume(studio.volume.value()); self.player.set_loop(True)
+        self.player.set_volume(studio.volume.value() / 100); self.player.set_loop(True)
         box = QVBoxLayout(self); box.setContentsMargins(22, 18, 22, 18); box.setSpacing(10)
         title = QLabel('Make room for a longer blend'); title.setProperty('role', 'title'); box.addWidget(title)
         song = QLabel(self.track.name); song.setTextFormat(Qt.TextFormat.PlainText); song.setWordWrap(True); box.addWidget(song)

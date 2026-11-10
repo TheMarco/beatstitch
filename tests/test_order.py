@@ -22,6 +22,18 @@ def project(energies=(1, 5, 2, 4, 3)):
 
 
 class OrderTests(unittest.TestCase):
+    def test_falls_back_when_the_best_order_has_no_room_for_the_opening_fade(self):
+        # Energy wants the 40 s song first, but a 16-bar fade-in does not fit before its blend.
+        durations, energies = (300, 40, 300), (3, 1, 5)
+        tracks = {str(i): Track(str(i), f'{i}.wav', f'Song {i}', d, 128, 'C minor', cue_out=d)
+                  for i, d in enumerate(durations)}
+        session = Session(target_bpm=128, tracks=tracks, fade_in_bars=16,
+                          clips=[Clip(k, 0, d, energy=e) for k, d, e in zip(tracks, durations, energies)])
+        result = propose_order(session, OrderOptions(pace='build', auto_energy=False))
+        self.assertEqual(len(result['order']), 3)
+        self.assertNotEqual(result['draft'].clips[0].track_id, '1')
+        layout(result['draft'])
+
     def test_build_energy_nonmutating_preserves_audio_settings(self):
         session = project(); before = copy.deepcopy(session.to_dict())
         result = propose_order(session, OrderOptions(pace='build'))

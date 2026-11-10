@@ -12,7 +12,7 @@ import copy
 
 import numpy as np
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF
+from PySide6.QtGui import QColor, QPainter, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import QWidget
 
 import djmix
@@ -97,6 +97,7 @@ class TransitionView(QWidget):
         self._start = 0.0
         self._end = 0.0
         self._playhead = None
+        self._static = None  # (key, pixmap) of everything except the playhead and focus frame
         self._lanes = []
         self._bands = {}
         self._incoming_start = 0.0
@@ -162,7 +163,17 @@ class TransitionView(QWidget):
 
     def set_playhead(self, local_seconds):
         self._playhead = float(local_seconds)
-        self.update()
+        # Playback moves this 25 times a second on the thread that feeds audio. Keep the
+        # waveform layer; redrawing its antialiased polygons takes 27-105 ms.
+        QWidget.update(self)
+
+    def update(self, *args):
+        self._static = None
+        super().update(*args)
+
+    def changeEvent(self, event):
+        self._static = None
+        super().changeEvent(event)
 
     # -- geometry ---------------------------------------------------------------
     def sizeHint(self):
@@ -219,6 +230,28 @@ class TransitionView(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         lanes_top = self._RULER + 4
         lanes_bottom = self.height() - 6
+        ratio = self.devicePixelRatioF()
+        # Band envelopes can arrive in the shared dictionary after set_data.
+        key = (self.width(), self.height(), ratio, tuple(id(self._bands.get(lane["track_id"])) for lane in self._lanes))
+        if self._static is None or self._static[0] != key:
+            pixmap = QPixmap(round(self.width() * ratio), round(self.height() * ratio))
+            pixmap.setDevicePixelRatio(ratio)
+            pixmap.fill(QColor(T.BASE))
+            layer = QPainter(pixmap)
+            layer.setRenderHint(QPainter.RenderHint.Antialiasing)
+            layer.setFont(self.font())
+            self._paint_static(layer, lanes_top, lanes_bottom)
+            layer.end()
+            self._static = (key, pixmap)
+        painter.drawPixmap(0, 0, self._static[1])
+        self._paint_playhead(painter, lanes_top, lanes_bottom)
+        if self.hasFocus():
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(QColor(T.ACCENT), 2))
+            painter.drawRect(QRectF(self.rect()).adjusted(1, 1, -1, -1))
+        painter.end()
+
+    def _paint_static(self, painter, lanes_top, lanes_bottom):
         for lane, (_, wave) in zip(self._lanes, self._lane_rects()):
             self._paint_wave(painter, lane, wave)
         self._paint_overlap(painter, lanes_top, lanes_bottom)
@@ -227,12 +260,6 @@ class TransitionView(QWidget):
         for lane, (label, _) in zip(self._lanes, self._lane_rects()):
             self._paint_label(painter, lane, label)
         self._paint_bass(painter, lanes_top, lanes_bottom)
-        self._paint_playhead(painter, lanes_top, lanes_bottom)
-        if self.hasFocus():
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.setPen(QPen(QColor(T.ACCENT), 2))
-            painter.drawRect(QRectF(self.rect()).adjusted(1, 1, -1, -1))
-        painter.end()
 
     def _paint_grid(self, painter, top, bottom):
         beat = 60.0 / self._target
