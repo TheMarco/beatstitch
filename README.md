@@ -1,4 +1,4 @@
-# BeatStitch 0.1.3
+# BeatStitch 0.1.4
 
 A native **Qt / PySide6 desktop application** for arranging EDM mixes. No browser,
 webview, server, or online audio service is required. The code supports macOS,
