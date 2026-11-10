@@ -1,0 +1,23 @@
+{
+  "format": "standalone SVG paths and gradients",
+  "outlined_wordmark": {
+    "source_bounds": [
+      660,
+      265,
+      2032,
+      426
+    ],
+    "outer_contours": 10,
+    "counter_contours": 3,
+    "lettering": "clean geometric outlines rebuilt against the approved proportions",
+    "outlined_glyphs": 10
+  },
+  "font_dependencies": [],
+  "raster_dependencies": [],
+  "transparent_variants": [
+    "horizontal",
+    "stacked",
+    "horizontal-light",
+    "stacked-light"
+  ]
+}

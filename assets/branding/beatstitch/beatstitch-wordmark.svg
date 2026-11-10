@@ -1,0 +1,17 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1436 225" width="1436" height="225" role="img" aria-labelledby="logo-title logo-description">
+  <title id="logo-title">Beatstitch</title>
+  <desc id="logo-description">Outlined Beatstitch wordmark; no font installation required.</desc>
+  <g id="wordmark" fill="#F6F3E9" fill-rule="evenodd" transform="translate(32 32) scale(1)">
+    <path id="letter-b-1" d="M8 0H102C132 0 148 17 148 42V57C148 72 141 77 130 81C142 84 148 97 148 112V122C148 147 130 161 105 161H8Q0 161 0 153V8Q0 0 8 0Z M40 39H95Q105 39 105 48V50Q105 58 95 58H40Z M40 101H95Q105 101 105 110V112Q105 122 95 122H40Z" transform="translate(0 0) scale(1 1)" />
+    <path id="letter-e-2" d="M25 0H130Q136 0 136 6V33Q136 40 129 40H45Q41 40 41 44V58Q41 62 45 62H124V99H45Q41 99 41 103V117Q41 121 45 121H129Q136 121 136 128V155Q136 161 129 161H25Q0 161 0 136V25Q0 0 25 0Z" transform="translate(161 0) scale(1 1)" />
+    <path id="letter-a-3" d="M0 161L59 7Q62 0 69 0H103Q111 0 114 7L171 161H128L113 126H58L43 161Z M85.5 55L64 96H107Z" transform="translate(303 0) scale(1 1)" />
+    <path id="letter-t-4" d="M6 0H128Q134 0 134 6V34Q134 40 128 40H88V155Q88 161 82 161H52Q46 161 46 155V40H6Q0 40 0 34V6Q0 0 6 0Z" transform="translate(445 0) scale(1 1)" />
+    <path id="letter-s-5" d="M42 0H140Q146 0 146 6V34Q146 40 140 40H49Q41 40 41 48Q41 56 49 56H104C133 56 146 72 146 100V118C146 145 129 161 104 161H6Q0 161 0 155V127Q0 121 6 121H97Q105 121 105 113Q105 105 97 105H42C13 105 0 89 0 64V42C0 19 19 0 42 0Z" transform="translate(587 0) scale(1 1)" />
+    <path id="letter-t-6" d="M6 0H128Q134 0 134 6V34Q134 40 128 40H88V155Q88 161 82 161H52Q46 161 46 155V40H6Q0 40 0 34V6Q0 0 6 0Z" transform="translate(741 0) scale(1 1)" />
+    <path id="letter-i-7" d="M5 0H37Q42 0 42 5V156Q42 161 37 161H5Q0 161 0 156V5Q0 0 5 0Z" transform="translate(890 0) scale(1 1)" />
+    <path id="letter-t-8" d="M6 0H128Q134 0 134 6V34Q134 40 128 40H88V155Q88 161 82 161H52Q46 161 46 155V40H6Q0 40 0 34V6Q0 0 6 0Z" transform="translate(941 0) scale(1 1)" />
+    <path id="letter-c-9" d="M36 0H132Q138 0 138 6V34Q138 40 132 40H50Q41 40 41 49V112Q41 121 50 121H132Q138 121 138 127V155Q138 161 132 161H36Q0 161 0 125V36Q0 0 36 0Z" transform="translate(1081 0) scale(1 1)" />
+    <path id="letter-h-10" d="M6 0H36Q42 0 42 6V59H97V6Q97 0 103 0H133Q139 0 139 6V155Q139 161 133 161H103Q97 161 97 155V102H42V155Q42 161 36 161H6Q0 161 0 155V6Q0 0 6 0Z" transform="translate(1233 0) scale(1 1)" />
+  </g>
+</svg>
