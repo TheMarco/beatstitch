@@ -1,7 +1,7 @@
-@font-face { font-family: "Barlow"; src: url("fonts/Barlow-Regular.ttf") format("truetype"); font-weight: 400; font-display: swap; }
-@font-face { font-family: "Barlow"; src: url("fonts/Barlow-Medium.ttf") format("truetype"); font-weight: 500; font-display: swap; }
-@font-face { font-family: "Barlow"; src: url("fonts/Barlow-SemiBold.ttf") format("truetype"); font-weight: 600; font-display: swap; }
-@font-face { font-family: "Barlow"; src: url("fonts/Barlow-Bold.ttf") format("truetype"); font-weight: 700; font-display: swap; }
+@font-face { font-family: "Barlow"; src: url("fonts/Barlow-Regular.woff2") format("woff2"), url("fonts/Barlow-Regular.ttf") format("truetype"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Barlow"; src: url("fonts/Barlow-Medium.woff2") format("woff2"), url("fonts/Barlow-Medium.ttf") format("truetype"); font-weight: 500; font-display: swap; }
+@font-face { font-family: "Barlow"; src: url("fonts/Barlow-SemiBold.woff2") format("woff2"), url("fonts/Barlow-SemiBold.ttf") format("truetype"); font-weight: 600; font-display: swap; }
+@font-face { font-family: "Barlow"; src: url("fonts/Barlow-Bold.woff2") format("woff2"), url("fonts/Barlow-Bold.ttf") format("truetype"); font-weight: 700; font-display: swap; }
 
 :root {
   color-scheme: dark;
@@ -196,6 +196,8 @@ button { font: inherit; color: inherit; }
 }
 .alpha-note:popover-open { opacity: 1; transform: none; }
 @starting-style { .alpha-note:popover-open { opacity: 0; transform: translateY(-4px); } }
+/* Without the popover API the note can never open; keep it from covering the hero invisibly. */
+@supports not selector(:popover-open) { .alpha-note { display: none; } }
 @media (prefers-reduced-motion: reduce) { .alpha-note { transition: none; } }
 /* Where anchor positioning exists, follow the logo exactly (100vw counts the scrollbar) */
 @supports (anchor-name: --a) {
